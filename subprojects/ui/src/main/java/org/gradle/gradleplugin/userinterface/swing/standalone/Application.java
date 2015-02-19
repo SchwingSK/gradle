@@ -90,7 +90,7 @@ public class Application implements AlternateUIInteraction {
     }
 
     private void setupUI() {
-        frame = new JFrame("Gradle");
+        frame = new JFrame("Gradle (" + System.getProperty("user.dir") + ")");
 
         JPanel mainPanel = new JPanel(new BorderLayout());
         frame.getContentPane().add(mainPanel);
