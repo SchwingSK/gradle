@@ -30,12 +30,14 @@ import org.gradle.api.tasks.TaskState;
 import org.gradle.cli.CommandLineParser;
 import org.gradle.cli.ParsedCommandLine;
 import org.gradle.execution.MultipleBuildFailures;
-import org.gradle.initialization.*;
+import org.gradle.initialization.BuildLayoutParameters;
+import org.gradle.initialization.DefaultCommandLineConverter;
+import org.gradle.initialization.DefaultGradleLauncherFactory;
+import org.gradle.initialization.GradleLauncher;
 import org.gradle.internal.Factory;
 import org.gradle.internal.exceptions.LocationAwareException;
 import org.gradle.internal.jvm.Jvm;
 import org.gradle.internal.nativeintegration.ProcessEnvironment;
-import org.gradle.internal.nativeintegration.services.NativeServices;
 import org.gradle.internal.service.ServiceRegistry;
 import org.gradle.internal.service.ServiceRegistryBuilder;
 import org.gradle.internal.service.scopes.GlobalScopeServices;
@@ -46,6 +48,8 @@ import org.gradle.logging.LoggingServiceRegistry;
 import org.gradle.logging.ShowStacktrace;
 import org.gradle.process.internal.JavaExecHandleBuilder;
 import org.gradle.test.fixtures.file.TestDirectoryProvider;
+import org.gradle.test.fixtures.file.TestFile;
+import org.gradle.testfixtures.internal.NativeServicesTestFixture;
 import org.gradle.util.DeprecationLogger;
 import org.hamcrest.Matcher;
 import org.hamcrest.Matchers;
@@ -67,10 +71,11 @@ class InProcessGradleExecuter extends AbstractGradleExecuter {
     private static final ServiceRegistry GLOBAL_SERVICES = ServiceRegistryBuilder.builder()
             .displayName("Global services")
             .parent(LoggingServiceRegistry.newCommandLineProcessLogging())
-            .parent(NativeServices.getInstance())
+            .parent(NativeServicesTestFixture.getInstance())
             .provider(new GlobalScopeServices(true))
             .build();
     private final ProcessEnvironment processEnvironment = GLOBAL_SERVICES.get(ProcessEnvironment.class);
+    public static final TestFile COMMON_TMP = new TestFile(new File("build/tmp"));
 
     InProcessGradleExecuter(GradleDistribution distribution, TestDirectoryProvider testDirectoryProvider) {
         super(distribution, testDirectoryProvider);
@@ -170,7 +175,7 @@ class InProcessGradleExecuter extends AbstractGradleExecuter {
         DefaultGradleLauncherFactory factory = GLOBAL_SERVICES.get(DefaultGradleLauncherFactory.class);
         factory.addListener(listener);
         try {
-            GradleLauncher gradleLauncher = factory.newInstance(parameter, new DefaultBuildCancellationToken());
+            GradleLauncher gradleLauncher = factory.newInstance(parameter);
             try {
                 gradleLauncher.addStandardOutputListener(outputListener);
                 gradleLauncher.addStandardErrorListener(errorListener);
@@ -207,6 +212,15 @@ class InProcessGradleExecuter extends AbstractGradleExecuter {
             assertEquals(defaultLocale, Locale.getDefault());
         }
         assertFalse(isRequireGradleHome());
+    }
+
+    @Override
+    protected TestFile getDefaultTmpDir() {
+        // File.createTempFile sets the location of the temp directory to a static variable on the first call.  This prevents future
+        // changes to java.io.tmpdir from having any effect in the same process.  We set this to use a common tmp directory for all
+        // tests running in the same process so that we don't have a situation where one process initializes with a tmp directory
+        // that it then removes, causing an IOException for any future tests that run in the same process and call File.createTempFile.
+        return COMMON_TMP;
     }
 
     private static class BuildListenerImpl implements TaskExecutionGraphListener {

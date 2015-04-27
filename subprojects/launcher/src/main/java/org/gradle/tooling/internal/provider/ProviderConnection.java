@@ -16,11 +16,11 @@
 
 package org.gradle.tooling.internal.provider;
 
+import org.gradle.StartParameter;
 import org.gradle.api.logging.LogLevel;
-import org.gradle.initialization.BuildAction;
-import org.gradle.initialization.BuildCancellationToken;
-import org.gradle.initialization.BuildLayoutParameters;
+import org.gradle.initialization.*;
 import org.gradle.internal.Factory;
+import org.gradle.internal.invocation.BuildAction;
 import org.gradle.internal.service.ServiceRegistry;
 import org.gradle.launcher.cli.converter.LayoutToPropertiesConverter;
 import org.gradle.launcher.cli.converter.PropertiesToDaemonParametersConverter;
@@ -36,9 +36,8 @@ import org.gradle.logging.internal.OutputEventRenderer;
 import org.gradle.process.internal.streams.SafeStreams;
 import org.gradle.tooling.internal.build.DefaultBuildEnvironment;
 import org.gradle.tooling.internal.consumer.versioning.ModelMapping;
-import org.gradle.tooling.internal.protocol.InternalBuildAction;
-import org.gradle.tooling.internal.protocol.InternalBuildEnvironment;
-import org.gradle.tooling.internal.protocol.ModelIdentifier;
+import org.gradle.tooling.internal.protocol.*;
+import org.gradle.tooling.internal.protocol.events.InternalTestProgressEvent;
 import org.gradle.tooling.internal.provider.connection.ProviderConnectionParameters;
 import org.gradle.tooling.internal.provider.connection.ProviderOperationParameters;
 import org.gradle.util.GradleVersion;
@@ -91,30 +90,35 @@ public class ProviderConnection {
                     params.daemonParams.getEffectiveJvmArgs());
         }
 
-        BuildAction<BuildActionResult> action = new BuildModelAction(modelName, tasks != null);
-        return run(action, cancellationToken, providerParameters, params.properties);
+        StartParameter startParameter = new ProviderStartParameterConverter().toStartParameter(providerParameters, params.properties);
+        InternalBuildProgressListener buildProgressListener = providerParameters.getBuildProgressListener(null);
+        boolean listenToTestProgress = buildProgressListener != null && buildProgressListener.getSubscribedOperations().contains(InternalBuildProgressListener.TEST_EXECUTION);
+        BuildEventConsumer buildEventConsumer = listenToTestProgress ? new BuildProgressListenerInvokingBuildEventConsumer(buildProgressListener) : new NoOpBuildEventConsumer();
+        BuildAction action = new BuildModelAction(startParameter, modelName, tasks != null, listenToTestProgress);
+        return run(action, cancellationToken, buildEventConsumer, providerParameters, params);
     }
 
     public Object run(InternalBuildAction<?> clientAction, BuildCancellationToken cancellationToken, ProviderOperationParameters providerParameters) {
         SerializedPayload serializedAction = payloadSerializer.serialize(clientAction);
         Parameters params = initParams(providerParameters);
-        BuildAction<BuildActionResult> action = new ClientProvidedBuildAction(serializedAction);
-        return run(action, cancellationToken, providerParameters, params.properties);
+        StartParameter startParameter = new ProviderStartParameterConverter().toStartParameter(providerParameters, params.properties);
+        NoOpBuildEventConsumer buildEventConsumer = new NoOpBuildEventConsumer();
+        BuildAction action = new ClientProvidedBuildAction(startParameter, serializedAction);
+        return run(action, cancellationToken, buildEventConsumer, providerParameters, params);
     }
 
-    private Object run(BuildAction<? extends BuildActionResult> action, BuildCancellationToken cancellationToken, ProviderOperationParameters operationParameters, Map<String, String> properties) {
-        BuildActionExecuter<ProviderOperationParameters> executer = createExecuter(operationParameters);
-        ConfiguringBuildAction<BuildActionResult> configuringAction = new ConfiguringBuildAction<BuildActionResult>(operationParameters, action, properties);
-        BuildActionResult result = executer.execute(configuringAction, cancellationToken, operationParameters);
+    private Object run(BuildAction action, BuildCancellationToken cancellationToken, BuildEventConsumer buildEventConsumer, ProviderOperationParameters providerParameters, Parameters parameters) {
+        BuildActionExecuter<ProviderOperationParameters> executer = createExecuter(providerParameters, parameters);
+        BuildRequestContext buildRequestContext = new DefaultBuildRequestContext(new DefaultBuildRequestMetaData(providerParameters.getStartTime()), cancellationToken, buildEventConsumer);
+        BuildActionResult result = (BuildActionResult) executer.execute(action, buildRequestContext, providerParameters);
         if (result.failure != null) {
             throw (RuntimeException) payloadSerializer.deserialize(result.failure);
         }
         return payloadSerializer.deserialize(result.result);
     }
 
-    private BuildActionExecuter<ProviderOperationParameters> createExecuter(ProviderOperationParameters operationParameters) {
+    private BuildActionExecuter<ProviderOperationParameters> createExecuter(ProviderOperationParameters operationParameters, Parameters params) {
         LoggingServiceRegistry loggingServices;
-        Parameters params = initParams(operationParameters);
         BuildActionExecuter<BuildActionParameters> executer;
         if (Boolean.TRUE.equals(operationParameters.isEmbedded())) {
             loggingServices = this.loggingServices;
@@ -169,6 +173,22 @@ public class ProviderConnection {
             this.daemonParams = daemonParams;
             this.properties = properties;
             this.gradleUserhome = gradleUserhome;
+        }
+    }
+
+    private static final class BuildProgressListenerInvokingBuildEventConsumer implements BuildEventConsumer {
+
+        private final InternalBuildProgressListener buildProgressListener;
+
+        private BuildProgressListenerInvokingBuildEventConsumer(InternalBuildProgressListener buildProgressListener) {
+            this.buildProgressListener = buildProgressListener;
+        }
+
+        @Override
+        public void dispatch(Object event) {
+            if (event instanceof InternalTestProgressEvent) {
+                this.buildProgressListener.onEvent(event);
+            }
         }
     }
 

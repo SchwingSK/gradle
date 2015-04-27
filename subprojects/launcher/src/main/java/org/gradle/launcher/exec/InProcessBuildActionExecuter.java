@@ -17,59 +17,69 @@
 package org.gradle.launcher.exec;
 
 import org.gradle.BuildResult;
-import org.gradle.StartParameter;
 import org.gradle.api.internal.GradleInternal;
-import org.gradle.initialization.*;
-import org.gradle.internal.concurrent.CompositeStoppable;
-import org.gradle.internal.concurrent.Stoppable;
+import org.gradle.initialization.BuildRequestContext;
+import org.gradle.initialization.DefaultGradleLauncher;
+import org.gradle.initialization.GradleLauncherFactory;
+import org.gradle.internal.invocation.BuildAction;
+import org.gradle.internal.invocation.BuildActionRunner;
+import org.gradle.internal.invocation.BuildController;
 
 public class InProcessBuildActionExecuter implements BuildActionExecuter<BuildActionParameters> {
     private final GradleLauncherFactory gradleLauncherFactory;
+    private final BuildActionRunner buildActionRunner;
 
-    public InProcessBuildActionExecuter(GradleLauncherFactory gradleLauncherFactory) {
+    public InProcessBuildActionExecuter(GradleLauncherFactory gradleLauncherFactory, BuildActionRunner buildActionRunner) {
         this.gradleLauncherFactory = gradleLauncherFactory;
+        this.buildActionRunner = buildActionRunner;
     }
 
-    public <T> T execute(BuildAction<T> action, BuildCancellationToken cancellationToken, BuildActionParameters actionParameters) {
-        DefaultBuildController buildController = new DefaultBuildController(gradleLauncherFactory, cancellationToken, actionParameters);
+    public Object execute(BuildAction action, BuildRequestContext buildRequestContext, BuildActionParameters actionParameters) {
+        DefaultGradleLauncher gradleLauncher = (DefaultGradleLauncher) gradleLauncherFactory.newInstance(action.getStartParameter(), buildRequestContext);
         try {
-            return action.run(buildController);
+            DefaultBuildController buildController = new DefaultBuildController(gradleLauncher);
+            buildActionRunner.run(action, buildController);
+            return buildController.result;
         } finally {
-            buildController.stop();
+            gradleLauncher.stop();
         }
     }
 
-    private static class DefaultBuildController implements BuildController, Stoppable {
-        private enum State { NotStarted, Created, Completed }
-        private State state = State.NotStarted;
-        private final BuildActionParameters actionParameters;
-        private final GradleLauncherFactory gradleLauncherFactory;
-        private final BuildCancellationToken cancellationToken;
-        private DefaultGradleLauncher gradleLauncher;
-        private StartParameter startParameter = new StartParameter();
+    private static class DefaultBuildController implements BuildController {
+        private enum State { Created, Completed }
+        private State state = State.Created;
+        private boolean hasResult;
+        private Object result;
+        private final DefaultGradleLauncher gradleLauncher;
 
-        private DefaultBuildController(GradleLauncherFactory gradleLauncherFactory, BuildCancellationToken cancellationToken, BuildActionParameters actionParameters) {
-            this.gradleLauncherFactory = gradleLauncherFactory;
-            this.cancellationToken = cancellationToken;
-            this.actionParameters = actionParameters;
-        }
-
-        public void setStartParameter(StartParameter startParameter) {
-            if (state != State.NotStarted) {
-                throw new IllegalStateException("Cannot change start parameter after build has started.");
-            }
-            this.startParameter = startParameter;
+        public DefaultBuildController(DefaultGradleLauncher gradleLauncher) {
+            this.gradleLauncher = gradleLauncher;
         }
 
         public DefaultGradleLauncher getLauncher() {
             if (state == State.Completed) {
                 throw new IllegalStateException("Cannot use launcher after build has completed.");
             }
-            if (state == State.NotStarted) {
-                gradleLauncher = (DefaultGradleLauncher) gradleLauncherFactory.newInstance(startParameter, cancellationToken, actionParameters.getBuildRequestMetaData());
-                state = State.Created;
-            }
             return gradleLauncher;
+        }
+
+        @Override
+        public boolean hasResult() {
+            return hasResult;
+        }
+
+        @Override
+        public Object getResult() {
+            if (!hasResult) {
+                throw new IllegalStateException("No result has been provided for this build action.");
+            }
+            return result;
+        }
+
+        @Override
+        public void setResult(Object result) {
+            this.hasResult = true;
+            this.result = result;
         }
 
         public GradleInternal getGradle() {
@@ -90,10 +100,6 @@ public class InProcessBuildActionExecuter implements BuildActionExecuter<BuildAc
                 throw new ReportedException(buildResult.getFailure());
             }
             return (GradleInternal) buildResult.getGradle();
-        }
-
-        public void stop() {
-            CompositeStoppable.stoppable(gradleLauncher).stop();
         }
     }
 }

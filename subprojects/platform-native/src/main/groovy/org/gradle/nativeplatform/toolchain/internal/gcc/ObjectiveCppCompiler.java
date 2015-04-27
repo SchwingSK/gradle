@@ -24,8 +24,8 @@ import org.gradle.nativeplatform.toolchain.internal.compilespec.ObjectiveCppComp
 
 class ObjectiveCppCompiler extends GccCompatibleNativeCompiler<ObjectiveCppCompileSpec> {
 
-    ObjectiveCppCompiler(BuildOperationProcessor buildOperationProcessor, CommandLineToolInvocationWorker commandLineToolInvocationWorker, CommandLineToolContext invocationContext, String objectFileSuffix, boolean useCommandFile) {
-        super(buildOperationProcessor, commandLineToolInvocationWorker, invocationContext, new ObjectiveCppCompileArgsTransformer(), Transformers.<ObjectiveCppCompileSpec>noOpTransformer(), objectFileSuffix, useCommandFile);
+    ObjectiveCppCompiler(BuildOperationProcessor buildOperationProcessor, CommandLineToolInvocationWorker commandLineToolInvocationWorker, CommandLineToolContext invocationContext, String objectFileExtension, boolean useCommandFile) {
+        super(buildOperationProcessor, commandLineToolInvocationWorker, invocationContext, new ObjectiveCppCompileArgsTransformer(), Transformers.<ObjectiveCppCompileSpec>noOpTransformer(), objectFileExtension, useCommandFile);
     }
 
     private static class ObjectiveCppCompileArgsTransformer extends GccCompilerArgsTransformer<ObjectiveCppCompileSpec> {
@@ -33,5 +33,4 @@ class ObjectiveCppCompiler extends GccCompatibleNativeCompiler<ObjectiveCppCompi
             return "objective-c++";
         }
     }
-
 }

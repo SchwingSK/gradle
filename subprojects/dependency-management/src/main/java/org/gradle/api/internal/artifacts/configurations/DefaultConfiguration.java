@@ -26,13 +26,15 @@ import org.gradle.api.file.FileCollection;
 import org.gradle.api.internal.CompositeDomainObjectSet;
 import org.gradle.api.internal.DefaultDomainObjectSet;
 import org.gradle.api.internal.artifacts.*;
+import org.gradle.api.internal.artifacts.configurations.MutationValidator.MutationType;
 import org.gradle.api.internal.file.AbstractFileCollection;
 import org.gradle.api.specs.Spec;
 import org.gradle.api.specs.Specs;
 import org.gradle.api.tasks.TaskDependency;
+import org.gradle.initialization.ProjectAccessListener;
 import org.gradle.listener.ClosureBackedMethodInvocationDispatch;
-import org.gradle.listener.ListenerBroadcast;
-import org.gradle.listener.ListenerManager;
+import org.gradle.internal.event.ListenerBroadcast;
+import org.gradle.internal.event.ListenerManager;
 import org.gradle.util.CollectionUtils;
 import org.gradle.util.ConfigureUtil;
 import org.gradle.util.DeprecationLogger;
@@ -65,6 +67,7 @@ public class DefaultConfiguration extends AbstractFileCollection implements Conf
     private final ConfigurationResolvableDependencies resolvableDependencies = new ConfigurationResolvableDependencies();
     private final ListenerBroadcast<DependencyResolutionListener> resolutionListenerBroadcast;
     private Set<ExcludeRule> excludeRules = new LinkedHashSet<ExcludeRule>();
+    private final ProjectAccessListener projectAccessListener;
 
     // This lock only protects the following fields
     private final Object lock = new Object();
@@ -76,7 +79,8 @@ public class DefaultConfiguration extends AbstractFileCollection implements Conf
     public DefaultConfiguration(String path, String name, ConfigurationsProvider configurationsProvider,
                                 ConfigurationResolver resolver, ListenerManager listenerManager,
                                 DependencyMetaDataProvider metaDataProvider,
-                                ResolutionStrategyInternal resolutionStrategy) {
+                                ResolutionStrategyInternal resolutionStrategy,
+                                ProjectAccessListener projectAccessListener) {
         this.path = path;
         this.name = name;
         this.configurationsProvider = configurationsProvider;
@@ -84,10 +88,16 @@ public class DefaultConfiguration extends AbstractFileCollection implements Conf
         this.listenerManager = listenerManager;
         this.metaDataProvider = metaDataProvider;
         this.resolutionStrategy = resolutionStrategy;
+        this.projectAccessListener = projectAccessListener;
 
         resolutionListenerBroadcast = listenerManager.createAnonymousBroadcaster(DependencyResolutionListener.class);
 
-        VetoContainerChangeAction veto = new VetoContainerChangeAction();
+        RunnableMutationValidator veto = new RunnableMutationValidator(MutationType.CONTENT) {
+            @Override
+            public void validateMutation(MutationType type) {
+                DefaultConfiguration.this.validateMutation(type);
+            }
+        };
 
         DefaultDomainObjectSet<Dependency> ownDependencies = new DefaultDomainObjectSet<Dependency>(Dependency.class);
         ownDependencies.beforeChange(veto);
@@ -97,10 +107,12 @@ public class DefaultConfiguration extends AbstractFileCollection implements Conf
         allDependencies = new DefaultDependencySet(String.format("%s all dependencies", getDisplayName()), inheritedDependencies);
 
         DefaultDomainObjectSet<PublishArtifact> ownArtifacts = new DefaultDomainObjectSet<PublishArtifact>(PublishArtifact.class);
-        ownArtifacts.beforeChange(new VetoContainerChangeAction());
+        ownArtifacts.beforeChange(veto);
         artifacts = new DefaultPublishArtifactSet(String.format("%s artifacts", getDisplayName()), ownArtifacts);
         inheritedArtifacts = CompositeDomainObjectSet.create(PublishArtifact.class, ownArtifacts);
         allArtifacts = new DefaultPublishArtifactSet(String.format("%s all artifacts", getDisplayName()), inheritedArtifacts);
+
+        resolutionStrategy.beforeChange(veto);
     }
 
     public String getName() {
@@ -122,7 +134,7 @@ public class DefaultConfiguration extends AbstractFileCollection implements Conf
     }
 
     public Configuration setVisible(boolean visible) {
-        validateMutation();
+        validateMutation(MutationType.CONTENT);
         this.visibility = visible ? Visibility.PUBLIC : Visibility.PRIVATE;
         return this;
     }
@@ -132,7 +144,7 @@ public class DefaultConfiguration extends AbstractFileCollection implements Conf
     }
 
     public Configuration setExtendsFrom(Iterable<Configuration> extendsFrom) {
-        validateMutation();
+        validateMutation(MutationType.CONTENT);
         for (Configuration configuration : this.extendsFrom) {
             inheritedArtifacts.removeCollection(configuration.getAllArtifacts());
             inheritedDependencies.removeCollection(configuration.getAllDependencies());
@@ -145,7 +157,7 @@ public class DefaultConfiguration extends AbstractFileCollection implements Conf
     }
 
     public Configuration extendsFrom(Configuration... extendsFrom) {
-        validateMutation();
+        validateMutation(MutationType.CONTENT);
         for (Configuration configuration : extendsFrom) {
             if (configuration.getHierarchy().contains(this)) {
                 throw new InvalidUserDataException(String.format(
@@ -164,7 +176,7 @@ public class DefaultConfiguration extends AbstractFileCollection implements Conf
     }
 
     public Configuration setTransitive(boolean transitive) {
-        validateMutation();
+        validateMutation(MutationType.CONTENT);
         this.transitive = transitive;
         return this;
     }
@@ -271,7 +283,7 @@ public class DefaultConfiguration extends AbstractFileCollection implements Conf
      */
     public TaskDependency getTaskDependencyFromProjectDependency(final boolean useDependedOn, final String taskName) {
         if (useDependedOn) {
-            return new TasksFromProjectDependencies(taskName, getAllDependencies());
+            return new TasksFromProjectDependencies(taskName, getAllDependencies(), projectAccessListener);
         } else {
             return new TasksFromDependentProjects(taskName, getName());
         }
@@ -298,12 +310,12 @@ public class DefaultConfiguration extends AbstractFileCollection implements Conf
     }
 
     public void setExcludeRules(Set<ExcludeRule> excludeRules) {
-        validateMutation();
+        validateMutation(MutationType.CONTENT);
         this.excludeRules = excludeRules;
     }
 
     public DefaultConfiguration exclude(Map<String, String> excludeRuleArgs) {
-        validateMutation();
+        validateMutation(MutationType.CONTENT);
         excludeRules.add(ExcludeRuleNotationConverter.parser().parseNotation(excludeRuleArgs)); //TODO SF try using ExcludeRuleContainer
         return this;
     }
@@ -313,7 +325,11 @@ public class DefaultConfiguration extends AbstractFileCollection implements Conf
     }
 
     public String getDisplayName() {
-        return String.format("configuration '%s'", path);
+        StringBuilder builder = new StringBuilder();
+        builder.append("configuration '");
+        builder.append(path);
+        builder.append("'");
+        return builder.toString();
     }
 
     public ResolvableDependencies getIncoming() {
@@ -339,7 +355,7 @@ public class DefaultConfiguration extends AbstractFileCollection implements Conf
     private DefaultConfiguration createCopy(Set<Dependency> dependencies, boolean recursive) {
         DetachedConfigurationsProvider configurationsProvider = new DetachedConfigurationsProvider();
         DefaultConfiguration copiedConfiguration = new DefaultConfiguration(path + "Copy", name + "Copy",
-                configurationsProvider, resolver, listenerManager, metaDataProvider, resolutionStrategy.copy());
+                configurationsProvider, resolver, listenerManager, metaDataProvider, resolutionStrategy.copy(), projectAccessListener);
         configurationsProvider.setTheOnlyConfiguration(copiedConfiguration);
         // state, cachedResolvedConfiguration, and extendsFrom intentionally not copied - must re-resolve copy
         // copying extendsFrom could mess up dependencies when copy was re-resolved
@@ -397,11 +413,17 @@ public class DefaultConfiguration extends AbstractFileCollection implements Conf
         return this;
     }
 
-    private void validateMutation() {
+    private void validateMutation(MutationType type) {
+        boolean userAlreadyNagged = false;
         if (getState() != State.UNRESOLVED) {
-            throw new InvalidUserDataException(String.format("Cannot change %s after it has been resolved.", getDisplayName()));
+            if (type == MutationType.CONTENT) {
+                throw new InvalidUserDataException(String.format("Cannot change %s after it has been resolved.", getDisplayName()));
+            } else {
+                userAlreadyNagged = true;
+                DeprecationLogger.nagUserOfDeprecatedBehaviour(String.format("Attempting to change %s after it has been resolved", getDisplayName()));
+            }
         }
-        if (includedInResult) {
+        if (!userAlreadyNagged && includedInResult) {
             DeprecationLogger.nagUserOfDeprecatedBehaviour(String.format("Attempting to change %s after it has been included in dependency resolution", getDisplayName()));
         }
     }
@@ -498,12 +520,6 @@ public class DefaultConfiguration extends AbstractFileCollection implements Conf
         }
 
         return reply.toString();
-    }
-
-    private class VetoContainerChangeAction implements Runnable {
-        public void run() {
-            validateMutation();
-        }
     }
 
     private class ConfigurationResolvableDependencies implements ResolvableDependencies {

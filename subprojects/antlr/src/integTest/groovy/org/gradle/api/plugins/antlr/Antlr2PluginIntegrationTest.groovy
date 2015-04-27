@@ -28,10 +28,8 @@ class Antlr2PluginIntegrationTest extends AbstractAntlrIntegrationTest {
         expect:
         succeeds("generateGrammarSource")
         assertAntlrVersion(2)
-        file("build/generated-src/antlr/main/TestGrammar.java").exists()
-        file("build/generated-src/antlr/main/TestGrammar.smap").exists()
-        file("build/generated-src/antlr/main/TestGrammarTokenTypes.java").exists()
-        file("build/generated-src/antlr/main/TestGrammarTokenTypes.txt").exists()
+        assertGrammarSourceGenerated("TestGrammar")
+        assertGrammarSourceGenerated("AnotherGrammar")
         succeeds("build")
     }
 
@@ -68,17 +66,14 @@ Execution failed for task ':generateGrammarSource'.
         expect:
         succeeds("generateGrammarSource")
         assertAntlrVersion(2)
-        file("build/generated-src/antlr/main/TestGrammar.java").exists()
-        file("build/generated-src/antlr/main/TestGrammar.smap").exists()
-        file("build/generated-src/antlr/main/TestGrammarTokenTypes.java").exists()
-        file("build/generated-src/antlr/main/TestGrammarTokenTypes.txt").exists()
+        assertGrammarSourceGenerated("TestGrammar")
         succeeds("build")
     }
 
     private goodGrammar() {
         file("src/main/antlr/TestGrammar.g") << """class TestGrammar extends Parser;
             options {
-                buildAST = true; 
+                buildAST = true;
             }
 
             expr:   mexpr (PLUS^ mexpr)* SEMI!
@@ -90,6 +85,23 @@ Execution failed for task ':generateGrammarSource'.
 
             atom:   INT
                 ;"""
+
+        file("src/main/antlr/AnotherGrammar.g") << """class AnotherGrammar extends Parser;
+            options {
+                buildAST = true;
+                importVocab = TestGrammar;
+            }
+
+            expr:   mexpr (PLUS^ mexpr)* SEMI!
+                ;
+
+            mexpr
+                :   atom (STAR^ atom)*
+                ;
+
+            atom:   INT
+                ;"""
+
     }
 
     private goodProgram() {
@@ -127,5 +139,12 @@ Execution failed for task ':generateGrammarSource'.
 
             atom:   INT
                 ;"""
+    }
+
+    private void assertGrammarSourceGenerated(String grammarName) {
+        assert file("build/generated-src/antlr/main/${grammarName}.java").exists()
+        assert file("build/generated-src/antlr/main/${grammarName}.smap").exists()
+        assert file("build/generated-src/antlr/main/${grammarName}TokenTypes.java").exists()
+        assert file("build/generated-src/antlr/main/${grammarName}TokenTypes.txt").exists()
     }
 }

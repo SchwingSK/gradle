@@ -18,24 +18,27 @@ package org.gradle.api.internal.tasks.testing.processors;
 
 import org.gradle.api.internal.tasks.testing.*;
 import org.gradle.api.internal.tasks.testing.results.AttachParentTestResultProcessor;
-import org.gradle.api.internal.tasks.testing.TestClassProcessor;
 import org.gradle.internal.TimeProvider;
 
 public class TestMainAction implements Runnable {
+    private final Runnable detector;
     private final TestClassProcessor processor;
     private final TestResultProcessor resultProcessor;
     private final TimeProvider timeProvider;
-    private final Runnable detector;
+    private final String rootTestSuiteId;
+    private final String displayName;
 
-    public TestMainAction(Runnable detector, TestClassProcessor processor, TestResultProcessor resultProcessor, TimeProvider timeProvider) {
+    public TestMainAction(Runnable detector, TestClassProcessor processor, TestResultProcessor resultProcessor, TimeProvider timeProvider, String rootTestSuiteId, String displayName) {
         this.detector = detector;
         this.processor = processor;
         this.resultProcessor = new AttachParentTestResultProcessor(resultProcessor);
         this.timeProvider = timeProvider;
+        this.rootTestSuiteId = rootTestSuiteId;
+        this.displayName = displayName;
     }
 
     public void run() {
-        RootTestSuiteDescriptor suite = new RootTestSuiteDescriptor();
+        RootTestSuiteDescriptor suite = new RootTestSuiteDescriptor(rootTestSuiteId, displayName);
         resultProcessor.started(suite, new TestStartEvent(timeProvider.getCurrentTime()));
         try {
             processor.startProcessing(resultProcessor);
@@ -50,13 +53,13 @@ public class TestMainAction implements Runnable {
     }
 
     private static class RootTestSuiteDescriptor extends DefaultTestSuiteDescriptor {
-        public RootTestSuiteDescriptor() {
-            super("root", "Test Run");
+        public RootTestSuiteDescriptor(Object id, String name) {
+            super(id, name);
         }
 
         @Override
         public String toString() {
-            return "tests";
+            return getName();
         }
     }
 }

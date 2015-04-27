@@ -31,8 +31,8 @@ import org.gradle.api.internal.artifacts.publish.DefaultPublishArtifact;
 import org.gradle.api.specs.Spec;
 import org.gradle.api.specs.Specs;
 import org.gradle.api.tasks.TaskDependency;
-import org.gradle.listener.ListenerBroadcast;
-import org.gradle.listener.ListenerManager;
+import org.gradle.internal.event.ListenerBroadcast;
+import org.gradle.internal.event.ListenerManager;
 import org.gradle.util.*;
 import org.jmock.Expectations;
 import org.jmock.integration.junit4.JMock;
@@ -358,12 +358,12 @@ public class DefaultConfigurationTest {
 
     private DefaultConfiguration createNamedConfiguration(String confName) {
         return new DefaultConfiguration(confName, confName, configurationContainer,
-                dependencyResolver, listenerManager, metaDataProvider, new DefaultResolutionStrategy());
+                dependencyResolver, listenerManager, metaDataProvider, new DefaultResolutionStrategy(), null);
     }
     
     private DefaultConfiguration createNamedConfiguration(String path, String confName) {
         return new DefaultConfiguration(path, confName, configurationContainer,
-                dependencyResolver, listenerManager, metaDataProvider, new DefaultResolutionStrategy());
+                dependencyResolver, listenerManager, metaDataProvider, new DefaultResolutionStrategy(), null);
     }
 
     @SuppressWarnings("unchecked")

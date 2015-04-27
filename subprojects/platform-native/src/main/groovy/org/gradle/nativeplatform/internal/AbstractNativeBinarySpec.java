@@ -50,7 +50,6 @@ public abstract class AbstractNativeBinarySpec extends BaseBinarySpec implements
     private NativePlatform targetPlatform;
     private BuildType buildType;
     private NativeDependencyResolver resolver;
-    private BinaryBuildAbility buildAbility;
 
     public String getDisplayName() {
         return namingScheme.getDescription();

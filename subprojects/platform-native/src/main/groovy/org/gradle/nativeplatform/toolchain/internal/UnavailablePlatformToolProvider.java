@@ -47,8 +47,14 @@ public class UnavailablePlatformToolProvider implements PlatformToolProvider {
         return new GradleException(formatter.toString());
     }
 
+    @Override
     public String getObjectFileExtension() {
-        throw failure();
+        return null;
+    }
+
+    @Override
+    public String getPCHFileExtension() {
+        return null;
     }
 
     public String getExecutableName(String executablePath) {

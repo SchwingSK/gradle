@@ -16,6 +16,14 @@
 package org.gradle.java.compile
 
 abstract class JavaCompilerIntegrationSpec extends BasicJavaCompilerIntegrationSpec {
+    def setup() {
+        buildFile << """
+        tasks.withType(JavaCompile) {
+            options.compilerArgs << '-Xlint:all' << '-Werror'
+        }
+"""
+    }
+
     def compileWithLongClasspath() {
         given:
         goodCode()
@@ -23,11 +31,21 @@ abstract class JavaCompilerIntegrationSpec extends BasicJavaCompilerIntegrationS
         and:
         buildFile << '''
             dependencies {
-                compile files((1..999).collect { "$projectDir/lib/library${it}.jar" })
+                file("$projectDir/lib/").mkdirs()
+                compile files((1..999).collect {
+                    createJarFile("$projectDir/lib/library${it}.jar")
+                })
+            }
+
+            def createJarFile(String libraryPath) {
+                new java.util.jar.JarOutputStream(new FileOutputStream(file(libraryPath)), new java.util.jar.Manifest()).withStream {
+                    libraryPath
+                }
             }
         '''
 
         expect:
+
         succeeds("compileJava")
         output.contains(logStatement())
         !errorOutput

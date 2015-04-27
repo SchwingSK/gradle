@@ -30,10 +30,9 @@ import org.gradle.internal.resource.transport.ResourceConnectorRepositoryTranspo
 import org.gradle.internal.resource.transport.file.FileTransport;
 import org.gradle.logging.ProgressLoggerFactory;
 import org.gradle.util.BuildCommencedTimeProvider;
-import org.gradle.util.WrapUtil;
 
 import java.util.Collection;
-import java.util.HashSet;
+import java.util.Collections;
 import java.util.List;
 import java.util.Set;
 
@@ -67,16 +66,23 @@ public class RepositoryTransportFactory {
         registeredProtocols.add(resourceConnectorFactory);
     }
 
-    public RepositoryTransport createTransport(String scheme, String name, Credentials credentials) {
-        Set<String> schemes = new HashSet<String>();
-        schemes.add(scheme);
-        return createTransport(schemes, name, credentials);
+    public Set<String> getRegisteredProtocols() {
+        Set<String> validSchemes = Sets.newLinkedHashSet();
+        validSchemes.add("file");
+        for (ResourceConnectorFactory registeredProtocol : registeredProtocols) {
+            validSchemes.addAll(registeredProtocol.getSupportedProtocols());
+        }
+        return validSchemes;
     }
 
+    public RepositoryTransport createTransport(String scheme, String name, Credentials credentials) {
+        return createTransport(Collections.singleton(scheme), name, credentials);
+    }
+
+    /**
+     * TODO René: why do we have two different PasswordCredentials
+     * */
     private org.gradle.internal.resource.PasswordCredentials convertPasswordCredentials(Credentials credentials) {
-        if(credentials == null) {
-            return null;
-        }
         if (!(credentials instanceof PasswordCredentials)) {
             throw new IllegalArgumentException(String.format("Credentials must be an instance of: %s", PasswordCredentials.class.getCanonicalName()));
         }
@@ -88,20 +94,16 @@ public class RepositoryTransportFactory {
         validateSchemes(schemes);
 
         // File resources are handled slightly differently at present.
-        if (WrapUtil.toSet("file").containsAll(schemes)) {
+        if (Collections.singleton("file").containsAll(schemes)) {
             return new FileTransport(name);
         }
         ResourceConnectorSpecification connectionDetails = new DefaultResourceConnectorSpecification(credentials);
-        ExternalResourceConnector resourceConnector = findRegisteredProtocol(schemes).createResourceConnector(connectionDetails);
+        ExternalResourceConnector resourceConnector = findConnectorFactory(schemes).createResourceConnector(connectionDetails);
         return new ResourceConnectorRepositoryTransport(name, progressLoggerFactory, temporaryFileProvider, cachedExternalResourceIndex, timeProvider, cacheLockingManager, resourceConnector);
     }
 
     private void validateSchemes(Set<String> schemes) {
-        Set<String> validSchemes = Sets.newLinkedHashSet();
-        validSchemes.add("file");
-        for (ResourceConnectorFactory registeredProtocol : registeredProtocols) {
-            validSchemes.addAll(registeredProtocol.getSupportedProtocols());
-        }
+        Set<String> validSchemes = getRegisteredProtocols();
         for (String scheme : schemes) {
             if (!validSchemes.contains(scheme)) {
                 throw new InvalidUserDataException(String.format("Not a supported repository protocol '%s': valid protocols are %s", scheme, validSchemes));
@@ -109,7 +111,7 @@ public class RepositoryTransportFactory {
         }
     }
 
-    private ResourceConnectorFactory findRegisteredProtocol(Set<String> schemes) {
+    private ResourceConnectorFactory findConnectorFactory(Set<String> schemes) {
         for (ResourceConnectorFactory protocolRegistration : registeredProtocols) {
             if (protocolRegistration.getSupportedProtocols().containsAll(schemes)) {
                 return protocolRegistration;
@@ -127,11 +129,17 @@ public class RepositoryTransportFactory {
 
         @Override
         public <T> T getCredentials(Class<T> type) {
+            if(credentials == null){
+                return null;
+            }
             if (org.gradle.internal.resource.PasswordCredentials.class.isAssignableFrom(type)) {
                 return type.cast(convertPasswordCredentials(credentials));
             }
-            return type.cast(credentials);
+            if (type.isAssignableFrom(credentials.getClass())) {
+                return type.cast(credentials);
+            } else {
+                throw new IllegalArgumentException(String.format("Credentials must be an instance of '%s'.", type.getCanonicalName()));
+            }
         }
     }
-
 }

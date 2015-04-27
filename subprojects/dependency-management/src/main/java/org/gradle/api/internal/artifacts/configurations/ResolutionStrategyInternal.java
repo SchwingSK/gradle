@@ -17,11 +17,13 @@ package org.gradle.api.internal.artifacts.configurations;
 
 import org.gradle.api.Action;
 import org.gradle.api.artifacts.ConflictResolution;
+import org.gradle.api.artifacts.DependencySubstitution;
 import org.gradle.api.artifacts.ResolutionStrategy;
 import org.gradle.api.artifacts.cache.ResolutionRules;
-import org.gradle.api.internal.artifacts.DependencyResolveDetailsInternal;
+import org.gradle.api.artifacts.component.ComponentSelector;
 import org.gradle.api.internal.artifacts.ComponentSelectionRulesInternal;
 import org.gradle.api.internal.artifacts.configurations.dynamicversion.CachePolicy;
+import org.gradle.api.internal.artifacts.ivyservice.resolutionstrategy.DependencySubstitutionsInternal;
 
 public interface ResolutionStrategyInternal extends ResolutionStrategy {
 
@@ -46,17 +48,24 @@ public interface ResolutionStrategyInternal extends ResolutionStrategy {
     ResolutionRules getResolutionRules();
 
     /**
-     * @return the dependency resolve rule (may aggregate multiple rules)
+     * @return the dependency substitution rule (may aggregate multiple rules)
      */
-    Action<DependencyResolveDetailsInternal> getDependencyResolveRule();
+    Action<DependencySubstitution<ComponentSelector>> getDependencySubstitutionRule();
 
     /**
      * @return the version selection rules object
      */
     ComponentSelectionRulesInternal getComponentSelection();
 
+    DependencySubstitutionsInternal getDependencySubstitution();
+
     /**
      * @return copy of this resolution strategy. See the contract of {@link org.gradle.api.artifacts.Configuration#copy()}.
      */
     ResolutionStrategyInternal copy();
+
+    /**
+     * Sets the validator to invoke before mutation. Any exception thrown by the action will veto the mutation.
+     */
+    void beforeChange(MutationValidator action);
 }

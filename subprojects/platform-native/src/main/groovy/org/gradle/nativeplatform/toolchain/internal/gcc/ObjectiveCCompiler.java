@@ -24,8 +24,8 @@ import org.gradle.nativeplatform.toolchain.internal.compilespec.ObjectiveCCompil
 
 class ObjectiveCCompiler extends GccCompatibleNativeCompiler<ObjectiveCCompileSpec> {
 
-    ObjectiveCCompiler(BuildOperationProcessor buildOperationProcessor, CommandLineToolInvocationWorker commandLineToolInvocationWorker, CommandLineToolContext invocationContext, String objectFileSuffix, boolean useCommandFile) {
-        super(buildOperationProcessor, commandLineToolInvocationWorker, invocationContext, new ObjectiveCCompileArgsTransformer(), Transformers.<ObjectiveCCompileSpec>noOpTransformer(), objectFileSuffix, useCommandFile);
+    ObjectiveCCompiler(BuildOperationProcessor buildOperationProcessor, CommandLineToolInvocationWorker commandLineToolInvocationWorker, CommandLineToolContext invocationContext, String objectFileExtension, boolean useCommandFile) {
+        super(buildOperationProcessor, commandLineToolInvocationWorker, invocationContext, new ObjectiveCCompileArgsTransformer(), Transformers.<ObjectiveCCompileSpec>noOpTransformer(), objectFileExtension, useCommandFile);
     }
 
     private static class ObjectiveCCompileArgsTransformer extends GccCompilerArgsTransformer<ObjectiveCCompileSpec> {
@@ -33,5 +33,4 @@ class ObjectiveCCompiler extends GccCompatibleNativeCompiler<ObjectiveCCompileSp
             return "objective-c";
         }
     }
-
 }

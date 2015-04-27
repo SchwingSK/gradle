@@ -20,7 +20,8 @@ import com.google.common.collect.ImmutableList
 import groovy.transform.CompileStatic
 import groovy.transform.EqualsAndHashCode
 import org.gradle.integtests.fixtures.executer.GradleDistribution
-import org.gradle.model.persist.ReusingModelRegistryStore
+import org.gradle.launcher.daemon.configuration.GradleProperties
+import org.gradle.model.internal.persist.ReusingModelRegistryStore
 
 @CompileStatic
 @EqualsAndHashCode
@@ -50,6 +51,10 @@ class GradleInvocationSpec {
 
     GradleInvocationSpec withAdditionalGradleOpts(List<String> additionalGradleOpts) {
         return new GradleInvocationSpec(gradleDistribution, workingDirectory, tasksToRun, args, ImmutableList.builder().addAll(gradleOpts).addAll(additionalGradleOpts).build(), useDaemon, useToolingApi)
+    }
+
+    GradleInvocationSpec withAdditionalArgs(List<String> additionalArgs) {
+        return new GradleInvocationSpec(gradleDistribution, workingDirectory, tasksToRun, ImmutableList.builder().addAll(args).addAll(additionalArgs).build(), gradleOpts, useDaemon, useToolingApi)
     }
 
     static class Builder {
@@ -105,7 +110,7 @@ class GradleInvocationSpec {
         }
 
         Builder enableModelReuse() {
-            gradleOpts("-D$ReusingModelRegistryStore.TOGGLE=true", "-Dorg.gradle.daemon.performance.expire-at=0")
+            gradleOpts("-D$ReusingModelRegistryStore.TOGGLE=true")
         }
 
         Builder disableDaemonLogging() {
@@ -114,6 +119,10 @@ class GradleInvocationSpec {
 
         Builder enableTransformedModelDsl() {
             gradleOpts("-Dorg.gradle.model.dsl=true")
+        }
+
+        Builder disableParallelWorkers() {
+            gradleOpts("-D${GradleProperties.WORKERS_PROPERTY}=1")
         }
 
         GradleInvocationSpec build() {

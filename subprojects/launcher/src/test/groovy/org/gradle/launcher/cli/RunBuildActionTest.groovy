@@ -16,12 +16,13 @@
 package org.gradle.launcher.cli
 
 import org.gradle.StartParameter
-import org.gradle.initialization.BuildCancellationToken
-import org.gradle.initialization.BuildClientMetaData
-import org.gradle.launcher.exec.BuildActionParameters
-import org.gradle.launcher.exec.BuildActionExecuter
-import spock.lang.Specification
 import org.gradle.api.logging.LogLevel
+import org.gradle.initialization.BuildClientMetaData
+import org.gradle.initialization.BuildRequestContext
+import org.gradle.initialization.FixedBuildCancellationToken
+import org.gradle.launcher.exec.BuildActionExecuter
+import org.gradle.launcher.exec.BuildActionParameters
+import spock.lang.Specification
 
 class RunBuildActionTest extends Specification {
     final BuildActionExecuter<BuildActionParameters> client = Mock()
@@ -30,8 +31,8 @@ class RunBuildActionTest extends Specification {
     final File currentDir = new File('current-dir')
     final long startTime = 90
     final Map<String, String> systemProperties = [key: 'value']
-    final Map<String, String> envVariables = [key2: 'value2']
-    final RunBuildAction action = new RunBuildAction(client, startParameter, currentDir, clientMetaData, startTime, systemProperties, envVariables)
+    final BuildActionParameters parameters = Mock()
+    final RunBuildAction action = new RunBuildAction(client, startParameter, clientMetaData, startTime, parameters)
 
     def runsBuildUsingDaemon() {
         when:
@@ -39,15 +40,12 @@ class RunBuildActionTest extends Specification {
 
         then:
         startParameter.logLevel >> LogLevel.ERROR
-        1 * client.execute({!null}, {!null}, {!null}) >> { args ->
-            ExecuteBuildAction action = args[0]
+        1 * client.execute({!null}, {!null}, {!null}) >> { ExecuteBuildAction action, BuildRequestContext context, BuildActionParameters build ->
             assert action.startParameter == startParameter
-            BuildCancellationToken cancel = args[1]
-            cancel != null
-            BuildActionParameters build = args[2]
-            assert build.clientMetaData == clientMetaData
-            assert build.startTime == startTime
-            assert build.systemProperties == systemProperties
+            assert context.cancellationToken instanceof FixedBuildCancellationToken
+            assert context.client == clientMetaData
+            assert context.buildTimeClock.startTime == startTime
+            assert build == parameters
         }
         0 * _._
     }

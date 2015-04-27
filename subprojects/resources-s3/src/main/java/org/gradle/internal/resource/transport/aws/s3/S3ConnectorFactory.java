@@ -16,7 +16,7 @@
 
 package org.gradle.internal.resource.transport.aws.s3;
 
-import org.gradle.api.artifacts.repositories.AwsCredentials;
+import org.gradle.api.credentials.AwsCredentials;
 import org.gradle.internal.resource.connector.ResourceConnectorFactory;
 import org.gradle.internal.resource.connector.ResourceConnectorSpecification;
 import org.gradle.internal.resource.transfer.ExternalResourceConnector;
@@ -32,6 +32,10 @@ public class S3ConnectorFactory implements ResourceConnectorFactory {
 
     @Override
     public ExternalResourceConnector createResourceConnector(ResourceConnectorSpecification connectionDetails) {
-        return new S3ResourceConnector(new S3Client(connectionDetails.getCredentials(AwsCredentials.class), new S3ConnectionProperties()));
+        AwsCredentials credentials = connectionDetails.getCredentials(AwsCredentials.class);
+        if(credentials == null) {
+            throw new IllegalArgumentException("AwsCredentials must be set for S3 backed repository.");
+        }
+        return new S3ResourceConnector(new S3Client(credentials, new S3ConnectionProperties()));
     }
 }

@@ -16,6 +16,7 @@
 
 package org.gradle.internal.operations;
 
+import org.gradle.api.Nullable;
 import org.gradle.internal.concurrent.ExecutorFactory;
 import org.gradle.internal.concurrent.Stoppable;
 import org.gradle.internal.concurrent.StoppableExecutor;
@@ -24,25 +25,12 @@ public class DefaultBuildOperationProcessor implements BuildOperationProcessor, 
 
     private final StoppableExecutor fixedSizePool;
 
-    public DefaultBuildOperationProcessor(ExecutorFactory executorFactory, int maxThreads) {
-        final int actualThreads = actualThreadCount(maxThreads);
-        this.fixedSizePool = executorFactory.create("build operations", actualThreads);
+    public DefaultBuildOperationProcessor(ExecutorFactory executorFactory, int maxWorkerCount) {
+        this.fixedSizePool = executorFactory.create("build operations", maxWorkerCount);
     }
 
-    int actualThreadCount(int maxThreads) {
-        final int actualThreads;
-        if (maxThreads < 0) {
-            actualThreads = Runtime.getRuntime().availableProcessors();
-        } else if (maxThreads == 0) {
-            actualThreads = 1;
-        } else {
-            actualThreads = maxThreads;
-        }
-        return actualThreads;
-    }
-
-    public <T extends BuildOperation> OperationQueue<T> newQueue(OperationWorker<T> worker) {
-        return new DefaultOperationQueue<T>(fixedSizePool, worker);
+    public <T extends BuildOperation> BuildOperationQueue<T> newQueue(BuildOperationWorker<T> worker, @Nullable String logLocation) {
+        return new DefaultBuildOperationQueue<T>(fixedSizePool, worker, logLocation);
     }
 
     public void stop() {

@@ -15,7 +15,6 @@
  */
 package org.gradle.api.artifacts.repositories;
 
-import groovy.lang.Closure;
 import org.gradle.api.Action;
 import org.gradle.api.Incubating;
 import org.gradle.api.credentials.Credentials;
@@ -26,24 +25,37 @@ import org.gradle.api.credentials.Credentials;
 public interface AuthenticationSupported {
 
     /**
-     * Returns the standard username and password credentials used to authenticate to this repository.
-     * @return The PasswordCredentials
+     * Returns the username and password credentials used to authenticate to this repository.
+     * <p>
+     * If no credentials have been assigned to this repository, an empty set of username and password credentials is assigned to this repository and returned.
+     * <p>
+     * If you are using a different type of credentials than {@link PasswordCredentials}, please use {@link #getCredentials(Class)} to obtain the credentials.
+     *
+     * @return the credentials
+     * @throws IllegalStateException if the credential type was previously set with {@link #credentials(Class, Action)} where the type was not {@link PasswordCredentials}
      */
     PasswordCredentials getCredentials();
 
     /**
-     * Returns the alternative credentials used to authenticate with this repository.
-     * @return The Credentials
+     * Returns the credentials of the specified type used to authenticate with this repository.
+     * <p>
+     * If no credentials have been assigned to this repository, an empty set of credentials of the specified type is assigned to this repository and returned.
+     *
+     * @param credentialsType type of the credential
+     * @return The credentials
+     * @throws IllegalArgumentException when the credentials assigned to this repository are not assignable to the specified type
      */
     @Incubating
-    Credentials getAlternativeCredentials();
+    public <T extends Credentials> T getCredentials(Class<T> credentialsType);
 
     /**
-     * Configures the {@link PasswordCredentials} for this repository using the supplied Closure.
-     *
+     * Configures the username and password credentials for this repository using the supplied action.
+     * <p>
+     * If no credentials have been assigned to this repository, an empty set of username and password credentials is assigned to this repository and passed to the action.
      * <pre autoTested=''>
      * repositories {
      *     maven {
+     *         url "${url}"
      *         credentials {
      *             username = 'joe'
      *             password = 'secret'
@@ -51,40 +63,37 @@ public interface AuthenticationSupported {
      *     }
      * }
      * </pre>
-     */
-    void credentials(Closure closure);
-
-    /**
-     * Configure the credentials for this repository using the supplied action.
      *
-     * <pre autoTested=''>
-     * repositories {
-     *     maven {
-     *         credentials {
-     *             username = 'joe'
-     *             password = 'secret'
-     *         }
-     *     }
-     * }
-     * </pre>
+     * @throws IllegalStateException when the credentials assigned to this repository are not of type {@link PasswordCredentials}
      */
     void credentials(Action<? super PasswordCredentials> action);
 
     /**
-     * Configures strongly typed credentials for this repository using the supplied action.
-     *
+     * Configures the credentials for this repository using the supplied action.
+     * <p>
+     * If no credentials have been assigned to this repository, an empty set of credentials of the specified type will be assigned to this repository and given to the configuration action.
+     * If credentials have already been specified for this repository, they will be passed to the given configuration action.
+     * <pre autoTested=''>
      * repositories {
-     *    maven {
-     *        url "${url}"
-     *        credentials(AwsCredentials) {
-     *            accessKey "myAccessKey"
-     *            secretKey "mySecret"
-     *        }
-     *    }
-     *  }
+     *     maven {
+     *         url "${url}"
+     *         credentials(AwsCredentials) {
+     *             accessKey "myAccessKey"
+     *             secretKey "mySecret"
+     *         }
+     *     }
+     * }
+     * </pre>
+     * <p>
+     * The following credential types are currently supported for the {@code credentialsType} argument:
+     * <ul>
+     * <li>{@link org.gradle.api.artifacts.repositories.PasswordCredentials}</li>
+     * <li>{@link org.gradle.api.credentials.AwsCredentials}</li>
+     * </ul>
      *
-     *  @throws IllegalStateException if explicit credentials have been already set.
+     * @throws IllegalArgumentException if {@code credentialsType} is not of a supported type
+     * @throws IllegalArgumentException if {@code credentialsType} is of a different type to the credentials previously specified for this repository
      */
     @Incubating
-    <T extends Credentials> void credentials(Class<T> clazz, Action<? super T> action) throws IllegalStateException;
+    <T extends Credentials> void credentials(Class<T> credentialsType, Action<? super T> action);
 }

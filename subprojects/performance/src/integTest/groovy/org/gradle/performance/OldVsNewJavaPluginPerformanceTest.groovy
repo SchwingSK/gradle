@@ -17,10 +17,8 @@
 package org.gradle.performance
 
 import org.gradle.performance.fixture.BuildExperimentSpec
-import org.junit.experimental.categories.Category
 import spock.lang.Unroll
 
-@Category(Experiment.class)
 class OldVsNewJavaPluginPerformanceTest extends AbstractCrossBuildPerformanceTest {
 
     @Override
@@ -57,6 +55,11 @@ class OldVsNewJavaPluginPerformanceTest extends AbstractCrossBuildPerformanceTes
         runner.baseline {
             projectName("${size}OldJava").displayName("old plugin").invocation {
                 tasksToRun(*tasks).useDaemon()
+            }
+        }
+        runner.baseline {
+            projectName("${size}OldJava").displayName("old plugin (tooling api)").invocation {
+                tasksToRun(*tasks).useToolingApi()
             }
         }
         runner.baseline {

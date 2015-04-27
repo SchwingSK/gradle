@@ -16,6 +16,8 @@
 
 package org.gradle.performance
 
+import org.gradle.performance.measure.DataAmount
+
 import static org.gradle.performance.measure.Duration.millis
 
 class ManyEmptyProjectsHelpPerformanceTest extends AbstractCrossVersionPerformanceTest {
@@ -25,8 +27,9 @@ class ManyEmptyProjectsHelpPerformanceTest extends AbstractCrossVersionPerforman
         runner.testId = "many empty projects help"
         runner.testProject = "bigEmpty"
         runner.tasksToRun = ['help']
-        runner.maxExecutionTimeRegression = millis(1000)
-        runner.targetVersions = ['1.0', '2.0', '2.2.1', 'last']
+        runner.maxExecutionTimeRegression = millis(2000)
+        runner.maxMemoryRegression = DataAmount.mbytes(200)
+        runner.targetVersions = ['1.0', '2.0', '2.2.1', '2.4', 'last']
 
         when:
         def result = runner.run()

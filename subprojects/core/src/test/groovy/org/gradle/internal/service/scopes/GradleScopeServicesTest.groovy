@@ -29,7 +29,7 @@ import org.gradle.initialization.BuildCancellationToken
 import org.gradle.internal.concurrent.ExecutorFactory
 import org.gradle.internal.environment.GradleBuildEnvironment
 import org.gradle.internal.service.ServiceRegistry
-import org.gradle.listener.ListenerManager
+import org.gradle.internal.event.ListenerManager
 import org.gradle.model.internal.inspect.ModelRuleSourceDetector
 import spock.lang.Specification
 
@@ -129,5 +129,20 @@ public class GradleScopeServicesTest extends Specification {
         then:
         optionReader instanceof OptionReader
         secondOptionReader sameInstance(optionReader)
+    }
+
+    def "adds all plugin gradle scope services"() {
+        def plugin1 = Mock(PluginServiceRegistry)
+        def plugin2 = Mock(PluginServiceRegistry)
+
+        given:
+        parent.getAll(PluginServiceRegistry) >> [plugin1, plugin2]
+
+        when:
+        new GradleScopeServices(parent, gradle)
+
+        then:
+        1 * plugin1.registerGradleServices(_)
+        1 * plugin2.registerGradleServices(_)
     }
 }

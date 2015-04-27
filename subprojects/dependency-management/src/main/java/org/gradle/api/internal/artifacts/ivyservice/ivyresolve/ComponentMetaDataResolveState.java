@@ -17,20 +17,16 @@
 package org.gradle.api.internal.artifacts.ivyservice.ivyresolve;
 
 import org.gradle.api.artifacts.component.ModuleComponentIdentifier;
-import org.gradle.internal.Factories;
 import org.gradle.internal.component.model.DependencyMetaData;
 import org.gradle.internal.resolve.result.BuildableModuleComponentMetaDataResolveResult;
 import org.gradle.internal.resolve.result.DefaultBuildableModuleComponentMetaDataResolveResult;
 import org.gradle.internal.resolve.result.ResourceAwareResolveResult;
 
-/**
-* Created by adam on 14/09/2014.
-*/
 class ComponentMetaDataResolveState {
     private final DefaultBuildableModuleComponentMetaDataResolveResult resolveResult = new DefaultBuildableModuleComponentMetaDataResolveResult();
     private final VersionedComponentChooser versionedComponentChooser;
     private final DependencyMetaData dependency;
-    final ModuleComponentIdentifier componentIdentifier;
+    private final ModuleComponentIdentifier componentIdentifier;
     final ModuleComponentRepository repository;
 
     private boolean searchedLocally;
@@ -46,8 +42,8 @@ class ComponentMetaDataResolveState {
     BuildableModuleComponentMetaDataResolveResult resolve() {
         if (!searchedLocally) {
             searchedLocally = true;
-            process(dependency, componentIdentifier, repository.getLocalAccess(), resolveResult);
-            if (resolveResult.getState() != BuildableModuleComponentMetaDataResolveResult.State.Unknown) {
+            process(repository.getLocalAccess());
+            if (resolveResult.hasResult()) {
                 if (resolveResult.isAuthoritative()) {
                     // Don't bother searching remotely
                     searchedRemotely = true;
@@ -59,20 +55,17 @@ class ComponentMetaDataResolveState {
 
         if (!searchedRemotely) {
             searchedRemotely = true;
-            process(dependency, componentIdentifier, repository.getRemoteAccess(), resolveResult);
+            process(repository.getRemoteAccess());
             return resolveResult;
         }
 
         throw new IllegalStateException();
     }
 
-    protected void process(DependencyMetaData dependency, ModuleComponentIdentifier componentIdentifier, ModuleComponentRepositoryAccess moduleAccess, BuildableModuleComponentMetaDataResolveResult resolveResult) {
+    protected void process(ModuleComponentRepositoryAccess moduleAccess) {
         moduleAccess.resolveComponentMetaData(dependency, componentIdentifier, resolveResult);
-        if (resolveResult.getState() == BuildableModuleComponentMetaDataResolveResult.State.Failed) {
-            throw resolveResult.getFailure();
-        }
         if (resolveResult.getState() == BuildableModuleComponentMetaDataResolveResult.State.Resolved) {
-            if (versionedComponentChooser.isRejectedComponent(componentIdentifier, Factories.constant(resolveResult))) {
+            if (versionedComponentChooser.isRejectedComponent(componentIdentifier, new MetadataProvider(resolveResult))) {
                 resolveResult.missing();
             }
         }

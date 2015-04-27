@@ -118,6 +118,7 @@
             </para>
         </section>
     </section>
+
     <section>
         <title>Component model</title>
         <para>
@@ -143,6 +144,24 @@
             These binaries may vary based on the tool chain used to build, the compiler/linker flags supplied, the dependencies
             provided, or additional source files provided. Each native binary produced for a component is referred to as <firstterm>variant</firstterm>.
             Binary variants are discussed in detail below.
+        </para>
+    </section>
+
+    <section>
+        <title>Parallel Compilation</title>
+        <para>
+            Gradle uses the single build worker pool to concurrently compile and link native components, by default.
+            No special configuration is required to enable concurrent building.
+        </para>
+        <para>
+            By default, the worker pool size is determined by the number of available processors on the build machine (as reported to the build JVM).
+            To explicitly set the number of workers use the <literal>--max-workers</literal> command-line option or <literal>org.gradle.workers.max</literal> system property.
+            There is generally no need to change this setting from its default.
+        </para>
+        <para>
+            The build worker pool is shared across all build tasks.
+            This means that when using <link linkend="sec:parallel_execution">parallel project execution</link>, the maximum number of concurrent individual compilation operations does not increase.
+            For example, if the build machine has 4 processing cores and 10 projects are compiling in parallel, Gradle will only use 4 total workers, not 40.
         </para>
     </section>
     <section>

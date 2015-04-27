@@ -29,9 +29,9 @@ import java.util.*;
 public abstract class AbstractModuleDescriptorBackedMetaData implements ComponentResolveMetaData {
     private static final List<String> DEFAULT_STATUS_SCHEME = Arrays.asList("integration", "milestone", "release");
 
-    private final ModuleVersionIdentifier moduleVersionIdentifier;
+    private ModuleVersionIdentifier moduleVersionIdentifier;
     private final ModuleDescriptor moduleDescriptor;
-    private final ComponentIdentifier componentIdentifier;
+    private ComponentIdentifier componentIdentifier;
     private ModuleSource moduleSource;
     private boolean changing;
     private String status;
@@ -56,11 +56,15 @@ public abstract class AbstractModuleDescriptorBackedMetaData implements Componen
 
     @Override
     public String toString() {
-        return moduleVersionIdentifier.toString();
+        return componentIdentifier.getDisplayName();
     }
 
     public ModuleVersionIdentifier getId() {
         return moduleVersionIdentifier;
+    }
+
+    public void setId(ModuleVersionIdentifier moduleVersionIdentifier) {
+        this.moduleVersionIdentifier = moduleVersionIdentifier;
     }
 
     public ModuleSource getSource() {
@@ -97,6 +101,10 @@ public abstract class AbstractModuleDescriptorBackedMetaData implements Componen
 
     public ComponentIdentifier getComponentId() {
         return componentIdentifier;
+    }
+
+    public void setComponentId(ComponentIdentifier componentIdentifier) {
+        this.componentIdentifier = componentIdentifier;
     }
 
     public void setChanging(boolean changing) {
@@ -174,7 +182,7 @@ public abstract class AbstractModuleDescriptorBackedMetaData implements Componen
 
         @Override
         public String toString() {
-            return String.format("%s:%s", moduleVersionIdentifier, name);
+            return String.format("%s:%s", componentIdentifier.getDisplayName(), name);
         }
 
         public ComponentResolveMetaData getComponent() {

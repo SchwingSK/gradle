@@ -16,22 +16,24 @@
 
 package org.gradle.nativeplatform.toolchain.internal.msvcpp;
 
+import org.apache.commons.collections.CollectionUtils;
 import org.gradle.api.Transformer;
 import org.gradle.internal.operations.BuildOperationProcessor;
 import org.gradle.nativeplatform.toolchain.internal.*;
 
 import java.io.File;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
 class VisualCppNativeCompiler<T extends NativeCompileSpec> extends NativeCompiler<T> {
 
-    VisualCppNativeCompiler(BuildOperationProcessor buildOperationProcessor, CommandLineToolInvocationWorker commandLineToolInvocationWorker, CommandLineToolContext invocationContext, VisualCppCompilerArgsTransformer<T> argsTransformer, Transformer<T, T> specTransformer, String objectFileSuffix, boolean useCommandFile) {
-        super(buildOperationProcessor, commandLineToolInvocationWorker, invocationContext, argsTransformer, specTransformer, objectFileSuffix, useCommandFile);
+    VisualCppNativeCompiler(BuildOperationProcessor buildOperationProcessor, CommandLineToolInvocationWorker commandLineToolInvocationWorker, CommandLineToolContext invocationContext, ArgsTransformer<T> argsTransformer, Transformer<T, T> specTransformer, String objectFileExtension, boolean useCommandFile) {
+        super(buildOperationProcessor, commandLineToolInvocationWorker, invocationContext, argsTransformer, specTransformer, objectFileExtension, useCommandFile);
     }
 
     @Override
-    protected List<String> getOutputArgs(File outputFile) {
+    protected List<String> getOutputArgs(T spec, File outputFile) {
         // MSVC doesn't allow a space between Fo and the file name
         return Collections.singletonList("/Fo" + outputFile.getAbsolutePath());
     }
@@ -41,5 +43,19 @@ class VisualCppNativeCompiler<T extends NativeCompileSpec> extends NativeCompile
         OptionsFileArgsWriter writer = new VisualCppOptionsFileArgsWriter(tempDir);
         // modifies args in place
         writer.execute(args);
+    }
+
+    @Override
+    protected List<String> getPCHArgs(T spec) {
+        List<String> pchArgs = new ArrayList<String>();
+        if (CollectionUtils.isNotEmpty(spec.getPreCompiledHeaders()) && spec.getPreCompiledHeaderObjectFile() != null) {
+            String lastHeader = (String) CollectionUtils.get(spec.getPreCompiledHeaders(), spec.getPreCompiledHeaders().size() - 1);
+            if (lastHeader.startsWith("<")) {
+                lastHeader = lastHeader.substring(1, lastHeader.length()-1);
+            }
+            pchArgs.add("/Yu".concat(lastHeader));
+            pchArgs.add("/Fp".concat(spec.getPreCompiledHeaderObjectFile().getAbsolutePath()));
+        }
+        return pchArgs;
     }
 }

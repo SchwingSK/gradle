@@ -17,19 +17,21 @@
 package org.gradle.plugin.use.internal;
 
 import com.google.common.collect.Lists;
-import org.gradle.messaging.serialize.Decoder;
-import org.gradle.messaging.serialize.Encoder;
-import org.gradle.messaging.serialize.Serializer;
+import org.gradle.internal.serialize.Decoder;
+import org.gradle.internal.serialize.Encoder;
+import org.gradle.internal.serialize.Serializer;
 import org.gradle.plugin.internal.PluginId;
 
-import java.util.ArrayList;
+import java.util.List;
 
 public class PluginRequestsSerializer implements Serializer<PluginRequests> {
+
+    public static final Serializer<PluginRequests> INSTANCE = new PluginRequestsSerializer();
 
     @Override
     public PluginRequests read(Decoder decoder) throws Exception {
         int requestCount = decoder.readInt();
-        ArrayList<PluginRequest> requests = Lists.newArrayListWithCapacity(requestCount);
+        List<PluginRequest> requests = Lists.newArrayListWithCapacity(requestCount);
         for (int i = 0; i < requestCount; i++) {
             PluginId pluginId = PluginId.unvalidated(decoder.readString());
             String version = decoder.readNullableString();

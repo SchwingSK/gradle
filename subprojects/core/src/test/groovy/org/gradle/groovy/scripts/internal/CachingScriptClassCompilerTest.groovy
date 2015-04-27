@@ -16,6 +16,7 @@
 package org.gradle.groovy.scripts.internal
 
 import org.gradle.api.Action
+import org.gradle.api.internal.initialization.loadercache.ClassLoaderId
 import org.gradle.groovy.scripts.Script
 import org.gradle.groovy.scripts.ScriptSource
 import org.gradle.groovy.scripts.TestScript
@@ -28,20 +29,21 @@ class CachingScriptClassCompilerTest extends Specification {
     private final CompiledScript<?, ?> compiledScript = Mock(CompiledScript)
     private final String classpathClosureName = "buildscript"
     final verifier = Mock(Action)
+    def classLoaderId = Mock(ClassLoaderId)
 
     def "caches the script class for a given script class and classloader and transformer and baseclass"() {
         ScriptSource script1 = scriptSource('script')
         ScriptSource script2 = scriptSource('script')
         ClassLoader parentClassLoader = Mock()
-        MetadataExtractingTransformer<?> transformer = transformer()
+        CompileOperation<?> transformer = operation()
 
         when:
-        def c1 = compiler.compile(script1, parentClassLoader, transformer, classpathClosureName, Script.class, verifier)
-        def c2 = compiler.compile(script2, parentClassLoader, transformer, classpathClosureName, Script.class, verifier)
+        def c1 = compiler.compile(script1, parentClassLoader, classLoaderId, transformer, classpathClosureName, Script.class, verifier)
+        def c2 = compiler.compile(script2, parentClassLoader, classLoaderId, transformer, classpathClosureName, Script.class, verifier)
 
         then:
         c1 == c2
-        1 * target.compile(script1, parentClassLoader, transformer, classpathClosureName, Script.class, verifier) >> compiledScript
+        1 * target.compile(script1, parentClassLoader, classLoaderId, transformer, classpathClosureName, Script.class, verifier) >> compiledScript
         0 * target._
     }
 
@@ -49,31 +51,31 @@ class CachingScriptClassCompilerTest extends Specification {
         ScriptSource script1 = scriptSource('script')
         ScriptSource script2 = scriptSource('other')
         ClassLoader parentClassLoader = Mock()
-        MetadataExtractingTransformer<?> transformer = transformer()
+        CompileOperation<?> transformer = operation()
 
         when:
-        compiler.compile(script1, parentClassLoader, transformer, classpathClosureName, Script.class, verifier)
-        compiler.compile(script2, parentClassLoader, transformer, classpathClosureName, Script.class, verifier)
+        compiler.compile(script1, parentClassLoader, classLoaderId, transformer, classpathClosureName, Script.class, verifier)
+        compiler.compile(script2, parentClassLoader, classLoaderId, transformer, classpathClosureName, Script.class, verifier)
 
         then:
-        1 * target.compile(script1, parentClassLoader, transformer, classpathClosureName, Script.class, verifier)
-        1 * target.compile(script2, parentClassLoader, transformer, classpathClosureName, Script.class, verifier)
+        1 * target.compile(script1, parentClassLoader, classLoaderId, transformer, classpathClosureName, Script.class, verifier)
+        1 * target.compile(script2, parentClassLoader, classLoaderId, transformer, classpathClosureName, Script.class, verifier)
     }
 
     def "does not cache script class for different transformers"() {
         ScriptSource script1 = scriptSource('script')
         ScriptSource script2 = scriptSource('script')
         ClassLoader parentClassLoader = Mock()
-        MetadataExtractingTransformer<?> transformer1 = transformer('t1')
-        MetadataExtractingTransformer<?> transformer2 = transformer('t2')
+        CompileOperation<?> transformer1 = operation('t1')
+        CompileOperation<?> transformer2 = operation('t2')
 
         when:
-        compiler.compile(script1, parentClassLoader, transformer1, classpathClosureName, Script.class, verifier)
-        compiler.compile(script2, parentClassLoader, transformer2, classpathClosureName, Script.class, verifier)
+        compiler.compile(script1, parentClassLoader, classLoaderId, transformer1, classpathClosureName, Script.class, verifier)
+        compiler.compile(script2, parentClassLoader, classLoaderId, transformer2, classpathClosureName, Script.class, verifier)
 
         then:
-        1 * target.compile(script1, parentClassLoader, transformer1, classpathClosureName, Script.class, verifier)
-        1 * target.compile(script2, parentClassLoader, transformer2, classpathClosureName, Script.class, verifier)
+        1 * target.compile(script1, parentClassLoader, classLoaderId, transformer1, classpathClosureName, Script.class, verifier)
+        1 * target.compile(script2, parentClassLoader, classLoaderId, transformer2, classpathClosureName, Script.class, verifier)
     }
 
     def "does not cache script class for different classloaders"() {
@@ -81,30 +83,30 @@ class CachingScriptClassCompilerTest extends Specification {
         ScriptSource script2 = scriptSource('script')
         ClassLoader parentClassLoader1 = Mock()
         ClassLoader parentClassLoader2 = Mock()
-        MetadataExtractingTransformer<?> transformer = transformer()
+        CompileOperation<?> transformer = operation()
 
         when:
-        compiler.compile(script1, parentClassLoader1, transformer, classpathClosureName, Script.class, verifier)
-        compiler.compile(script2, parentClassLoader2, transformer, classpathClosureName, Script.class, verifier)
+        compiler.compile(script1, parentClassLoader1, classLoaderId, transformer, classpathClosureName, Script.class, verifier)
+        compiler.compile(script2, parentClassLoader2, classLoaderId, transformer, classpathClosureName, Script.class, verifier)
 
         then:
-        1 * target.compile(script1, parentClassLoader1, transformer, classpathClosureName, Script.class, verifier)
-        1 * target.compile(script2, parentClassLoader2, transformer, classpathClosureName, Script.class, verifier)
+        1 * target.compile(script1, parentClassLoader1, classLoaderId, transformer, classpathClosureName, Script.class, verifier)
+        1 * target.compile(script2, parentClassLoader2, classLoaderId, transformer, classpathClosureName, Script.class, verifier)
     }
 
     def "does not cache script class for different base classes"() {
         ScriptSource script1 = scriptSource('script')
         ScriptSource script2 = scriptSource('script')
         ClassLoader parentClassLoader = Mock()
-        MetadataExtractingTransformer<?> transformer = transformer()
+        CompileOperation<?> transformer = operation()
 
         when:
-        compiler.compile(script1, parentClassLoader, transformer, classpathClosureName, Script.class, verifier)
-        compiler.compile(script2, parentClassLoader, transformer, classpathClosureName, TestScript.class, verifier)
+        compiler.compile(script1, parentClassLoader, classLoaderId, transformer, classpathClosureName, Script.class, verifier)
+        compiler.compile(script2, parentClassLoader, classLoaderId, transformer, classpathClosureName, TestScript.class, verifier)
 
         then:
-        1 * target.compile(script1, parentClassLoader, transformer, classpathClosureName, Script.class, verifier)
-        1 * target.compile(script2, parentClassLoader, transformer, classpathClosureName, TestScript.class, verifier)
+        1 * target.compile(script1, parentClassLoader, classLoaderId, transformer, classpathClosureName, Script.class, verifier)
+        1 * target.compile(script2, parentClassLoader, classLoaderId, transformer, classpathClosureName, TestScript.class, verifier)
     }
 
     def scriptSource(String className = 'script') {
@@ -113,11 +115,11 @@ class CachingScriptClassCompilerTest extends Specification {
         script
     }
 
-    def transformer(String id = 'id') {
-        MetadataExtractingTransformer<?> extractingTransformer = Mock()
+    def operation(String id = 'id') {
+        CompileOperation<?> operation = Mock()
         Transformer transformer = Mock()
-        _ * transformer.id >> id
-        extractingTransformer.transformer >> transformer
-        extractingTransformer
+        operation.id >> id
+        operation.transformer >> transformer
+        operation
     }
 }

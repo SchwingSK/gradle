@@ -94,7 +94,8 @@ ext {
         'diagnostics', 'reporting', 'publish', 'ivy', 'jacoco', 'buildInit', 'platformBase',
         'platformJvm', 'languageJvm', 'languageJava', 'languageGroovy', 'languageScala',
         'platformNative', 'platformPlay', 'languageNative', 'ideNative', 'testingNative',
-        'pluginDevelopment', 'pluginUse', 'resourcesHttp', 'resourcesSftp', 'resourcesS3'
+        'pluginDevelopment', 'pluginUse', 'resourcesHttp', 'resourcesSftp', 'resourcesS3',
+        'toolingApiBuilders'
     ].collect {
         project(it)
     }
@@ -154,6 +155,9 @@ subprojects {
 }
 
 configurations {
+    sonar {
+        visible = false
+    }
     runtime {
         visible = false
     }
@@ -169,6 +173,7 @@ configurations {
 dependencies {
     runtime project(':launcher')
     runtime project(':wrapper')
+    sonar libraries.logback_classic
     gradlePlugins pluginProjects
     gradlePlugins project(':dependencyManagement')
 }

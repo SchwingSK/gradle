@@ -21,10 +21,11 @@ import org.gradle.api.internal.TaskInternal;
 import org.gradle.api.internal.project.ProjectInternal;
 import org.gradle.api.tasks.Delete;
 import org.gradle.language.base.internal.plugins.CleanRule;
-import org.gradle.language.base.internal.tasks.AssembleBinariesTask;
 import org.gradle.util.DeprecationLogger;
 
 import java.io.File;
+import java.util.Arrays;
+import java.util.List;
 import java.util.concurrent.Callable;
 
 /**
@@ -38,7 +39,9 @@ public class LifecycleBasePlugin implements Plugin<ProjectInternal> {
     public static final String BUILD_TASK_NAME = "build";
     public static final String BUILD_GROUP = "build";
     public static final String VERIFICATION_GROUP = "verification";
-    public static final String CUSTOM_LIFECYCLE_TASK_DEPRECATION_MSG = "Defining custom '%s' task is deprecated when using the standard Gradle lifecycle plugins";
+
+    private static final String CUSTOM_LIFECYCLE_TASK_DEPRECATION_MSG = "Defining custom '%s' task when using the standard Gradle lifecycle plugins";
+    private static final List<String> PLACEHOLDER_TASKS = Arrays.asList(BUILD_TASK_NAME, CHECK_TASK_NAME, CLEAN_TASK_NAME, ASSEMBLE_TASK_NAME);
 
     public void apply(ProjectInternal project) {
         addClean(project);
@@ -49,13 +52,17 @@ public class LifecycleBasePlugin implements Plugin<ProjectInternal> {
         addDeprecationWarningsAboutCustomLifecycleTasks(project);
     }
 
-    private void addClean(final Project project) {
-        Delete clean = project.getTasks().create(CLEAN_TASK_NAME, Delete.class);
-        clean.setDescription("Deletes the build directory.");
-        clean.setGroup(BUILD_GROUP);
-        clean.delete(new Callable<File>() {
-            public File call() throws Exception {
-                return project.getBuildDir();
+    private void addClean(final ProjectInternal project) {
+        project.getTasks().addPlaceholderAction(CLEAN_TASK_NAME, Delete.class, new Action<Delete>() {
+            @Override
+            public void execute(Delete clean) {
+                clean.setDescription("Deletes the build directory.");
+                clean.setGroup(VERIFICATION_GROUP);
+                clean.delete(new Callable<File>() {
+                    public File call() throws Exception {
+                        return project.getBuildDir();
+                    }
+                });
             }
         });
     }
@@ -64,10 +71,14 @@ public class LifecycleBasePlugin implements Plugin<ProjectInternal> {
         project.getTasks().addRule(new CleanRule(project.getTasks()));
     }
 
-    private void addAssemble(Project project) {
-        Task assembleTask = project.getTasks().create(ASSEMBLE_TASK_NAME, AssembleBinariesTask.class);
-        assembleTask.setDescription("Assembles the outputs of this project.");
-        assembleTask.setGroup(BUILD_GROUP);
+    private void addAssemble(ProjectInternal project) {
+        project.getTasks().addPlaceholderAction(ASSEMBLE_TASK_NAME, DefaultTask.class, new Action<TaskInternal>() {
+            @Override
+            public void execute(TaskInternal assembleTask) {
+                assembleTask.setDescription("Assembles the outputs of this project.");
+                assembleTask.setGroup(BUILD_GROUP);
+            }
+        });
     }
 
     private void addCheck(final ProjectInternal project) {
@@ -96,11 +107,8 @@ public class LifecycleBasePlugin implements Plugin<ProjectInternal> {
         project.getTasks().all(new Action<Task>() {
             @Override
             public void execute(Task task) {
-                if (task.getName().equals(BUILD_TASK_NAME)) {
-                    DeprecationLogger.nagUserOfDeprecated(String.format(CUSTOM_LIFECYCLE_TASK_DEPRECATION_MSG, BUILD_TASK_NAME));
-                }
-                if (task.getName().equals(CHECK_TASK_NAME)) {
-                    DeprecationLogger.nagUserOfDeprecated(String.format(CUSTOM_LIFECYCLE_TASK_DEPRECATION_MSG, CHECK_TASK_NAME));
+                if (PLACEHOLDER_TASKS.contains(task.getName())) {
+                    DeprecationLogger.nagUserOfDeprecated(String.format(CUSTOM_LIFECYCLE_TASK_DEPRECATION_MSG, task.getName()));
                 }
             }
         });

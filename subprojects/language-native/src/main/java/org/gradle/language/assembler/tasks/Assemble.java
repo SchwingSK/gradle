@@ -20,8 +20,12 @@ import org.gradle.api.DefaultTask;
 import org.gradle.api.Incubating;
 import org.gradle.api.file.FileCollection;
 import org.gradle.api.tasks.*;
+import org.gradle.internal.operations.logging.BuildOperationLogger;
+import org.gradle.internal.operations.logging.BuildOperationLoggerFactory;
 import org.gradle.language.assembler.internal.DefaultAssembleSpec;
+import org.gradle.language.base.internal.compile.Compiler;
 import org.gradle.language.base.internal.tasks.SimpleStaleClassCleaner;
+import org.gradle.nativeplatform.internal.BuildOperationLoggingCompilerDecorator;
 import org.gradle.nativeplatform.platform.NativePlatform;
 import org.gradle.nativeplatform.platform.internal.NativePlatformInternal;
 import org.gradle.nativeplatform.toolchain.NativeToolChain;
@@ -56,8 +60,14 @@ public class Assemble extends DefaultTask {
         });
     }
 
+    @Inject
+    public BuildOperationLoggerFactory getOperationLoggerFactory() {
+        throw new UnsupportedOperationException();
+    }
+
     @TaskAction
     public void assemble() {
+        BuildOperationLogger operationLogger = getOperationLoggerFactory().newOperationLogger(getName(), getTemporaryDir());
         SimpleStaleClassCleaner cleaner = new SimpleStaleClassCleaner(getOutputs());
         cleaner.setDestinationDir(getObjectFileDir());
         cleaner.execute();
@@ -68,8 +78,10 @@ public class Assemble extends DefaultTask {
         spec.setObjectFileDir(getObjectFileDir());
         spec.source(getSource());
         spec.args(getAssemblerArgs());
+        spec.setOperationLogger(operationLogger);
 
-        WorkResult result = toolChain.select(targetPlatform).newCompiler(AssembleSpec.class).execute(spec);
+        Compiler<AssembleSpec> compiler = toolChain.select(targetPlatform).newCompiler(AssembleSpec.class);
+        WorkResult result = BuildOperationLoggingCompilerDecorator.wrap(compiler).execute(spec);
         setDidWork(result.getDidWork());
     }
 

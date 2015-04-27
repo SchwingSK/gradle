@@ -32,17 +32,17 @@ import org.codehaus.groovy.syntax.SyntaxException;
 import org.gradle.api.Action;
 import org.gradle.api.GradleException;
 import org.gradle.api.UncheckedIOException;
-import org.gradle.api.internal.initialization.ClassLoaderIds;
 import org.gradle.api.internal.initialization.loadercache.ClassLoaderCache;
+import org.gradle.api.internal.initialization.loadercache.ClassLoaderId;
 import org.gradle.configuration.ImportsReader;
 import org.gradle.groovy.scripts.ScriptCompilationException;
 import org.gradle.groovy.scripts.ScriptSource;
 import org.gradle.groovy.scripts.Transformer;
 import org.gradle.internal.UncheckedException;
 import org.gradle.internal.classpath.DefaultClassPath;
-import org.gradle.messaging.serialize.Serializer;
-import org.gradle.messaging.serialize.kryo.KryoBackedDecoder;
-import org.gradle.messaging.serialize.kryo.KryoBackedEncoder;
+import org.gradle.internal.serialize.Serializer;
+import org.gradle.internal.serialize.kryo.KryoBackedDecoder;
+import org.gradle.internal.serialize.kryo.KryoBackedEncoder;
 import org.gradle.util.Clock;
 import org.gradle.util.GFileUtils;
 import org.slf4j.Logger;
@@ -71,7 +71,7 @@ public class DefaultScriptCompilationHandler implements ScriptCompilationHandler
     }
 
     @Override
-    public void compileToDir(ScriptSource source, ClassLoader classLoader, File classesDir, File metadataDir, MetadataExtractingTransformer<?> extractingTransformer, String classpathClosureName,
+    public void compileToDir(ScriptSource source, ClassLoader classLoader, File classesDir, File metadataDir, CompileOperation<?> extractingTransformer, String classpathClosureName,
                              Class<? extends Script> scriptBaseClass, Action<? super ClassNode> verifier) {
         Clock clock = new Clock();
         GFileUtils.deleteDirectory(classesDir);
@@ -90,7 +90,7 @@ public class DefaultScriptCompilationHandler implements ScriptCompilationHandler
     }
 
     private void compileScript(final ScriptSource source, ClassLoader classLoader, CompilerConfiguration configuration, File classesDir, File metadataDir,
-                               final MetadataExtractingTransformer<?> extractingTransformer, final Action<? super ClassNode> customVerifier, String classpathClosureName) {
+                               final CompileOperation<?> extractingTransformer, final Action<? super ClassNode> customVerifier, String classpathClosureName) {
         final Transformer transformer = extractingTransformer != null ? extractingTransformer.getTransformer() : null;
         logger.info("Compiling {} using {}.", source.getDisplayName(), transformer != null ? transformer.getClass().getSimpleName() : "no transformer");
 
@@ -139,8 +139,8 @@ public class DefaultScriptCompilationHandler implements ScriptCompilationHandler
         serializeMetadata(source, extractingTransformer, metadataDir);
     }
 
-    private <M> void serializeMetadata(ScriptSource scriptSource, MetadataExtractingTransformer<M> extractingTransformer, File metadataDir) {
-        if (extractingTransformer == null || extractingTransformer.getMetadataSerializer() == null) {
+    private <M> void serializeMetadata(ScriptSource scriptSource, CompileOperation<M> extractingTransformer, File metadataDir) {
+        if (extractingTransformer == null || extractingTransformer.getDataSerializer() == null) {
             return;
         }
         GFileUtils.mkdirs(metadataDir);
@@ -152,9 +152,9 @@ public class DefaultScriptCompilationHandler implements ScriptCompilationHandler
             throw new UncheckedIOException("Could not create or open build script metadata file " + metadataFile.getAbsolutePath(), e);
         }
         KryoBackedEncoder encoder = new KryoBackedEncoder(outputStream);
-        Serializer<M> serializer = extractingTransformer.getMetadataSerializer();
+        Serializer<M> serializer = extractingTransformer.getDataSerializer();
         try {
-            serializer.write(encoder, extractingTransformer.getExtractedMetadata());
+            serializer.write(encoder, extractingTransformer.getExtractedData());
         } catch (Exception e) {
             String transformerName = extractingTransformer.getTransformer().getClass().getName();
             throw new IllegalStateException(String.format("Failed to serialize script metadata extracted using %s for %s", transformerName, scriptSource.getDisplayName()), e);
@@ -195,7 +195,7 @@ public class DefaultScriptCompilationHandler implements ScriptCompilationHandler
     }
 
     public <T extends Script, M> CompiledScript<T, M> loadFromDir(final ScriptSource source, final ClassLoader classLoader, final File scriptCacheDir,
-                                                                  File metadataCacheDir, MetadataExtractingTransformer<M> transformer, final Class<T> scriptBaseClass) {
+                                                                  File metadataCacheDir, final CompileOperation<M> transformer, final Class<T> scriptBaseClass, final ClassLoaderId classLoaderId) {
 
         final M metadata = deserializeMetadata(source, transformer, metadataCacheDir);
 
@@ -204,11 +204,12 @@ public class DefaultScriptCompilationHandler implements ScriptCompilationHandler
             @Override
             public Class<? extends T> loadClass() {
                 if (new File(scriptCacheDir, EMPTY_SCRIPT_MARKER_FILE_NAME).isFile()) {
+                    classLoaderCache.remove(classLoaderId);
                     return emptyScriptGenerator.generate(scriptBaseClass);
                 }
 
                 try {
-                    ClassLoader loader = classLoaderCache.get(ClassLoaderIds.buildScript(source.getFileName()), new DefaultClassPath(scriptCacheDir), classLoader, null);
+                    ClassLoader loader = classLoaderCache.get(classLoaderId, new DefaultClassPath(scriptCacheDir), classLoader, null);
                     return loader.loadClass(source.getClassName()).asSubclass(scriptBaseClass);
                 } catch (Exception e) {
                     File expectedClassFile = new File(scriptCacheDir, source.getClassName() + ".class");
@@ -220,14 +221,14 @@ public class DefaultScriptCompilationHandler implements ScriptCompilationHandler
             }
 
             @Override
-            public M getMetadata() {
+            public M getData() {
                 return metadata;
             }
         });
     }
 
-    private <M> M deserializeMetadata(ScriptSource scriptSource, MetadataExtractingTransformer<M> extractingTransformer, File metadataCacheDir) {
-        if (extractingTransformer == null || extractingTransformer.getMetadataSerializer() == null) {
+    private <M> M deserializeMetadata(ScriptSource scriptSource, CompileOperation<M> extractingTransformer, File metadataCacheDir) {
+        if (extractingTransformer == null || extractingTransformer.getDataSerializer() == null) {
             return null;
         }
         File metadataFile = new File(metadataCacheDir, METADATA_FILE_NAME);
@@ -238,7 +239,7 @@ public class DefaultScriptCompilationHandler implements ScriptCompilationHandler
             throw new UncheckedIOException("Could not open build script metadata file " + metadataFile.getAbsolutePath(), e);
         }
         KryoBackedDecoder decoder = new KryoBackedDecoder(inputStream);
-        Serializer<M> serializer = extractingTransformer.getMetadataSerializer();
+        Serializer<M> serializer = extractingTransformer.getDataSerializer();
         try {
             return serializer.read(decoder);
         } catch (Exception e) {
@@ -304,7 +305,7 @@ public class DefaultScriptCompilationHandler implements ScriptCompilationHandler
         public CustomCompilationUnit(CompilerConfiguration compilerConfiguration, CodeSource codeSource, final Action<? super ClassNode> customVerifier, ScriptSource source, GroovyClassLoader groovyClassLoader) {
             super(compilerConfiguration, codeSource, groovyClassLoader);
             this.source = source;
-            this.verifier = new Verifier(){
+            this.verifier = new Verifier() {
                 public void visitClass(ClassNode node) {
                     customVerifier.execute(node);
                     super.visitClass(node);

@@ -32,7 +32,7 @@ General idea is to include the PCH as a property on a native source set (C/C++).
             mainExe(NativeExecutableSpec) {
                 sources {
                     cpp {
-                        precompiledHeader = file("path/to/my_pch.h")
+                        precompiledHeader file("path/to/my_pch.h")
                         source { }
                         headers { }
                     }
@@ -40,6 +40,72 @@ General idea is to include the PCH as a property on a native source set (C/C++).
             }
         }
     }
+
+## Implementation
+Basically, the approach is to generate a new source set for any precompiled header that gets defined, then add the compiled header
+as a NativeDependencySet of the source set that uses it.
+
+Add a method to DependentSourceSet that allows the user to define a precompiled header file.
+
+    public interface DependentSourceSet extends LanguageSourceSet {
+        void preCompiledHeader(Object headerFile);
+    }
+
+headerFile will be interpreted as in project.files().
+
+Add a PreCompiledHeaderExportingSourceSetInternal interface to track the relationship between precompiled header source sets and "consuming" source sets.
+
+    public interface PreCompiledHeaderExportingSourceSetInternal extends HeaderExportingSourceSet {
+        boolean isPreCompiledHeader();
+        void setIsPreCompiledHeader(boolean isPreCompiledHeader);
+        DependentSourceSet getConsumingSourceSet();
+        void setConsumingSourceSet(DependentSourceSet dependentSourceSet);
+    }
+
+Add a method to NativeBinarySpecInternal to track the mapping between "consuming" source sets and precompiled header object outputs.
+
+    public interface NativeBinarySpecInternal extends NativeBinarySpec, BinarySpecInternal {
+        Map<DependentSourceSet, FileCollection> getPrecompiledHeaderObjectMappings();
+    }
+
+Then, for every source set that defines a precompiled header, we generate a source set and link it to the "consuming" source set.
+When we are configuring the compile task for the PCH source set, set the mapping between the consuming source set and the output of the
+PCH compile task.
+
+We potentially have to produce different compiler arguments when compiling a precompiled header (MSVC), so we need to specify on the compiletask that
+it is compiling a PCH instead of a "normal" source.  So, in NativeCompileSpec:
+
+    public interface NativeCompileSpec extends BinaryToolSpec {
+        boolean isPrecompiledHeader();
+        void setPrecompiledHeader(boolean true);
+    }
+
+Then in NativeCompiler, instead of constructing with a single args transformer, we construct with an args transformer factory.
+
+    public interface ArgsTransformerFactory<T extends BinaryToolSpec> {
+        ArgsTransformer<T extends BinaryToolSpec> create(T spec);
+    }
+
+Each subclass of NativeCompiler would call the super constructor with a factory that produces the appropriate args transformer for the spec.
+For the gcc/clang compilers they probably just produce the same args transformer, but for MSVC, it would probably be different.
+
+For the consuming source set, we also need to know if it should be compiled with a precompiled header.  We add this to AbstractNativeCompileTask:
+
+    public abstract class AbstractNativeCompileTask extends DefaultTask {
+        private ConfigurableFileCollection precompiledHeader;
+        public void preCompiledHeader(Object header) {
+            precompiledHeader.from(header);
+        }
+    }
+
+Then in NativeCompileSpec, we add the reference to the precompiled header:
+
+    public interface NativeCompileSpec extends BinaryToolSpec {
+        File getPrecompiledHeader()
+    }
+
+In AbstractNativeCompileTask, we resolve the file collection to a single file (throwing error if >1?) and set it on the spec.
+In NativeCompiler, if we find a non-null precompiledHeader, we add the appropriate args to the compile operation.
 
 ## Test Cases
 
@@ -71,6 +137,14 @@ Uses .gch extension for precompiled headers (e.g., my_pch.h.gch)
 
 GCC will automatically use a precompiled header if it's found on the include search path first.
 
+GCC will ignore a pre-compiled header if -include is used and the PCH is not in the same directory as the header file or the header is
+included in the source file via #include.
+
+The following will work for GCC:
+
+- include option and both header and PCH in the same directory and header is not included via #include
+- I option and PCH directory is listed before header directory
+
 [Reference](https://gcc.gnu.org/onlinedocs/gcc/Precompiled-Headers.html)
 
 ### Clang
@@ -80,6 +154,15 @@ TODO: Flesh out
 Similar to GCC, except uses .pch extension.
 
 Clang will not automatically use a precompiled header unless it's included with -include or -include-pch.
+
+Clang will ignore a pre-compiled header if -include is used and the PCH is not in the same directory as the header file.
+
+Clang will also ignore a PCH if the header file is included in the source file (via a "#include" statement).
+
+The following will work for Clang:
+
+- include option and both header and PCH in the same directory and header is not included via #include
+- include-pch option and header is not included via #include (PCH and header can be in different directories)
 
 [Reference](http://clang.llvm.org/docs/UsersManual.html#precompiled-headers)
 
@@ -102,7 +185,14 @@ The compiler will compile my_pch.cpp up until it reaches the boundary header fil
 
 For source files that use the precompiled headers, you must compile with /Yumy_pch.h.  The compiler will skip processing anything in the source file before the include for my_pch.h and assume that my_pch.pch contains everything.  This usually means that my_pch.h should be the first file included in a source file.
 
-Like GCC, Visual-C++ has a force include feature (/FI). 
+Like GCC, Visual-C++ has a force include feature (/FI).
+
+MSVC appears to ignore the PCH if /FI is used at all.
+
+The following will work with MSVC:
+
+- /Yu with header and PCH in the same directory as source file
+- /Yu and /Fp options with header and PCH in different directories
 
 [Reference](https://msdn.microsoft.com/en-us/library/b4w02hte.aspx)
 

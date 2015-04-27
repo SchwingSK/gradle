@@ -16,10 +16,12 @@ class TestProject {
     Integer linesOfCodePerSourceFile
     List<MavenModule> dependencies
     MavenRepository repository;
+    Integer subprojectNumber
 
-    TestProject(String name, Object defaults) {
+    TestProject(String name, Object defaults, Integer subprojectNumber = null) {
         this.name = name
         this.defaults = defaults
+        this.subprojectNumber = subprojectNumber
     }
 
     int getSourceFiles() {
@@ -38,12 +40,16 @@ class TestProject {
 class ProjectGeneratorTask extends DefaultTask {
     @OutputDirectory
     File destDir
+
     boolean groovyProject
     boolean scalaProject
+    boolean nativeProject
     int sourceFiles = 1
     Integer testSourceFiles
     int linesOfCodePerSourceFile = 5
-    @InputFiles FileCollection testDependencies
+
+    @InputFiles
+    FileCollection testDependencies
 
     final List<TestProject> projects = []
     List<String> rootProjectTemplates = ['root-project']
@@ -70,7 +76,7 @@ class ProjectGeneratorTask extends DefaultTask {
             projects.subList(projectCount, projects.size()).clear()
         } else {
             while (projects.size() < projectCount) {
-                def project = projects.empty ? new TestProject("root", this) : new TestProject("project${projects.size()}", this)
+                def project = projects.empty ? new TestProject("root", this) : new TestProject("project${projects.size()}", this, projects.size())
                 projects << project
             }
         }
@@ -90,7 +96,7 @@ class ProjectGeneratorTask extends DefaultTask {
         MavenRepository repo = generateDependencyRepository()
         generateRootProject()
         subprojects.each {
-            if(repo){
+            if (repo) {
                 it.setRepository(repo)
                 it.setDependencies(repo.getDependenciesOfTransitiveLevel(1))
             }
@@ -106,7 +112,7 @@ class ProjectGeneratorTask extends DefaultTask {
         return projects[0]
     }
 
-    MavenRepository generateDependencyRepository(){
+    MavenRepository generateDependencyRepository() {
         MavenRepository repo = new RepositoryBuilder(getDestDir())
                 .withArtifacts(dependencyGraph.size)
                 .withDepth(dependencyGraph.depth)
@@ -122,7 +128,7 @@ class ProjectGeneratorTask extends DefaultTask {
     def generateRootProject() {
         def templates = subprojectNames.empty ? subProjectTemplates : rootProjectTemplates
         if (!templates.empty) {
-            templates << 'heap-capture'
+            templates.addAll(['build-event-timestamps', 'heap-capture'])
         }
         generateProject rootProject, subprojects: subprojectNames, projectDir: destDir,
                 files: subprojectNames.empty ? [] : ['settings.gradle'],
@@ -130,8 +136,11 @@ class ProjectGeneratorTask extends DefaultTask {
                 includeSource: subprojectNames.empty
 
         project.copy {
-            from testDependencies
-            into new File(getDestDir(), 'lib/test')
+            from "src/templates/init.gradle"
+            into(getDestDir())
+            into('lib/test') {
+                from testDependencies
+            }
         }
     }
 
@@ -173,14 +182,14 @@ class ProjectGeneratorTask extends DefaultTask {
             }
         }
 
-        args += [projectName: testProject.name, groovyProject: groovyProject, scalaProject: scalaProject,
-                propertyCount: (testProject.linesOfCodePerSourceFile.intdiv(7)), repository: testProject.repository, dependencies:testProject.dependencies,
-                testProject: testProject
-                ]
+        args += [projectName  : testProject.name, subprojectNumber: testProject.subprojectNumber, groovyProject: groovyProject, scalaProject: scalaProject,
+                 propertyCount: (testProject.linesOfCodePerSourceFile.intdiv(7)), repository: testProject.repository, dependencies: testProject.dependencies,
+                 testProject  : testProject
+        ]
 
         args += templateArgs
 
-        files.each {String name ->
+        files.each { String name ->
             generate(name, name, args)
         }
 
@@ -219,6 +228,14 @@ class ProjectGeneratorTask extends DefaultTask {
                     generate("src/test/scala/${packageName.replace('.', '/')}/${classArgs.testClassName}.scala", 'Test.scala', classArgs)
                 }
             }
+            if (nativeProject) {
+                testProject.sourceFiles.times { s ->
+                    args.moduleCount.times { m ->
+                        Map classArgs = args + [componentName: "lib${m + 1}", functionName: "lib${s + 1}"]
+                        generate("src/${classArgs.componentName}/c/${classArgs.functionName}.c", 'lib.c', classArgs)
+                    }
+                }
+            }
         }
     }
 
@@ -243,8 +260,9 @@ class DependencyGraph {
     int size = 0
     int depth = 1
     boolean useSnapshotVersions = false
-    boolean isEmpty(){
-        size==0
+
+    boolean isEmpty() {
+        size == 0
     }
 }
 
@@ -269,14 +287,14 @@ class MavenRepository {
         return module
     }
 
-    void publish(){
-        modules.each{
+    void publish() {
+        modules.each {
             it.publish()
         }
     }
 
-    List<MavenModule> getDependenciesOfTransitiveLevel(int level){
-        return modules.findAll{((int)(it.artifactId - "artifact").toInteger() % depth) == level - 1 }
+    List<MavenModule> getDependenciesOfTransitiveLevel(int level) {
+        return modules.findAll { ((int) (it.artifactId - "artifact").toInteger() % depth) == level - 1 }
     }
 }
 
@@ -311,7 +329,7 @@ class MavenModule {
         return this
     }
 
-    String shortNotation(){
+    String shortNotation() {
         return "$groupId:$artifactId:$version"
     }
 
@@ -492,15 +510,15 @@ class RepositoryBuilder {
     }
 
     MavenRepository create() {
-        if(numberOfArtifacts==0){
+        if (numberOfArtifacts == 0) {
             return null;
         }
         targetDir.mkdirs();
         MavenRepository repo = new MavenRepository(new File(targetDir, "mavenRepo"))
         numberOfArtifacts.times {
-            if(withSnapshotVersions){
+            if (withSnapshotVersions) {
                 repo.addModule('group', "artifact$it", "1.0-SNAPSHOT")
-            }else{
+            } else {
                 repo.addModule('group', "artifact$it")
             }
         }
@@ -513,7 +531,7 @@ class RepositoryBuilder {
 
     void transformGraphToDepth(List<MavenModule> modules, int depth) {
         def depGroups = modules.groupBy { (int) (it.artifactId - "artifact").toInteger() / depth }
-        depGroups.each {idx, groupModules ->
+        depGroups.each { idx, groupModules ->
             for (int i = 0; i < groupModules.size() - 1; i++) {
                 def next = groupModules[i + 1]
                 groupModules[i].dependsOn(next.groupId, next.artifactId, next.version)

@@ -24,7 +24,7 @@ import org.junit.runners.model.FrameworkMethod;
 import org.junit.runners.model.Statement;
 
 import java.io.File;
-import java.util.concurrent.atomic.AtomicInteger;
+import java.util.Random;
 
 
 /**
@@ -34,16 +34,18 @@ abstract class AbstractTestDirectoryProvider implements MethodRule, TestRule, Te
     private TestFile dir;
     private String prefix;
     protected static TestFile root;
-    private static AtomicInteger testCounter = new AtomicInteger(1);
+    private static final Random RANDOM = new Random();
+    public static final int ALL_DIGITS_AND_LETTERS_RADIX = 36;
+    private static final int MAX_RANDOM_PART_VALUE = Integer.valueOf("zzzzz", ALL_DIGITS_AND_LETTERS_RADIX);
 
     private String determinePrefix() {
         StackTraceElement[] stackTrace = new RuntimeException().getStackTrace();
         for (StackTraceElement element : stackTrace) {
             if (element.getClassName().endsWith("Test") || element.getClassName().endsWith("Spec")) {
-                return StringUtils.substringAfterLast(element.getClassName(), ".") + "/unknown-test-" + testCounter.getAndIncrement();
+                return StringUtils.substringAfterLast(element.getClassName(), ".") + "/unknown-test";
             }
         }
-        return "unknown-test-class-" + testCounter.getAndIncrement();
+        return "unknown-test-class";
     }
 
     protected Statement doApply(final Statement base, FrameworkMethod method, Object target) {
@@ -77,13 +79,12 @@ abstract class AbstractTestDirectoryProvider implements MethodRule, TestRule, Te
         }
         if (prefix == null) {
             String safeMethodName = methodName.replaceAll("\\s", "_").replace(File.pathSeparator, "_").replace(":", "_").replace('"', '_');
-            if (safeMethodName.length() > 64) {
-                safeMethodName = safeMethodName.substring(0, 32) + "..." + safeMethodName.substring(safeMethodName.length() - 32);
+            if (safeMethodName.length() > 60) {
+                safeMethodName = safeMethodName.substring(0, 29) + "..." + safeMethodName.substring(safeMethodName.length() - 29);
             }
             prefix = String.format("%s/%s", className, safeMethodName);
         }
     }
-
 
     public TestFile getTestDirectory() {
         if (dir == null) {
@@ -92,8 +93,9 @@ abstract class AbstractTestDirectoryProvider implements MethodRule, TestRule, Te
                 // @RunWith(SomeRunner) when the runner does not support rules.
                 prefix = determinePrefix();
             }
-            for (int counter = 1; true; counter++) {
-                dir = root.file(counter == 1 ? prefix : String.format("%s%d", prefix, counter));
+            while (true) {
+                // Use a random prefix to avoid reusing test directories
+                dir = root.file(prefix, Integer.toString(RANDOM.nextInt(MAX_RANDOM_PART_VALUE), ALL_DIGITS_AND_LETTERS_RADIX));
                 if (dir.mkdirs()) {
                     break;
                 }

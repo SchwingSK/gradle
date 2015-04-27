@@ -16,6 +16,7 @@
 package org.gradle.tooling;
 
 import org.gradle.api.Incubating;
+import org.gradle.tooling.events.test.TestProgressListener;
 import org.gradle.tooling.model.Launchable;
 import org.gradle.tooling.model.Task;
 
@@ -121,6 +122,13 @@ public interface BuildLauncher extends LongRunningOperation {
      * @since 1.0-milestone-3
      */
     BuildLauncher addProgressListener(ProgressListener listener);
+
+    /**
+     * {@inheritDoc}
+     * @since 2.4
+     */
+    @Incubating
+    BuildLauncher addTestProgressListener(TestProgressListener listener);
 
     /**
      * {@inheritDoc}

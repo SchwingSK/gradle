@@ -16,9 +16,7 @@
 package org.gradle.launcher.exec;
 
 import org.gradle.api.logging.LogLevel;
-import org.gradle.initialization.BuildClientMetaData;
-import org.gradle.initialization.BuildRequestMetaData;
-import org.gradle.initialization.DefaultBuildRequestMetaData;
+import org.gradle.launcher.daemon.configuration.DaemonUsage;
 import org.gradle.util.GUtil;
 
 import java.io.File;
@@ -27,16 +25,13 @@ import java.util.HashMap;
 import java.util.Map;
 
 public class DefaultBuildActionParameters implements BuildActionParameters, Serializable {
-    private final BuildClientMetaData clientMetaData;
-    private final long startTime;
     private final File currentDir;
     private final LogLevel logLevel;
     private final Map<String, String> systemProperties;
     private final Map<String, String> envVariables;
+    private final DaemonUsage daemonUsage;
 
-    public DefaultBuildActionParameters(BuildClientMetaData clientMetaData, long startTime, Map<?, ?> systemProperties, Map<String, String> envVariables, File currentDir, LogLevel logLevel) {
-        this.clientMetaData = clientMetaData;
-        this.startTime = startTime;
+    public DefaultBuildActionParameters(Map<?, ?> systemProperties, Map<String, String> envVariables, File currentDir, LogLevel logLevel, DaemonUsage daemonUsage) {
         this.currentDir = currentDir;
         this.logLevel = logLevel;
         assert systemProperties != null;
@@ -44,10 +39,7 @@ public class DefaultBuildActionParameters implements BuildActionParameters, Seri
         this.systemProperties = new HashMap<String, String>();
         GUtil.addToMap(this.systemProperties, systemProperties);
         this.envVariables = new HashMap<String, String>(envVariables);
-    }
-
-    public BuildRequestMetaData getBuildRequestMetaData() {
-        return new DefaultBuildRequestMetaData(clientMetaData, startTime);
+        this.daemonUsage = daemonUsage;
     }
 
     public Map<String, String> getSystemProperties() {
@@ -69,11 +61,14 @@ public class DefaultBuildActionParameters implements BuildActionParameters, Seri
     @Override
     public String toString() {
         return "DefaultBuildActionParameters{"
-                + "clientMetaData=" + clientMetaData
-                + ", startTime=" + startTime
                 + ", currentDir=" + currentDir
                 + ", systemProperties size=" + systemProperties.size()
                 + ", envVariables size=" + envVariables.size()
                 + '}';
+    }
+
+    @Override
+    public DaemonUsage getDaemonUsage() {
+        return daemonUsage;
     }
 }

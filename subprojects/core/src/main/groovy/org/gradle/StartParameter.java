@@ -72,8 +72,9 @@ public class StartParameter extends LoggingConfiguration implements Serializable
     private File projectCacheDir;
     private boolean refreshDependencies;
     private boolean recompileScripts;
-    private int parallelThreadCount;
+    private boolean parallelProjectExecution;
     private boolean configureOnDemand;
+    private int maxWorkerCount;
 
     /**
      * Sets the project's cache location. Set to null to use the default location.
@@ -102,6 +103,7 @@ public class StartParameter extends LoggingConfiguration implements Serializable
         currentDir = layoutParameters.getCurrentDir();
         projectDir = layoutParameters.getProjectDir();
         gradleUserHomeDir = layoutParameters.getGradleUserHomeDir();
+        maxWorkerCount = Runtime.getRuntime().availableProcessors();
     }
 
     /**
@@ -154,8 +156,9 @@ public class StartParameter extends LoggingConfiguration implements Serializable
         p.rerunTasks = rerunTasks;
         p.recompileScripts = recompileScripts;
         p.refreshDependencies = refreshDependencies;
-        p.parallelThreadCount = parallelThreadCount;
+        p.parallelProjectExecution = parallelProjectExecution;
         p.configureOnDemand = configureOnDemand;
+        p.maxWorkerCount = maxWorkerCount;
         return p;
     }
 
@@ -562,18 +565,85 @@ public class StartParameter extends LoggingConfiguration implements Serializable
      * <0: Automatically determine the optimal number of executors to use.
      *  0: Do not use parallel execution.
      * >0: Use this many parallel execution threads.
+     *
+     * @deprecated Use getMaxWorkerCount or isParallelProjectExecutionEnabled instead.
+     *
+     * @see #getMaxWorkerCount()
+     * @see #isParallelProjectExecutionEnabled()
      */
+    @Deprecated
     public int getParallelThreadCount() {
-        return parallelThreadCount;
+        if (isParallelProjectExecutionEnabled()) {
+            return getMaxWorkerCount();
+        }
+        return 0;
     }
 
     /**
      * Specifies the number of parallel threads to use for build execution.
-     * 
+     *
      * @see #getParallelThreadCount()
      */
+    @Deprecated
     public void setParallelThreadCount(int parallelThreadCount) {
-        this.parallelThreadCount = parallelThreadCount;
+        setParallelProjectExecutionEnabled(parallelThreadCount!=0);
+
+        if (parallelThreadCount < 1) {
+            setMaxWorkerCount(Runtime.getRuntime().availableProcessors());
+        } else {
+            setMaxWorkerCount(parallelThreadCount);
+        }
+    }
+
+    /**
+     * Returns true if parallel project execution is enabled.
+     *
+     * @see #getParallelThreadCount()
+     */
+    @Incubating
+    public boolean isParallelProjectExecutionEnabled() {
+        return parallelProjectExecution;
+    }
+
+    /**
+     * Enables/disables parallel project execution.
+     *
+     * @see #isParallelProjectExecutionEnabled()
+     */
+    @Incubating
+    public void setParallelProjectExecutionEnabled(boolean parallelProjectExecution) {
+        this.parallelProjectExecution = parallelProjectExecution;
+    }
+
+    /**
+     * Returns the maximum number of concurrent workers used for underlying build operations.
+     *
+     * Workers can be threads, processes or whatever Gradle considers a "worker".
+     *
+     * Defaults to the number of processors available to the Java virtual machine.
+     *
+     * @see java.lang.Runtime#availableProcessors()
+     *
+     * @return maximum number of concurrent workers, always >= 1.
+     */
+    @Incubating
+    public int getMaxWorkerCount() {
+        return maxWorkerCount;
+    }
+
+    /**
+     * Specifies the maximum number of concurrent workers used for underlying build operations.
+     *
+     * @throws IllegalArgumentException if {@code maxWorkerCount} is &lt; 1
+     * @see #getMaxWorkerCount()
+     */
+    @Incubating
+    public void setMaxWorkerCount(int maxWorkerCount) {
+        if (maxWorkerCount < 1) {
+            throw new IllegalArgumentException("Max worker count must be > 0");
+        } else {
+            this.maxWorkerCount = maxWorkerCount;
+        }
     }
 
     /**
@@ -604,8 +674,9 @@ public class StartParameter extends LoggingConfiguration implements Serializable
                 + ", recompileScripts=" + recompileScripts
                 + ", offline=" + offline
                 + ", refreshDependencies=" + refreshDependencies
-                + ", parallelThreadCount=" + parallelThreadCount
+                + ", parallelProjectExecution=" + parallelProjectExecution
                 + ", configureOnDemand=" + configureOnDemand
+                + ", maxWorkerCount=" + maxWorkerCount
                 + '}';
     }
 

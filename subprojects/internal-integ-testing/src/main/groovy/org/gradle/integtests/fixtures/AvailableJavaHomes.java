@@ -17,6 +17,7 @@ package org.gradle.integtests.fixtures;
 
 import org.gradle.api.JavaVersion;
 import org.gradle.api.Nullable;
+import org.gradle.api.Transformer;
 import org.gradle.api.specs.Spec;
 import org.gradle.integtests.fixtures.jvm.InstalledJvmLocator;
 import org.gradle.integtests.fixtures.jvm.JvmInstallation;
@@ -25,8 +26,8 @@ import org.gradle.internal.jvm.JavaInfo;
 import org.gradle.internal.jvm.Jre;
 import org.gradle.internal.jvm.Jvm;
 import org.gradle.internal.nativeintegration.filesystem.FileCanonicalizer;
-import org.gradle.internal.nativeintegration.services.NativeServices;
 import org.gradle.internal.os.OperatingSystem;
+import org.gradle.testfixtures.internal.NativeServicesTestFixture;
 import org.gradle.util.CollectionUtils;
 
 import java.io.File;
@@ -66,13 +67,11 @@ abstract public class AvailableJavaHomes {
      * @return empty list if no JDK can be found.
      */
     public static List<JavaInfo> getAvailableJdks() {
-        List<JavaInfo> availableJdks = new ArrayList<JavaInfo>();
-
-        for (JvmInstallation candidate : getJvms()) {
-            availableJdks.add(Jvm.forHome(candidate.getJavaHome()));
-        }
-
-        return availableJdks;
+        return CollectionUtils.collect(getJvms(), new Transformer<JavaInfo, JvmInstallation>() {
+            public JavaInfo transform(JvmInstallation candidate) {
+                return Jvm.forHome(candidate.getJavaHome());
+            }
+        });
     }
 
     /**
@@ -140,7 +139,7 @@ abstract public class AvailableJavaHomes {
 
     private static List<JvmInstallation> getJvms() {
         if (jvms == null) {
-            FileCanonicalizer fileCanonicalizer = NativeServices.getInstance().get(FileCanonicalizer.class);
+            FileCanonicalizer fileCanonicalizer = NativeServicesTestFixture.getInstance().get(FileCanonicalizer.class);
             jvms = new ArrayList<JvmInstallation>();
             jvms.addAll(new DevInfrastructureJvmLocator(fileCanonicalizer).findJvms());
             jvms.addAll(new InstalledJvmLocator().findJvms());

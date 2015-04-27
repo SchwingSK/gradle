@@ -16,7 +16,6 @@
 
 package org.gradle.api.internal.project;
 
-import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import groovy.lang.Closure;
 import groovy.lang.MissingPropertyException;
@@ -54,11 +53,11 @@ import org.gradle.configuration.project.ProjectConfigurationActionContainer;
 import org.gradle.configuration.project.ProjectEvaluator;
 import org.gradle.groovy.scripts.ScriptSource;
 import org.gradle.internal.Factory;
+import org.gradle.internal.event.ListenerBroadcast;
 import org.gradle.internal.reflect.Instantiator;
 import org.gradle.internal.service.ServiceRegistry;
 import org.gradle.internal.service.scopes.ServiceRegistryFactory;
 import org.gradle.listener.ClosureBackedMethodInvocationDispatch;
-import org.gradle.listener.ListenerBroadcast;
 import org.gradle.logging.LoggingManagerInternal;
 import org.gradle.logging.StandardOutputCapture;
 import org.gradle.model.dsl.internal.NonTransformedModelDslBacking;
@@ -142,8 +141,6 @@ public abstract class AbstractProject extends AbstractPluginAware implements Pro
 
     private final Path path;
 
-    private SingleRunCompositeRunnable modelRulesBlockRunner = new SingleRunCompositeRunnable();
-
     public AbstractProject(String name,
                            ProjectInternal parent,
                            File projectDir,
@@ -191,6 +188,7 @@ public abstract class AbstractProject extends AbstractPluginAware implements Pro
         ModelCreator taskFactoryCreator = ModelCreators.bridgedInstance(ModelReference.of(taskFactoryPath, ITaskFactory.class), services.get(ITaskFactory.class))
                 .descriptor("Project.<init>.taskFactory")
                 .ephemeral(true)
+                .hidden(true)
                 .build();
 
         modelRegistry.createOrReplace(taskFactoryCreator);
@@ -199,6 +197,7 @@ public abstract class AbstractProject extends AbstractPluginAware implements Pro
                 ModelCreators.bridgedInstance(ModelReference.of("serviceRegistry", ServiceRegistry.class), services)
                         .descriptor("Project.<init>.serviceRegistry()")
                         .ephemeral(true)
+                        .hidden(true)
                         .build()
         );
 
@@ -210,6 +209,7 @@ public abstract class AbstractProject extends AbstractPluginAware implements Pro
                 })
                         .descriptor("Project.<init>.buildDir()")
                         .ephemeral(true)
+                        .hidden(true)
                         .build()
         );
 
@@ -217,6 +217,7 @@ public abstract class AbstractProject extends AbstractPluginAware implements Pro
                 ModelCreators.bridgedInstance(ModelReference.of("projectIdentifier", ProjectIdentifier.class), this)
                         .descriptor("Project.<init>.projectIdentifier()")
                         .ephemeral(true)
+                        .hidden(true)
                         .build()
         );
 
@@ -224,6 +225,7 @@ public abstract class AbstractProject extends AbstractPluginAware implements Pro
                 ModelCreators.bridgedInstance(ModelReference.of("extensions", ExtensionContainer.class), getExtensions())
                         .descriptor("Project.<init>.extensions()")
                         .ephemeral(true)
+                        .hidden(true)
                         .build()
         );
     }
@@ -554,11 +556,14 @@ public abstract class AbstractProject extends AbstractPluginAware implements Pro
     }
 
     public String toString() {
-        if (parent != null) {
-            return String.format("project '%s'", path);
-        } else {
-            return String.format("root project '%s'", name);
+        StringBuilder builder = new StringBuilder();
+        if (parent == null) {
+            builder.append("root ");
         }
+        builder.append("project '");
+        builder.append(parent == null ? name : path);
+        builder.append("'");
+        return builder.toString();
     }
 
     public Map<Project, Set<Task>> getAllTasks(boolean recursive) {
@@ -583,8 +588,7 @@ public abstract class AbstractProject extends AbstractPluginAware implements Pro
         final Set<Task> foundTasks = new HashSet<Task>();
         Action<Project> action = new Action<Project>() {
             public void execute(Project project) {
-                //in configure-on-demand we don't know if the project was configured, hence explicit evaluate.
-                // Not especially tidy, we should clean this up while working on new configuration model.
+                // Don't force evaluation of rules here, let the task container do what it needs to
                 ((ProjectInternal) project).evaluate();
 
                 Task task = project.getTasks().findByName(name);
@@ -968,30 +972,19 @@ public abstract class AbstractProject extends AbstractPluginAware implements Pro
         }
     }
 
-    public void addModelRulesBlockRunner(Runnable runnable) {
-        modelRulesBlockRunner.add(runnable);
+    @Inject
+    protected DeferredProjectConfiguration getDeferredProjectConfiguration() {
+        // Decoration takes care of the implementation
+        throw new UnsupportedOperationException();
+    }
+
+    public void addDeferredConfiguration(Runnable configuration) {
+        getDeferredProjectConfiguration().add(configuration);
     }
 
     @Override
-    public void runModelRulesBlock() {
-        modelRulesBlockRunner.run();
+    public void fireDeferredConfiguration() {
+        getDeferredProjectConfiguration().fire();
     }
 
-    private static class SingleRunCompositeRunnable implements Runnable {
-        private boolean hasRun;
-        private LinkedList<Runnable> runnables = Lists.newLinkedList();
-
-        public void run() {
-            if (!hasRun) {
-                hasRun = true;
-                for (Runnable runnable : runnables) {
-                    runnable.run();
-                }
-            }
-        }
-
-        public void add(Runnable runnable) {
-            runnables.add(runnable);
-        }
-    }
 }

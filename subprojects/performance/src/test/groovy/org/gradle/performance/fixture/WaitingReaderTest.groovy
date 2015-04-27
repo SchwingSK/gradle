@@ -16,15 +16,17 @@
 
 package org.gradle.performance.fixture
 
-import spock.lang.Specification
+import org.gradle.test.fixtures.concurrent.ConcurrentSpec
 
-class WaitingReaderTest extends Specification {
+class WaitingReaderTest extends ConcurrentSpec {
+
+    def input = new ExpandingReader()
+    def source = new BufferedReader(input)
 
     def "can read lines"() {
-        def input = new ExpandingReader()
-        input.append("1\n2")
-        def source = new BufferedReader(input)
-        def reader = new WaitingReader(source, 1, 1)
+        def reader = new WaitingReader(source, 100, 1)
+        input.append("1\n2\n")
+
         expect:
         reader.readLine() == "1"
         reader.retriedCount == 0
@@ -37,10 +39,8 @@ class WaitingReaderTest extends Specification {
     }
 
     def "can receive content after end of stream reached"() {
-        def input = new ExpandingReader()
+        def reader = new WaitingReader(source, 100, 1)
         input.append("1\n2\n")
-        def source = new BufferedReader(input)
-        def reader = new WaitingReader(source, 1, 1)
 
         expect:
         reader.readLine() == "1"
@@ -50,6 +50,20 @@ class WaitingReaderTest extends Specification {
         reader.readLine() == "3"
         reader.readLine() == "4"
         reader.readLine() == null
+    }
+
+    def "test"() {
+        def reader = new WaitingReader(source, 1000, 10)
+        input.append("first part of the line")
+
+        start {
+            sleep(200)
+            input.append(", second part of the line\nnext line\n")
+        }
+
+        expect:
+        reader.readLine() == "first part of the line, second part of the line"
+        reader.readLine() == "next line"
     }
 
     static class ExpandingReader extends Reader {
@@ -64,7 +78,7 @@ class WaitingReaderTest extends Specification {
         }
 
         @Override
-        int read(char[] dest, int offset, int len) throws IOException {
+        synchronized int read(char[] dest, int offset, int len) throws IOException {
             if (buffer.length() == 0) {
                 return -1
             }

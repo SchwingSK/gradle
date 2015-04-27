@@ -17,10 +17,8 @@
 
 package org.gradle.performance
 
-import org.junit.experimental.categories.Category
 import spock.lang.Unroll
 
-@Category(Experiment.class)
 class VariantsPerformanceTest extends AbstractCrossBuildPerformanceTest {
 
     @Unroll
@@ -51,6 +49,11 @@ class VariantsPerformanceTest extends AbstractCrossBuildPerformanceTest {
         runner.baseline {
             projectName("${size}VariantsOldModel").displayName("old model").invocation {
                 tasksToRun(task).useDaemon()
+            }
+        }
+        runner.baseline {
+            projectName("${size}VariantsOldModel").displayName("old model (tooling api)").invocation {
+                tasksToRun(task).useToolingApi()
             }
         }
         runner.baseline {
@@ -102,6 +105,11 @@ class VariantsPerformanceTest extends AbstractCrossBuildPerformanceTest {
         runner.baseline {
             projectName("variantsOldModelMultiproject").displayName("old model").invocation {
                 tasksToRun(*tasks).useDaemon()
+            }
+        }
+        runner.baseline {
+            projectName("variantsOldModelMultiproject").displayName("old model (tooling api)").invocation {
+                tasksToRun(*tasks).useToolingApi()
             }
         }
         runner.baseline {

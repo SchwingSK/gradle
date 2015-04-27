@@ -17,6 +17,7 @@
 package org.gradle.tooling;
 
 import org.gradle.api.Incubating;
+import org.gradle.tooling.events.test.TestProgressListener;
 
 import java.io.File;
 import java.io.InputStream;
@@ -79,6 +80,13 @@ public interface BuildActionExecuter<T> extends LongRunningOperation {
      * @since 2.3
      */
     BuildActionExecuter<T> addProgressListener(ProgressListener listener);
+
+    /**
+     * {@inheritDoc}
+     * @since 2.4
+     */
+    @Incubating
+    BuildActionExecuter<T> addTestProgressListener(TestProgressListener listener);
 
     /**
      * {@inheritDoc}

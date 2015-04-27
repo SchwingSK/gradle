@@ -33,11 +33,16 @@ import org.gradle.api.internal.artifacts.ivyservice.ivyresolve.parser.Descriptor
 import org.gradle.api.internal.artifacts.ivyservice.ivyresolve.parser.MetaDataParseException;
 import org.gradle.api.internal.component.ArtifactType;
 import org.gradle.internal.SystemProperties;
+import org.gradle.internal.UncheckedException;
 import org.gradle.internal.component.external.model.*;
 import org.gradle.internal.component.model.*;
+import org.gradle.internal.hash.HashUtil;
+import org.gradle.internal.hash.HashValue;
 import org.gradle.internal.resolve.ArtifactResolveException;
 import org.gradle.internal.resolve.result.*;
-import org.gradle.internal.resource.LocallyAvailableExternalResource;
+import org.gradle.internal.resource.local.LocallyAvailableExternalResource;
+import org.gradle.internal.resource.local.ByteArrayLocalResource;
+import org.gradle.internal.resource.local.FileLocalResource;
 import org.gradle.internal.resource.local.FileStore;
 import org.gradle.internal.resource.local.LocallyAvailableResourceFinder;
 import org.gradle.internal.resource.transfer.CacheAwareExternalResourceAccessor;
@@ -48,6 +53,7 @@ import org.slf4j.LoggerFactory;
 
 import java.io.File;
 import java.io.IOException;
+import java.io.UnsupportedEncodingException;
 import java.net.URI;
 import java.util.*;
 
@@ -157,27 +163,21 @@ public abstract class ExternalResourceResolver implements ModuleVersionPublisher
     }
 
     @Nullable
-    protected MutableModuleComponentResolveMetaData parseMetaDataFromArtifact(ModuleComponentIdentifier moduleVersionIdentifier, ExternalResourceArtifactResolver artifactResolver, ResourceAwareResolveResult result) {
-        ModuleComponentArtifactMetaData artifact = getMetaDataArtifactFor(moduleVersionIdentifier);
+    protected MutableModuleComponentResolveMetaData parseMetaDataFromArtifact(ModuleComponentIdentifier moduleComponentIdentifier, ExternalResourceArtifactResolver artifactResolver, ResourceAwareResolveResult result) {
+        ModuleComponentArtifactMetaData artifact = getMetaDataArtifactFor(moduleComponentIdentifier);
         LocallyAvailableExternalResource metaDataResource = artifactResolver.resolveMetaDataArtifact(artifact, result);
         if (metaDataResource == null) {
             return null;
         }
 
         ExternalResourceResolverDescriptorParseContext context = new ExternalResourceResolverDescriptorParseContext(repositoryChain);
-        MutableModuleComponentResolveMetaData metaData = parseMetaDataFromResource(metaDataResource, context);
-        metaData = processMetaData(metaData);
-
-        checkMetadataConsistency(moduleVersionIdentifier, metaData);
-
-        return metaData;
+        return parseMetaDataFromResource(moduleComponentIdentifier, metaDataResource, context);
     }
 
     private MutableModuleComponentResolveMetaData createMetaDataFromDefaultArtifact(ModuleComponentIdentifier moduleVersionIdentifier, DependencyMetaData dependency, ExternalResourceArtifactResolver artifactResolver, ResourceAwareResolveResult result) {
         for (IvyArtifactName artifact : getDependencyArtifactNames(dependency)) {
             if (artifactResolver.artifactExists(new DefaultModuleComponentArtifactMetaData(moduleVersionIdentifier, artifact), result)) {
-                MutableModuleComponentResolveMetaData metaData = createMetaDataForDependency(dependency);
-                return processMetaData(metaData);
+                return createMetaDataForDependency(dependency);
             }
         }
         return null;
@@ -185,7 +185,7 @@ public abstract class ExternalResourceResolver implements ModuleVersionPublisher
 
     protected abstract MutableModuleComponentResolveMetaData createMetaDataForDependency(DependencyMetaData dependency);
 
-    protected abstract MutableModuleComponentResolveMetaData parseMetaDataFromResource(LocallyAvailableExternalResource cachedResource, DescriptorParseContext context);
+    protected abstract MutableModuleComponentResolveMetaData parseMetaDataFromResource(ModuleComponentIdentifier moduleComponentIdentifier, LocallyAvailableExternalResource cachedResource, DescriptorParseContext context);
 
     private Set<IvyArtifactName> getDependencyArtifactNames(DependencyMetaData dependency) {
         String moduleName = dependency.getRequested().getName();
@@ -199,11 +199,7 @@ public abstract class ExternalResourceResolver implements ModuleVersionPublisher
         return artifactSet;
     }
 
-    protected MutableModuleComponentResolveMetaData processMetaData(MutableModuleComponentResolveMetaData metaData) {
-        return metaData;
-    }
-
-    private void checkMetadataConsistency(ModuleComponentIdentifier expectedId, ModuleComponentResolveMetaData metadata) throws MetaDataParseException {
+    protected void checkMetadataConsistency(ModuleComponentIdentifier expectedId, ModuleComponentResolveMetaData metadata) throws MetaDataParseException {
         List<String> errors = new ArrayList<String>();
         if (!expectedId.getGroup().equals(metadata.getId().getGroup())) {
             errors.add("bad group: expected='" + expectedId.getGroup() + "' found='" + metadata.getId().getGroup() + "'");
@@ -298,7 +294,24 @@ public abstract class ExternalResourceResolver implements ModuleVersionPublisher
     }
 
     private void put(File src, URI destination) throws IOException {
-        repository.put(src, destination);
+        repository.withProgressLogging().put(new FileLocalResource(src), destination);
+        putChecksum(src, destination);
+    }
+
+    private void putChecksum(File source, URI destination) throws IOException {
+        byte[] checksumFile = createChecksumFile(source, "SHA1", 40);
+        URI checksumDestination = URI.create(destination + ".sha1");
+        repository.put(new ByteArrayLocalResource(checksumFile), checksumDestination);
+    }
+
+    private byte[] createChecksumFile(File src, String algorithm, int checksumLength) {
+        HashValue hash = HashUtil.createHash(src, algorithm);
+        String formattedHashString = hash.asZeroPaddedHexString(checksumLength);
+        try {
+            return formattedHashString.getBytes("US-ASCII");
+        } catch (UnsupportedEncodingException e) {
+            throw UncheckedException.throwAsUncheckedException(e);
+        }
     }
 
     protected void addIvyPattern(ResourcePattern pattern) {
@@ -366,6 +379,11 @@ public abstract class ExternalResourceResolver implements ModuleVersionPublisher
     }
 
     protected abstract class LocalRepositoryAccess extends AbstractRepositoryAccess {
+        @Override
+        public String toString() {
+            return "local > " + ExternalResourceResolver.this.toString();
+        }
+
         public final void listModuleVersions(DependencyMetaData dependency, BuildableModuleVersionListingResolveResult result) {
         }
 
@@ -383,6 +401,11 @@ public abstract class ExternalResourceResolver implements ModuleVersionPublisher
     }
 
     protected abstract class RemoteRepositoryAccess extends AbstractRepositoryAccess {
+        @Override
+        public String toString() {
+            return "remote > " + ExternalResourceResolver.this.toString();
+        }
+
         public final void listModuleVersions(DependencyMetaData dependency, BuildableModuleVersionListingResolveResult result) {
             doListModuleVersions(dependency, result);
         }

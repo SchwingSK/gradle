@@ -17,7 +17,6 @@
 package org.gradle.test.fixtures.server.sftp
 
 import org.apache.commons.io.FileUtils
-import org.apache.commons.io.FilenameUtils
 import org.apache.sshd.SshServer
 import org.apache.sshd.common.NamedFactory
 import org.apache.sshd.common.file.virtualfs.VirtualFileSystemFactory
@@ -157,6 +156,10 @@ class SFTPServer extends ServerWithExpectations implements RepositoryServer {
         return new URI("sftp://${hostAddress}:${port}")
     }
 
+    void allowAll() {
+        expectations << new SftpAllowAll()
+    }
+
     void allowInit() {
         expectations << new SftpAllow(SftpSubsystem.SSH_FXP_INIT)
     }
@@ -188,7 +191,6 @@ class SFTPServer extends ServerWithExpectations implements RepositoryServer {
     }
 
     void expectFileUpload(String path) {
-        expectLstat(FilenameUtils.getFullPathNoEndSeparator(path))
         expectOpen(path)
         allowWrite(path)
         expectClose(path)
@@ -285,6 +287,7 @@ class SFTPServer extends ServerWithExpectations implements RepositoryServer {
 
             int pos = buffer.rpos()
             def command = commandMessage(buffer, type)
+            println ("Handling $command")
             buffer.rpos(pos)
 
             def matched = expectations.find { it.matches(buffer, type, id) }
@@ -434,6 +437,20 @@ class SFTPServer extends ServerWithExpectations implements RepositoryServer {
 
         boolean matches(Buffer buffer, int type, int id) {
             return type == expectedType
+        }
+
+        void assertMet() {
+            //can never be not met
+        }
+    }
+
+    class SftpAllowAll implements SftpExpectation {
+
+        final boolean failing = false
+        final boolean missing = false
+
+        boolean matches(Buffer buffer, int type, int id) {
+            return true
         }
 
         void assertMet() {

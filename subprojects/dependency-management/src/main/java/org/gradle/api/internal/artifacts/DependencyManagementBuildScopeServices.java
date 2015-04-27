@@ -26,9 +26,7 @@ import org.gradle.api.internal.artifacts.ivyservice.dynamicversions.SingleFileBa
 import org.gradle.api.internal.artifacts.ivyservice.ivyresolve.ResolveIvyFactory;
 import org.gradle.api.internal.artifacts.ivyservice.ivyresolve.StartParameterResolutionOverride;
 import org.gradle.api.internal.artifacts.ivyservice.ivyresolve.memcache.InMemoryCachedRepositoryFactory;
-import org.gradle.api.internal.artifacts.ivyservice.ivyresolve.strategy.ResolverStrategy;
-import org.gradle.api.internal.artifacts.ivyservice.ivyresolve.strategy.VersionComparator;
-import org.gradle.api.internal.artifacts.ivyservice.ivyresolve.strategy.VersionSelectorScheme;
+import org.gradle.api.internal.artifacts.ivyservice.ivyresolve.strategy.*;
 import org.gradle.api.internal.artifacts.ivyservice.modulecache.DefaultModuleArtifactsCache;
 import org.gradle.api.internal.artifacts.ivyservice.modulecache.DefaultModuleMetaDataCache;
 import org.gradle.api.internal.artifacts.ivyservice.modulecache.ModuleArtifactsCache;
@@ -162,12 +160,12 @@ class DependencyManagementBuildScopeServices {
         return new ResolverStrategy();
     }
 
-    VersionSelectorScheme createVersionSelectorScheme(ResolverStrategy resolverStrategy) {
-        return resolverStrategy.getVersionSelectorScheme();
+    VersionSelectorScheme createVersionSelectorScheme(ResolverStrategy resolverStrategy, VersionComparator versionComparator) {
+        return new DefaultVersionSelectorScheme(versionComparator);
     }
 
-    VersionComparator createVersionComparator(ResolverStrategy resolverStrategy) {
-        return resolverStrategy.getVersionComparator();
+    VersionComparator createVersionComparator() {
+        return new DefaultVersionComparator();
     }
 
     RepositoryTransportFactory createRepositoryTransportFactory(ProgressLoggerFactory progressLoggerFactory,

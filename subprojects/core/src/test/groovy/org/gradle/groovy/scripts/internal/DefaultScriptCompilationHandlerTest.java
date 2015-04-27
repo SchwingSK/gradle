@@ -29,6 +29,8 @@ import org.codehaus.groovy.control.Phases;
 import org.codehaus.groovy.control.SourceUnit;
 import org.gradle.api.Action;
 import org.gradle.api.GradleException;
+import org.gradle.api.internal.initialization.ClassLoaderIds;
+import org.gradle.api.internal.initialization.loadercache.ClassLoaderId;
 import org.gradle.api.internal.initialization.loadercache.DummyClassLoaderCache;
 import org.gradle.configuration.ImportsReader;
 import org.gradle.groovy.scripts.ScriptCompilationException;
@@ -37,6 +39,8 @@ import org.gradle.groovy.scripts.StringScriptSource;
 import org.gradle.groovy.scripts.Transformer;
 import org.gradle.internal.Actions;
 import org.gradle.internal.resource.Resource;
+import org.gradle.internal.serialize.BaseSerializerFactory;
+import org.gradle.internal.serialize.Serializer;
 import org.gradle.test.fixtures.file.TestNameTestDirectoryProvider;
 import org.jmock.Expectations;
 import org.jmock.integration.junit4.JMock;
@@ -84,13 +88,14 @@ public class DefaultScriptCompilationHandlerTest {
     private JUnit4Mockery context = new JUnit4Mockery();
     @Rule
     public TestNameTestDirectoryProvider tmpDir = new TestNameTestDirectoryProvider();
+    private final ClassLoaderId classLoaderId = ClassLoaderIds.buildScript("foo", "bar");
 
     @Before
     public void setUp() throws IOException, ClassNotFoundException {
         File testProjectDir = tmpDir.createDir("projectDir");
         classLoader = getClass().getClassLoader();
         importsReader = context.mock(ImportsReader.class);
-        context.checking(new Expectations(){{
+        context.checking(new Expectations() {{
             allowing(importsReader).getImportPackages();
             will(returnValue(new String[0]));
         }});
@@ -114,7 +119,7 @@ public class DefaultScriptCompilationHandlerTest {
 
     private ScriptSource scriptSource(final String scriptText) {
         final ScriptSource source = context.mock(ScriptSource.class, scriptText);
-        context.checking(new Expectations(){{
+        context.checking(new Expectations() {{
             Resource resource = context.mock(Resource.class, scriptText + "resource");
 
             allowing(source).getClassName();
@@ -142,7 +147,7 @@ public class DefaultScriptCompilationHandlerTest {
 
         checkScriptClassesInCache();
 
-        CompiledScript<? extends Script, Void> compiledScript = scriptCompilationHandler.loadFromDir(scriptSource, classLoader, scriptCacheDir, metadataCacheDir, null, expectedScriptClass);
+        CompiledScript<? extends Script, Void> compiledScript = scriptCompilationHandler.loadFromDir(scriptSource, classLoader, scriptCacheDir, metadataCacheDir, null, expectedScriptClass, classLoaderId);
 
         Script script = compiledScript.loadClass().newInstance();
         evaluateScript(script);
@@ -167,7 +172,7 @@ public class DefaultScriptCompilationHandlerTest {
 
         checkEmptyScriptInCache();
 
-        CompiledScript<? extends Script, Void> compiledScript = scriptCompilationHandler.loadFromDir(scriptSource, classLoader, scriptCacheDir, metadataCacheDir, null, expectedScriptClass);
+        CompiledScript<? extends Script, Void> compiledScript = scriptCompilationHandler.loadFromDir(scriptSource, classLoader, scriptCacheDir, metadataCacheDir, null, expectedScriptClass, classLoaderId);
 
         Script script = compiledScript.loadClass().newInstance();
         assertThat(script, isA(expectedScriptClass));
@@ -180,7 +185,7 @@ public class DefaultScriptCompilationHandlerTest {
 
         checkEmptyScriptInCache();
 
-        CompiledScript<? extends Script, Void> compiledScript = scriptCompilationHandler.loadFromDir(scriptSource, classLoader, scriptCacheDir, metadataCacheDir, null, expectedScriptClass);
+        CompiledScript<? extends Script, Void> compiledScript = scriptCompilationHandler.loadFromDir(scriptSource, classLoader, scriptCacheDir, metadataCacheDir, null, expectedScriptClass, classLoaderId);
 
         Script script = compiledScript.loadClass().newInstance();
         assertThat(script, isA(expectedScriptClass));
@@ -193,7 +198,7 @@ public class DefaultScriptCompilationHandlerTest {
 
         checkEmptyScriptInCache();
 
-        CompiledScript<? extends Script, Void> compiledScript = scriptCompilationHandler.loadFromDir(scriptSource, classLoader, scriptCacheDir, metadataCacheDir, null, expectedScriptClass);
+        CompiledScript<? extends Script, Void> compiledScript = scriptCompilationHandler.loadFromDir(scriptSource, classLoader, scriptCacheDir, metadataCacheDir, null, expectedScriptClass, classLoaderId);
 
         Script script = compiledScript.loadClass().newInstance();
         assertThat(script, isA(expectedScriptClass));
@@ -206,7 +211,7 @@ public class DefaultScriptCompilationHandlerTest {
 
         checkScriptClassesInCache();
 
-        CompiledScript<? extends Script, Void> compiledScript = scriptCompilationHandler.loadFromDir(scriptSource, classLoader, scriptCacheDir, metadataCacheDir, null, expectedScriptClass);
+        CompiledScript<? extends Script, Void> compiledScript = scriptCompilationHandler.loadFromDir(scriptSource, classLoader, scriptCacheDir, metadataCacheDir, null, expectedScriptClass, classLoaderId);
 
         Script script = compiledScript.loadClass().newInstance();
         assertThat(script, isA(expectedScriptClass));
@@ -219,7 +224,7 @@ public class DefaultScriptCompilationHandlerTest {
 
         checkScriptClassesInCache();
 
-        CompiledScript<? extends Script, Void> compiledScript = scriptCompilationHandler.loadFromDir(scriptSource, classLoader, scriptCacheDir, metadataCacheDir, null, expectedScriptClass);
+        CompiledScript<? extends Script, Void> compiledScript = scriptCompilationHandler.loadFromDir(scriptSource, classLoader, scriptCacheDir, metadataCacheDir, null, expectedScriptClass, classLoaderId);
 
         Script script = compiledScript.loadClass().newInstance();
         assertThat(script, isA(expectedScriptClass));
@@ -229,7 +234,7 @@ public class DefaultScriptCompilationHandlerTest {
     public void testLoadFromDirWhenNotAssignableToBaseClass() {
         scriptCompilationHandler.compileToDir(scriptSource, classLoader, scriptCacheDir, metadataCacheDir, null, classpathClosureName, Script.class, verifier);
         try {
-            scriptCompilationHandler.loadFromDir(scriptSource, classLoader, scriptCacheDir, metadataCacheDir, null, expectedScriptClass).loadClass();
+            scriptCompilationHandler.loadFromDir(scriptSource, classLoader, scriptCacheDir, metadataCacheDir, null, expectedScriptClass, classLoaderId).loadClass();
             fail();
         } catch (GradleException e) {
             assertThat(e.getMessage(), containsString("Could not load compiled classes for script-display-name from cache."));
@@ -255,10 +260,6 @@ public class DefaultScriptCompilationHandlerTest {
     @Test
     public void testCanVisitAndTransformScriptClass() throws Exception {
         final Transformer visitor = new AbstractScriptTransformer() {
-            public String getId() {
-                return "id";
-            }
-
             protected int getPhase() {
                 return Phases.CANONICALIZATION;
             }
@@ -277,10 +278,32 @@ public class DefaultScriptCompilationHandlerTest {
                 });
             }
         };
-        MetadataExtractingTransformer<?> transformer = new TransformationOnlyMetadataExtractingTransformer(visitor);
+
+        CompileOperation<?> transformer = new CompileOperation<Boolean>() {
+            @Override
+            public String getId() {
+                return "id";
+            }
+
+            @Override
+            public Transformer getTransformer() {
+                return visitor;
+            }
+
+            @Override
+            public Boolean getExtractedData() {
+                return true;
+            }
+
+            @Override
+            public Serializer<Boolean> getDataSerializer() {
+                return BaseSerializerFactory.BOOLEAN_SERIALIZER;
+            }
+        };
+
         ScriptSource source = scriptSource("transformMe()");
         scriptCompilationHandler.compileToDir(source, classLoader, scriptCacheDir, metadataCacheDir, transformer, classpathClosureName, expectedScriptClass, verifier);
-        Script script = scriptCompilationHandler.loadFromDir(source, classLoader, scriptCacheDir, metadataCacheDir, transformer, expectedScriptClass).loadClass().newInstance();
+        Script script = scriptCompilationHandler.loadFromDir(source, classLoader, scriptCacheDir, metadataCacheDir, transformer, expectedScriptClass, classLoaderId).loadClass().newInstance();
         evaluateScript(script);
     }
 

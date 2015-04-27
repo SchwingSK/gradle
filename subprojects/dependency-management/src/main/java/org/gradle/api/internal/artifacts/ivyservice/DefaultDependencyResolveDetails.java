@@ -17,35 +17,38 @@
 package org.gradle.api.internal.artifacts.ivyservice;
 
 import org.gradle.api.artifacts.ModuleVersionSelector;
-import org.gradle.api.artifacts.component.ComponentSelector;
 import org.gradle.api.artifacts.component.ModuleComponentSelector;
 import org.gradle.api.artifacts.result.ComponentSelectionReason;
+import org.gradle.api.internal.artifacts.DefaultModuleVersionSelector;
 import org.gradle.api.internal.artifacts.DependencyResolveDetailsInternal;
-import org.gradle.api.internal.artifacts.dsl.ComponentSelectorParsers;
+import org.gradle.api.internal.artifacts.DependencySubstitutionInternal;
+import org.gradle.api.internal.artifacts.dsl.ModuleVersionSelectorParsers;
 import org.gradle.api.internal.artifacts.ivyservice.resolveengine.result.VersionSelectionReasons;
 import org.gradle.internal.component.external.model.DefaultModuleComponentSelector;
-import org.gradle.internal.resolve.ModuleVersionResolveException;
 
-public class DefaultDependencyResolveDetails<T extends ComponentSelector> implements DependencyResolveDetailsInternal<T> {
-    private final T selector;
-    private final ModuleVersionSelector requested;
-    private ComponentSelectionReason selectionReason;
-    private ComponentSelector target;
+public class DefaultDependencyResolveDetails implements DependencyResolveDetailsInternal {
 
-    public DefaultDependencyResolveDetails(T selector, ModuleVersionSelector requested) {
-        this.selector = selector;
-        this.target = selector;
-        this.requested = requested;
+    private final DependencySubstitutionInternal<?> delegate;
+    private ModuleVersionSelector target;
+
+    public DefaultDependencyResolveDetails(DependencySubstitutionInternal<?> delegate) {
+        this.delegate = delegate;
+        target = determineTarget(delegate);
     }
 
-    @Override
-    public T getSelector() {
-        return selector;
+    private static ModuleVersionSelector determineTarget(DependencySubstitutionInternal<?> delegate) {
+        // Temporary logic until we add DependencySubstitution back in
+        if (delegate.getTarget() instanceof ModuleComponentSelector) {
+            ModuleComponentSelector moduleComponentSelector = (ModuleComponentSelector) delegate.getTarget();
+            return DefaultModuleVersionSelector.newSelector(moduleComponentSelector.getGroup(), moduleComponentSelector.getModule(), moduleComponentSelector.getVersion());
+        }
+        // If the target is a project component, it must be unmodified from the requested
+        return delegate.getOldRequested();
     }
 
     @Override
     public ModuleVersionSelector getRequested() {
-        return requested;
+        return delegate.getOldRequested();
     }
 
     @Override
@@ -59,41 +62,34 @@ public class DefaultDependencyResolveDetails<T extends ComponentSelector> implem
         if (version == null) {
             throw new IllegalArgumentException("Configuring the dependency resolve details with 'null' version is not allowed.");
         }
-        if (target instanceof ModuleComponentSelector) {
-            ModuleComponentSelector moduleTarget = (ModuleComponentSelector) target;
-            if (!version.equals(moduleTarget.getVersion())) {
-                useTarget(DefaultModuleComponentSelector.newSelector(moduleTarget.getGroup(), moduleTarget.getModule(), version), selectionReason);
-            } else {
-                useTarget(moduleTarget, selectionReason);
-            }
+
+        if (!version.equals(target.getVersion())) {
+            target = DefaultModuleVersionSelector.newSelector(target.getGroup(), target.getName(), version);
+            delegate.useTarget(DefaultModuleComponentSelector.newSelector(target), selectionReason);
         } else {
-            throw new ModuleVersionResolveException(target, "Cannot substitute %s with version '" + version + "'.");
+            // Still 'updated' with reason when version remains the same.
+            delegate.useTarget(delegate.getTarget(), selectionReason);
         }
     }
 
     @Override
     public void useTarget(Object notation) {
-        ComponentSelector target = ComponentSelectorParsers.parser().parseNotation(notation);
-        useTarget(target, VersionSelectionReasons.SELECTED_BY_RULE);
-    }
-
-    private void useTarget(ComponentSelector target, ComponentSelectionReason selectionReason) {
-        this.target = target;
-        this.selectionReason = selectionReason;
+        target = ModuleVersionSelectorParsers.parser().parseNotation(notation);
+        delegate.useTarget(DefaultModuleComponentSelector.newSelector(target), VersionSelectionReasons.SELECTED_BY_RULE);
     }
 
     @Override
     public ComponentSelectionReason getSelectionReason() {
-        return selectionReason;
+        return delegate.getSelectionReason();
     }
 
     @Override
-    public ComponentSelector getTarget() {
+    public ModuleVersionSelector getTarget() {
         return target;
     }
 
     @Override
     public boolean isUpdated() {
-        return selectionReason != null;
+        return delegate.isUpdated();
     }
 }

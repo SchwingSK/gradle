@@ -39,11 +39,24 @@ abstract class AbstractModuleComponentResolveMetaDataTest extends Specification 
         given:
         def config = Stub(Configuration)
         moduleDescriptor.getConfiguration('config') >> config
-        id.toString() >> 'group:module:version'
+        componentId.getDisplayName() >> '<component>'
 
         expect:
-        metaData.toString() == 'group:module:version'
-        metaData.getConfiguration('config').toString() == 'group:module:version:config'
+        metaData.toString() == '<component>'
+        metaData.getConfiguration('config').toString() == '<component>:config'
+    }
+
+    def "can replace identifiers"() {
+        def newId = DefaultModuleComponentIdentifier.newId("group", "module", "version")
+
+        given:
+        metaData.setComponentId(newId)
+
+        expect:
+        metaData.componentId.is(newId)
+        metaData.id.group == "group"
+        metaData.id.name == "module"
+        metaData.id.version == "version"
     }
 
     def "builds and caches the dependency meta-data from the module descriptor"() {

@@ -16,6 +16,7 @@
 
 package org.gradle.api.tasks.compile
 
+import com.google.common.collect.Iterables
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
 import org.gradle.integtests.fixtures.AvailableJavaHomes
 import org.gradle.integtests.fixtures.executer.GradleContextualExecuter
@@ -25,13 +26,29 @@ import org.gradle.util.TextUtil
 import spock.lang.IgnoreIf
 import spock.lang.Issue
 
-@IgnoreIf({ GradleContextualExecuter.parallel })
+@IgnoreIf({ //noinspection UnnecessaryQualifiedReference
+    GradleContextualExecuter.parallel || JavaCompileParallelIntegrationTest.availableJdksWithJavac().size() < 2
+})
 class JavaCompileParallelIntegrationTest extends AbstractIntegrationSpec {
-    RandomJdkPicker randomJdkPicker = new RandomJdkPicker()
+
+    static List<JavaInfo> availableJdksWithJavac() {
+        AvailableJavaHomes.availableJdks.findAll {
+            try {
+                if (it.javacExecutable) {
+                    return true
+                }
+            }
+            catch (JavaHomeException ignore) {
+                // ignore
+            }
+            false
+        }
+    }
 
     @Issue("https://issues.gradle.org/browse/GRADLE-3029")
     def "system property java.home is not modified across compile task boundaries"() {
         def projectNames = ['a', 'b', 'c', 'd', 'e', 'f', 'g']
+        def jdks = Iterables.cycle(availableJdksWithJavac()*.javacExecutable.collect(TextUtil.&escapeString)).iterator()
 
         settingsFile << "include ${projectNames.collect { "'$it'" }.join(', ')}"
         buildFile << """
@@ -54,7 +71,7 @@ project(':$projectName') {
     tasks.withType(JavaCompile) {
         options.with {
             fork = true
-            forkOptions.executable = "$randomJdkPicker.javacExecutable"
+            forkOptions.executable = "${jdks.next()}"
         }
     }
 }
@@ -71,7 +88,8 @@ public class Foo {
         }
 
         when:
-        args('--parallel-threads=4')
+        args('--parallel')
+        args('--max-workers=4')
         run('compileJava')
 
         then:
@@ -79,39 +97,6 @@ public class Foo {
 
         projectNames.each { projectName ->
             file("${projectName}/build/classes/main/Foo.class").exists()
-        }
-    }
-
-    private static class RandomJdkPicker {
-        private final List<JavaInfo> availableJdks
-        private final Random random = new Random()
-
-        RandomJdkPicker() {
-            availableJdks = []
-            determineJdksWithResolvableJavac()
-            availableJdks.asImmutable()
-        }
-
-        private void determineJdksWithResolvableJavac() {
-            AvailableJavaHomes.availableJdks.each { jdk ->
-                try {
-                    if(jdk.javacExecutable) {
-                        availableJdks << jdk
-                    }
-                }
-                catch(JavaHomeException e) {
-                    // ignore
-                }
-            }
-        }
-
-        String getJavacExecutable() {
-            TextUtil.escapeString(target.javacExecutable)
-        }
-
-        private JavaInfo getTarget() {
-            int index = random.nextInt(availableJdks.size())
-            availableJdks[index]
         }
     }
 }

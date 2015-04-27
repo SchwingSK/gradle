@@ -17,11 +17,12 @@ package org.gradle.groovy.scripts;
 
 import org.codehaus.groovy.ast.ClassNode;
 import org.gradle.api.Action;
+import org.gradle.api.internal.initialization.ClassLoaderIds;
+import org.gradle.api.internal.initialization.loadercache.ClassLoaderId;
 import org.gradle.groovy.scripts.internal.CompiledScript;
-import org.gradle.groovy.scripts.internal.MetadataExtractingTransformer;
+import org.gradle.groovy.scripts.internal.CompileOperation;
 import org.gradle.groovy.scripts.internal.ScriptClassCompiler;
 import org.gradle.groovy.scripts.internal.ScriptRunnerFactory;
-import org.gradle.internal.Actions;
 
 public class DefaultScriptCompilerFactory implements ScriptCompilerFactory {
     private final ScriptRunnerFactory scriptRunnerFactory;
@@ -38,34 +39,15 @@ public class DefaultScriptCompilerFactory implements ScriptCompilerFactory {
 
     private class ScriptCompilerImpl implements ScriptCompiler {
         private final ScriptSource source;
-        private ClassLoader classloader;
-        private Action<? super ClassNode> verifier = Actions.doNothing();
-        private String classpathClosureName;
 
         public ScriptCompilerImpl(ScriptSource source) {
             this.source = new CachingScriptSource(source);
         }
 
-        public ScriptCompiler setClassloader(ClassLoader classloader) {
-            this.classloader = classloader;
-            return this;
-        }
-
         @Override
-        public ScriptCompiler setVerifier(Action<? super ClassNode> verifier) {
-            this.verifier = verifier;
-            return this;
-        }
-
-        @Override
-        public ScriptCompiler setClasspathClosureName(String classpathClosureName) {
-            this.classpathClosureName = classpathClosureName;
-            return this;
-        }
-
-        @Override
-        public <T extends Script, M> ScriptRunner<T, M> compile(Class<T> scriptType, MetadataExtractingTransformer<M> extractingTransformer) {
-            CompiledScript<T, M> scriptClass = scriptClassCompiler.compile(source, classloader, extractingTransformer, classpathClosureName, scriptType, verifier);
+        public <T extends Script, M> ScriptRunner<T, M> compile(Class<T> scriptType, CompileOperation<M> extractingTransformer, ClassLoader classloader, String classpathClosureName, Action<? super ClassNode> verifier) {
+            ClassLoaderId classLoaderId = ClassLoaderIds.buildScript(source.getFileName(), extractingTransformer.getId());
+            CompiledScript<T, M> scriptClass = scriptClassCompiler.compile(source, classloader, classLoaderId, extractingTransformer, classpathClosureName, scriptType, verifier);
             return scriptRunnerFactory.create(scriptClass, source, classloader);
         }
     }

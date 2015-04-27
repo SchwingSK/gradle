@@ -13,10 +13,10 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 package org.gradle.tooling;
 
 import org.gradle.api.Incubating;
+import org.gradle.tooling.events.test.TestProgressListener;
 
 import java.io.File;
 import java.io.InputStream;
@@ -158,6 +158,16 @@ public interface LongRunningOperation {
      * @since 1.0-milestone-7
      */
     LongRunningOperation addProgressListener(ProgressListener listener);
+
+    /**
+     * Adds a test progress listener which will receive test progress events as the operation runs.
+     *
+     * @param listener The listener
+     * @return this
+     * @since 2.4
+     */
+    @Incubating
+    LongRunningOperation addTestProgressListener(TestProgressListener listener);
 
     /**
      * Sets the cancellation token to use to cancel the operation if required.

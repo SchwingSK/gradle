@@ -27,14 +27,18 @@ import org.gradle.api.internal.project.ProjectInternal;
 import org.gradle.api.internal.project.ProjectScript;
 import org.gradle.groovy.scripts.*;
 import org.gradle.groovy.scripts.internal.*;
+import org.gradle.internal.Actions;
 import org.gradle.internal.Factory;
 import org.gradle.internal.reflect.Instantiator;
+import org.gradle.internal.serialize.BaseSerializerFactory;
 import org.gradle.internal.service.DefaultServiceRegistry;
 import org.gradle.logging.LoggingManagerInternal;
 import org.gradle.model.dsl.internal.transform.ClosureCreationInterceptingVerifier;
+import org.gradle.model.dsl.internal.transform.ModelBlockTransformer;
 import org.gradle.model.internal.inspect.ModelRuleSourceDetector;
 import org.gradle.plugin.use.internal.PluginRequestApplicator;
 import org.gradle.plugin.use.internal.PluginRequests;
+import org.gradle.plugin.use.internal.PluginRequestsSerializer;
 
 public class DefaultScriptPluginFactory implements ScriptPluginFactory {
 
@@ -105,37 +109,34 @@ public class DefaultScriptPluginFactory implements ScriptPluginFactory {
             services.add(ModelRuleSourceDetector.class, modelRuleSourceDetector);
 
             final ScriptCompiler compiler = scriptCompilerFactory.createCompiler(scriptSource);
-            compiler.setClassloader(baseScope.getExportClassLoader());
+
+            // Pass 1, extract plugin requests and execute buildscript {}, ignoring (i.e. not even compiling) anything else
 
             boolean supportsPluginsBlock = ProjectScript.class.isAssignableFrom(scriptType);
             String onPluginBlockError = supportsPluginsBlock ? null : "Only Project build scripts can contain plugins {} blocks";
 
-            PluginsAndBuildscriptTransformer scriptBlockTransformer = new PluginsAndBuildscriptTransformer(classpathClosureName, onPluginBlockError, scriptSource, documentationRegistry);
+            InitialPassStatementTransformer initialPassStatementTransformer = new InitialPassStatementTransformer(classpathClosureName, onPluginBlockError, scriptSource, documentationRegistry);
+            SubsetScriptTransformer initialTransformer = new SubsetScriptTransformer(initialPassStatementTransformer);
+            CompileOperation<PluginRequests> initialOperation = new FactoryBackedCompileOperation<PluginRequests>(classpathClosureName, initialTransformer, initialPassStatementTransformer, PluginRequestsSerializer.INSTANCE);
 
-            StatementFilteringScriptTransformer classpathScriptTransformer = new StatementFilteringScriptTransformer(classpathClosureName, scriptBlockTransformer);
+            ScriptRunner<? extends BasicScript, PluginRequests> initialRunner = compiler.compile(scriptType, initialOperation, baseScope.getExportClassLoader(), classpathClosureName, Actions.doNothing());
+            initialRunner.getScript().init(target, services);
+            initialRunner.run();
 
-            compiler.setClasspathClosureName(classpathClosureName);
-
-            PluginsAndBuildscriptMetadataExtractingTransformer extractingTransformer = new PluginsAndBuildscriptMetadataExtractingTransformer(scriptBlockTransformer, classpathScriptTransformer);
-
-            ScriptRunner<? extends BasicScript, PluginRequests> classPathScriptRunner = compiler.compile(scriptType, extractingTransformer);
-            classPathScriptRunner.getScript().init(target, services);
-            classPathScriptRunner.run();
-
-            PluginRequests pluginRequests = classPathScriptRunner.getCompiledScript().getMetadata();
+            PluginRequests pluginRequests = initialRunner.getCompiledScript().getData();
             PluginManagerInternal pluginManager = target instanceof PluginAwareInternal ? ((PluginAwareInternal) target).getPluginManager() : null;
             pluginRequestApplicator.applyPlugins(pluginRequests, scriptHandler, pluginManager, targetScope);
 
-            compiler.setClassloader(targetScope.getLocalClassLoader());
+            // Pass 2, compile everything except buildscript {} and plugin requests, then run
 
-            BuildScriptMetadataExtractingTransformer transformer = new BuildScriptMetadataExtractingTransformer(classpathScriptTransformer.getId(), classpathScriptTransformer.invert(),
-                    classpathClosureName, scriptSource);
+            BuildScriptTransformer buildScriptTransformer = new BuildScriptTransformer(classpathClosureName, scriptSource);
+            String operationId = "no_" + classpathClosureName;
+            if (ModelBlockTransformer.isEnabled()) {
+                operationId = "m_".concat(operationId);
+            }
+            CompileOperation<Boolean> operation = new FactoryBackedCompileOperation<Boolean>(operationId, buildScriptTransformer, buildScriptTransformer, BaseSerializerFactory.BOOLEAN_SERIALIZER);
 
-
-            // TODO - find a less tangled way of getting this in here, see the verifier impl for why it's needed
-            compiler.setVerifier(new ClosureCreationInterceptingVerifier());
-
-            final ScriptRunner<? extends BasicScript, Boolean> runner = compiler.compile(scriptType, transformer);
+            final ScriptRunner<? extends BasicScript, Boolean> runner = compiler.compile(scriptType, operation, targetScope.getLocalClassLoader(), classpathClosureName, ClosureCreationInterceptingVerifier.INSTANCE);
 
             Runnable buildScriptRunner = new Runnable() {
                 public void run() {
@@ -148,8 +149,9 @@ public class DefaultScriptPluginFactory implements ScriptPluginFactory {
                 }
             };
 
-            if (!runner.getCompiledScript().getMetadata() && target instanceof ProjectInternal) {
-                ((ProjectInternal) target).addModelRulesBlockRunner(buildScriptRunner);
+            Boolean hasImperativeStatements = runner.getCompiledScript().getData();
+            if (!hasImperativeStatements && target instanceof ProjectInternal) {
+                ((ProjectInternal) target).addDeferredConfiguration(buildScriptRunner);
             } else {
                 buildScriptRunner.run();
             }

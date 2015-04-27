@@ -35,9 +35,9 @@ import org.gradle.internal.id.RandomLongIdGenerator;
 import org.gradle.internal.operations.BuildOperationProcessor;
 import org.gradle.internal.operations.DefaultBuildOperationProcessor;
 import org.gradle.internal.reflect.Instantiator;
-import org.gradle.listener.ListenerManager;
-import org.gradle.messaging.serialize.DefaultSerializerRegistry;
-import org.gradle.messaging.serialize.SerializerRegistry;
+import org.gradle.internal.event.ListenerManager;
+import org.gradle.internal.serialize.DefaultSerializerRegistry;
+import org.gradle.internal.serialize.SerializerRegistry;
 
 public class TaskExecutionServices {
     TaskExecuter createTaskExecuter(TaskArtifactStateRepository repository, ListenerManager listenerManager) {
@@ -98,6 +98,6 @@ public class TaskExecutionServices {
     }
 
     BuildOperationProcessor createBuildOperationProcessor(StartParameter startParameter, ExecutorFactory executorFactory) {
-        return new DefaultBuildOperationProcessor(executorFactory, startParameter.getParallelThreadCount());
+        return new DefaultBuildOperationProcessor(executorFactory, startParameter.getMaxWorkerCount());
     }
 }

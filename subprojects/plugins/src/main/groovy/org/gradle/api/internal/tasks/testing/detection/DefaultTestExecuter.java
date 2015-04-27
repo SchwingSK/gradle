@@ -72,6 +72,6 @@ public class DefaultTestExecuter implements TestExecuter {
         } else {
             detector = new DefaultTestClassScanner(testClassFiles, null, processor);
         }
-        new TestMainAction(detector, processor, testResultProcessor, new TrueTimeProvider()).run();
+        new TestMainAction(detector, processor, testResultProcessor, new TrueTimeProvider(), testTask.getPath(), String.format("Gradle Test Run %s", testTask.getPath())).run();
     }
 }

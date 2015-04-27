@@ -18,14 +18,13 @@ package org.gradle.api.plugins.sonar
 
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
 import org.gradle.integtests.fixtures.TestResources
+import org.gradle.internal.classloader.ClasspathUtil
 import org.gradle.test.fixtures.file.TestNameTestDirectoryProvider
 import org.gradle.test.fixtures.server.http.ServletContainer
 import org.gradle.util.AvailablePortFinder
-import org.gradle.internal.classloader.ClasspathUtil
 import org.gradle.util.Requires
 import org.gradle.util.TestPrecondition
 import org.junit.Rule
-
 import spock.lang.AutoCleanup
 import spock.lang.Shared
 

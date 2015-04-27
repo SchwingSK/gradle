@@ -24,8 +24,8 @@ import org.gradle.nativeplatform.toolchain.internal.compilespec.CCompileSpec;
 
 class CCompiler extends GccCompatibleNativeCompiler<CCompileSpec> {
 
-    CCompiler(BuildOperationProcessor buildOperationProcessor, CommandLineToolInvocationWorker commandLineToolInvocationWorker, CommandLineToolContext invocationContext, String objectFileSuffix, boolean useCommandFile) {
-        super(buildOperationProcessor, commandLineToolInvocationWorker, invocationContext, new CCompileArgsTransformer(), Transformers.<CCompileSpec>noOpTransformer(), objectFileSuffix, useCommandFile);
+    CCompiler(BuildOperationProcessor buildOperationProcessor, CommandLineToolInvocationWorker commandLineToolInvocationWorker, CommandLineToolContext invocationContext, String objectFileExtension, boolean useCommandFile) {
+        super(buildOperationProcessor, commandLineToolInvocationWorker, invocationContext, new CCompileArgsTransformer(), Transformers.<CCompileSpec>noOpTransformer(), objectFileExtension, useCommandFile);
     }
 
     private static class CCompileArgsTransformer extends GccCompilerArgsTransformer<CCompileSpec> {

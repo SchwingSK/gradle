@@ -76,6 +76,9 @@ enum TestPrecondition {
     UNIX({
         OperatingSystem.current().unix
     }),
+    UNIX_DERIVATIVE({
+        MAC_OS_X.fulfilled || LINUX.fulfilled || UNIX.fulfilled
+    }),
     UNKNOWN_OS({
         OperatingSystem.current().name == "unknown operating system"
     }),
@@ -105,6 +108,9 @@ enum TestPrecondition {
     }),
     NOT_JDK_IBM({
         System.getProperty('java.vm.vendor') != 'IBM Corporation'
+    }),
+    JDK_ORACLE({
+        System.getProperty('java.vm.vendor') == 'Oracle Corporation'
     }),
     ONLINE({
         try {

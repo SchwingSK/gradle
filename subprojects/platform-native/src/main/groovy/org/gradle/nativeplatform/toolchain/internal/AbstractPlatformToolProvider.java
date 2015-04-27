@@ -26,7 +26,7 @@ import org.gradle.nativeplatform.platform.internal.OperatingSystemInternal;
 import org.gradle.nativeplatform.toolchain.internal.compilespec.*;
 import org.gradle.util.TreeVisitor;
 
-public class AbstractPlatformToolProvider implements PlatformToolProvider {
+public abstract class AbstractPlatformToolProvider implements PlatformToolProvider {
     protected final OperatingSystemInternal targetOperatingSystem;
     protected final BuildOperationProcessor buildOperationProcessor;
 
@@ -40,10 +40,6 @@ public class AbstractPlatformToolProvider implements PlatformToolProvider {
     }
 
     public void explain(TreeVisitor<? super String> visitor) {
-    }
-
-    public String getObjectFileExtension() {
-        return targetOperatingSystem.isWindows() ? "obj" : "o";
     }
 
     public String getExecutableName(String executablePath) {
@@ -71,14 +67,26 @@ public class AbstractPlatformToolProvider implements PlatformToolProvider {
         if (CppCompileSpec.class.isAssignableFrom(spec)) {
             return CompilerUtil.castCompiler(createCppCompiler());
         }
+        if (CppPCHCompileSpec.class.isAssignableFrom(spec)) {
+            return CompilerUtil.castCompiler(createCppPCHCompiler());
+        }
         if (CCompileSpec.class.isAssignableFrom(spec)) {
             return CompilerUtil.castCompiler(createCCompiler());
+        }
+        if (CPCHCompileSpec.class.isAssignableFrom(spec)) {
+            return CompilerUtil.castCompiler(createCPCHCompiler());
         }
         if (ObjectiveCppCompileSpec.class.isAssignableFrom(spec)) {
             return CompilerUtil.castCompiler(createObjectiveCppCompiler());
         }
+        if (ObjectiveCppPCHCompileSpec.class.isAssignableFrom(spec)) {
+            return CompilerUtil.castCompiler(createObjectiveCppPCHCompiler());
+        }
         if (ObjectiveCCompileSpec.class.isAssignableFrom(spec)) {
             return CompilerUtil.castCompiler(createObjectiveCCompiler());
+        }
+        if (ObjectiveCPCHCompileSpec.class.isAssignableFrom(spec)) {
+            return CompilerUtil.castCompiler(createObjectiveCPCHCompiler());
         }
         if (WindowsResourceCompileSpec.class.isAssignableFrom(spec)) {
             return CompilerUtil.castCompiler(createWindowsResourceCompiler());
@@ -103,15 +111,31 @@ public class AbstractPlatformToolProvider implements PlatformToolProvider {
         throw unavailableTool("C++ compiler is not available");
     }
 
+    protected Compiler<?> createCppPCHCompiler() {
+        throw unavailableTool("C++ pre-compiled header compiler is not available");
+    }
+
     protected Compiler<?> createCCompiler() {
         throw unavailableTool("C compiler is not available");
+    }
+
+    protected Compiler<?> createCPCHCompiler() {
+        throw unavailableTool("C pre-compiled header compiler is not available");
     }
 
     protected Compiler<?> createObjectiveCppCompiler() {
         throw unavailableTool("Obj-C++ compiler is not available");
     }
 
+    protected Compiler<?> createObjectiveCppPCHCompiler() {
+        throw unavailableTool("Obj-C++ pre-compiled header compiler is not available");
+    }
+
     protected Compiler<?> createObjectiveCCompiler() {
+        throw unavailableTool("Obj-C compiler is not available");
+    }
+
+    protected Compiler<?> createObjectiveCPCHCompiler() {
         throw unavailableTool("Obj-C compiler is not available");
     }
 
@@ -129,5 +153,9 @@ public class AbstractPlatformToolProvider implements PlatformToolProvider {
 
     protected Compiler<?> createStaticLibraryArchiver() {
         throw unavailableTool("Static library archiver is not available");
+    }
+
+    public String getObjectFileExtension() {
+        return targetOperatingSystem.isWindows() ? ".obj" : ".o";
     }
 }

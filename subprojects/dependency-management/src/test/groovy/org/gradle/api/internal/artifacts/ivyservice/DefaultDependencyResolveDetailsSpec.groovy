@@ -17,7 +17,7 @@
 package org.gradle.api.internal.artifacts.ivyservice
 
 import org.gradle.api.artifacts.ModuleVersionSelector
-import org.gradle.api.artifacts.component.ComponentSelector
+import org.gradle.api.artifacts.component.ModuleComponentSelector
 import org.gradle.api.internal.artifacts.DefaultModuleVersionSelector
 import org.gradle.api.internal.artifacts.ivyservice.resolveengine.result.VersionSelectionReasons
 import org.gradle.internal.component.external.model.DefaultModuleComponentSelector
@@ -30,9 +30,8 @@ class DefaultDependencyResolveDetailsSpec extends Specification {
         def details = newDependencyResolveDetails("org", "foo", "1.0")
 
         then:
-        details.selector == newComponentSelector("org", "foo", "1.0")
         details.requested == newVersionSelector("org", "foo", "1.0")
-        details.target == newComponentSelector("org", "foo", "1.0")
+        details.target == newVersionSelector("org", "foo", "1.0")
         !details.updated
         !details.selectionReason
 
@@ -40,9 +39,8 @@ class DefaultDependencyResolveDetailsSpec extends Specification {
         details.useVersion("1.0") //the same version
 
         then:
-        details.selector == newComponentSelector("org", "foo", "1.0")
         details.requested == newVersionSelector("org", "foo", "1.0")
-        details.target == newComponentSelector("org", "foo", "1.0")
+        details.target == newVersionSelector("org", "foo", "1.0")
         details.updated
         details.selectionReason == VersionSelectionReasons.SELECTED_BY_RULE
 
@@ -50,15 +48,10 @@ class DefaultDependencyResolveDetailsSpec extends Specification {
         details.useVersion("2.0") //different version
 
         then:
-        details.selector == newComponentSelector("org", "foo", "1.0")
         details.requested == newVersionSelector("org", "foo", "1.0")
-        details.target != newComponentSelector("org", "foo", "1.0")
+        details.target == newVersionSelector("org", "foo", "2.0")
         details.updated
         details.selectionReason == VersionSelectionReasons.SELECTED_BY_RULE
-
-        details.target.version == "2.0"
-        details.target.module == newComponentSelector("org", "foo", "1.0").module
-        details.target.group == newComponentSelector("org", "foo", "1.0").group
     }
 
     def "can specify version with selection reason"() {
@@ -68,9 +61,8 @@ class DefaultDependencyResolveDetailsSpec extends Specification {
         details.useVersion("1.0", VersionSelectionReasons.FORCED) //same version
 
         then:
-        details.selector == newComponentSelector("org", "foo", "1.0")
         details.requested == newVersionSelector("org", "foo", "1.0")
-        details.target == newComponentSelector("org", "foo", "1.0")
+        details.target == newVersionSelector("org", "foo", "1.0")
         details.updated
         details.selectionReason == VersionSelectionReasons.FORCED
 
@@ -78,11 +70,8 @@ class DefaultDependencyResolveDetailsSpec extends Specification {
         details.useVersion("3.0", VersionSelectionReasons.FORCED) //different version
 
         then:
-        details.selector == newComponentSelector("org", "foo", "1.0")
         details.requested == newVersionSelector("org", "foo", "1.0")
-        details.target.version == "3.0"
-        details.target.module == newComponentSelector("org", "foo", "1.0").module
-        details.target.group == newComponentSelector("org", "foo", "1.0").group
+        details.target == newVersionSelector("org", "foo", "3.0")
         details.updated
         details.selectionReason == VersionSelectionReasons.FORCED
     }
@@ -95,11 +84,8 @@ class DefaultDependencyResolveDetailsSpec extends Specification {
         details.useVersion("3.0", VersionSelectionReasons.SELECTED_BY_RULE)
 
         then:
-        details.selector == newComponentSelector("org", "foo", "1.0")
         details.requested == newVersionSelector("org", "foo", "1.0")
-        details.target.version == "3.0"
-        details.target.module == newComponentSelector("org", "foo", "1.0").module
-        details.target.group == newComponentSelector("org", "foo", "1.0").group
+        details.target == newVersionSelector("org", "foo", "3.0")
         details.updated
         details.selectionReason == VersionSelectionReasons.SELECTED_BY_RULE
     }
@@ -155,10 +141,10 @@ class DefaultDependencyResolveDetailsSpec extends Specification {
     }
 
     private static def newDependencyResolveDetails(String group, String name, String version) {
-        return new DefaultDependencyResolveDetails(newComponentSelector(group, name, version), newVersionSelector(group, name, version))
+        return new DefaultDependencyResolveDetails(new DefaultModuleDependencySubstitution(newComponentSelector(group, name, version), newVersionSelector(group, name, version)))
     }
 
-    private static ComponentSelector newComponentSelector(String group, String module, String version) {
+    private static ModuleComponentSelector newComponentSelector(String group, String module, String version) {
         return DefaultModuleComponentSelector.newSelector(group, module, version)
     }
 

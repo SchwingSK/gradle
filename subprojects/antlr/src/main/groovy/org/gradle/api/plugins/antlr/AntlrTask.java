@@ -18,10 +18,7 @@ package org.gradle.api.plugins.antlr;
 
 import org.gradle.api.Action;
 import org.gradle.api.file.FileCollection;
-import org.gradle.api.plugins.antlr.internal.AntlrResult;
-import org.gradle.api.plugins.antlr.internal.AntlrSourceGenerationException;
-import org.gradle.api.plugins.antlr.internal.AntlrSpec;
-import org.gradle.api.plugins.antlr.internal.AntlrWorkerManager;
+import org.gradle.api.plugins.antlr.internal.*;
 import org.gradle.api.tasks.*;
 import org.gradle.api.tasks.incremental.IncrementalTaskInputs;
 import org.gradle.api.tasks.incremental.InputFileDetails;
@@ -173,7 +170,7 @@ public class AntlrTask extends SourceTask {
                         File input = details.getFile();
                         if (sourceFiles.contains(input)) {
                             grammarFiles.add(input);
-                        }else {
+                        } else {
                             // classpath change?
                             cleanRebuild.set(true);
                         }
@@ -192,14 +189,14 @@ public class AntlrTask extends SourceTask {
             GFileUtils.cleanDirectory(outputDirectory);
             grammarFiles.addAll(sourceFiles);
         }
-        List<String> args = buildArguments(grammarFiles);
+
         AntlrWorkerManager manager = new AntlrWorkerManager();
-        AntlrSpec spec = new AntlrSpec(args, maxHeapSize);
+        AntlrSpec spec = new AntlrSpecFactory().create(this, grammarFiles);
         AntlrResult result = manager.runWorker(getProject().getProjectDir(), getWorkerProcessBuilderFactory(), getAntlrClasspath(), spec);
-        evaluateAntlrResult(result);
+        evaluate(result);
     }
 
-    public void evaluateAntlrResult(AntlrResult result) {
+    private void evaluate(AntlrResult result) {
         int errorCount = result.getErrorCount();
         if (errorCount == 1) {
             throw new AntlrSourceGenerationException("There was 1 error during grammar generation", result.getException());
@@ -208,42 +205,5 @@ public class AntlrTask extends SourceTask {
                     + errorCount
                     + " errors during grammar generation", result.getException());
         }
-    }
-
-    /**
-     * Finalizes the list of arguments that will be sent to the ANTLR tool.
-     */
-    List<String> buildArguments(Set<File> grammarFiles) {
-        List<String> args = new ArrayList<String>();    // List for finalized arguments
-
-        // Output file
-        args.add("-o");
-        args.add(outputDirectory.getAbsolutePath());
-
-        // Custom arguments
-        for (String argument : arguments) {
-            args.add(argument);
-        }
-
-        // Add trace parameters, if they don't already exist
-        if (isTrace() && !arguments.contains("-trace")) {
-            args.add("-trace");
-        }
-        if (isTraceLexer() && !arguments.contains("-traceLexer")) {
-            args.add("-traceLexer");
-        }
-        if (isTraceParser() && !arguments.contains("-traceParser")) {
-            args.add("-traceParser");
-        }
-        if (isTraceTreeWalker() && !arguments.contains("-traceTreeWalker")) {
-            args.add("-traceTreeWalker");
-        }
-
-        // Files in source directory
-        for (File file : grammarFiles) {
-            args.add(file.getAbsolutePath());
-        }
-
-        return args;
     }
 }
