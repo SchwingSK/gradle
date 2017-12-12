@@ -1,45 +1,4 @@
 $(function() {
-  function elementInViewport(el) {
-    var rect = el.getBoundingClientRect();
-
-    return (
-      rect.top >= 0 &&
-      rect.left >= 0 &&
-      rect.bottom <= window.innerHeight &&
-      rect.right <= window.innerWidth
-    );
-  }
-
-  function addDetailCollapsing(section) {
-    section.hide();
-    var buttonParagraph = $("<p><button class='display-toggle'>More »</button></p>").insertAfter(section);
-    buttonParagraph.find("button").click(function() {
-      var button = $(this);
-      var hiding = section.is(":visible");
-
-      var toggle = function() {
-        section.slideToggle("slow", function() {
-          button.text(hiding ? "More »" : "« Less");
-        });
-      };
-
-      var header = section.prevAll("h3:first");
-
-      if (hiding && !elementInViewport(header.get(0))) {
-        var i = 0;
-        $('html,body').animate({
-          scrollTop: header.offset().top
-        }, "fast", "swing", function() {
-          if (++i == 2) {
-            toggle();
-          }
-        });
-      } else {
-        toggle();
-      }
-    });
-  }
-
   function injectIssues(url, insertAfter, idBase, loadingText, messageFunction) {
     var loadingPara = $("<p class='" + idBase + "-loading'>" + loadingText + " …</p>").insertAfter(insertAfter);
     var animate = true;
@@ -55,8 +14,8 @@ $(function() {
     };
     paraFadeOut();
 
-    $.ajax(url + "?callback=?", {
-      dataType: "jsonp",
+    $.ajax(url, {
+      dataType: "json",
       cache: true,
       success: function(data, textStatus, jqXHR) {
         finishAnimation();
@@ -84,32 +43,27 @@ $(function() {
   });
 
   injectIssues(
-    "https://services.gradle.org/fixed-issues/@versionBase@",
-    $("h2#fixed-issues"), 
-    "fixed-issues", 
-    "Retrieving the fixed issue information for @versionBase@", 
+    "https://services.gradle.org/fixed-issues/@baseVersion@",
+    $("h2#fixed-issues"),
+    "fixed-issues",
+    "Retrieving the fixed issue information for @baseVersion@",
     function(i) {
-      return i + " issues have been fixed in Gradle @versionBase@.";
+      return i + " issues have been fixed in Gradle @baseVersion@.";
     }
   );
-  
+
   injectIssues(
-    "https://services.gradle.org/known-issues/@versionBase@",
-    $("h2#known-issues").next("p"), 
-    "known-issues", 
-    "Retrieving the known issue information for @versionBase@", 
+    "https://services.gradle.org/known-issues/@baseVersion@",
+    $("h2#known-issues").next("p"),
+    "known-issues",
+    "Retrieving the known issue information for @baseVersion@",
     function(i) {
       if (i > 0) {
-        return i + " issues are known to affect Gradle @versionBase@.";
+        return i + " issues are known to affect Gradle @baseVersion@.";
       } else {
-        return "There are no known issues of Gradle @versionBase@ at this time.";
+        return "There are no known issues of Gradle @baseVersion@ at this time.";
       }
     }
   );
-
-  $("section.major-detail").each(function() {
-    addDetailCollapsing($(this));
-  });
-
 });
 

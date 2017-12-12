@@ -25,14 +25,23 @@
 
     <xsl:param name="use.extensions">1</xsl:param>
     <xsl:param name="toc.section.depth">1</xsl:param>
-    <xsl:param name="section.autolabel">1</xsl:param>
-    <xsl:param name="section.label.includes.component.label">1</xsl:param>
+    <xsl:param name="toc.max.depth">2</xsl:param>
+    <xsl:param name="part.autolabel">0</xsl:param>
+    <xsl:param name="chapter.autolabel">0</xsl:param>
+    <xsl:param name="section.autolabel">0</xsl:param>
+    <xsl:param name="preface.autolabel">0</xsl:param>
+    <xsl:param name="figure.autolabel">0</xsl:param>
+    <xsl:param name="example.autolabel">0</xsl:param>
+    <xsl:param name="table.autolabel">0</xsl:param>
+    <xsl:param name="xref.with.number.and.title">0</xsl:param>
     <xsl:param name="css.decoration">0</xsl:param>
     <xsl:param name="highlight.source" select="1"/>
 
     <!-- Use custom style sheet content -->
     <xsl:param name="html.stylesheet">DUMMY</xsl:param>
     <xsl:template name="output.html.stylesheets">
+        <link rel="preconnect" href="//assets.gradle.com" crossorigin="crossorigin"/>
+        <meta name="viewport" content="width=device-width, initial-scale=1"/>
         <link href="base.css" rel="stylesheet" type="text/css"/>
         <link href="docs.css" rel="stylesheet" type="text/css"/>
         <link href="userguide.css" rel="stylesheet" type="text/css"/>
@@ -83,9 +92,9 @@
     </xsl:param>
 
     <xsl:template match="tip[@role='exampleLocation']" mode="class.value"><xsl:value-of select="@role"/></xsl:template>
-    
+
     <xsl:param name="admon.textlabel">0</xsl:param>
-    
+
     <!-- BOOK TITLEPAGE -->
 
     <!-- Customize the contents of the book titlepage -->
@@ -118,7 +127,42 @@
             <xsl:apply-templates select=".." mode="object.title.markup"/>
         </h1>
     </xsl:template>
-    
+
+    <!-- Clickable section headers -->
+    <!--
+      The idea here is to replace the <a> generation for section headers so
+      that an 'href' attribute is added alongside the 'name'. They both have
+      the same value, hence the anchor becomes self-referencing.
+
+      The rest of the magic is done in CSS.
+    -->
+    <xsl:template name="anchor">
+        <xsl:param name="node" select="."/>
+        <xsl:param name="conditional" select="1"/>
+
+        <xsl:choose>
+            <xsl:when test="$generate.id.attributes != 0">
+                <!-- No named anchors output when this param is set -->
+            </xsl:when>
+            <xsl:when test="$conditional = 0 or $node/@id or $node/@xml:id">
+                <a>
+                    <xsl:variable name="refId">
+                        <xsl:call-template name="object.id">
+                            <xsl:with-param name="object" select="$node"/>
+                        </xsl:call-template>
+                    </xsl:variable>
+                    <xsl:attribute name="name">
+                        <xsl:value-of select="$refId"/>
+                    </xsl:attribute>
+                    <xsl:if test="$node[local-name() = 'section']">
+                        <xsl:attribute name="class">section-anchor</xsl:attribute>
+                        <xsl:attribute name="href">#<xsl:value-of select="$refId"/></xsl:attribute>
+                    </xsl:if>
+                </a>
+            </xsl:when>
+        </xsl:choose>
+    </xsl:template>
+
     <!-- TABLES -->
 
     <!-- Duplicated from docbook stylesheets, to fix problem where html table does not get a title -->

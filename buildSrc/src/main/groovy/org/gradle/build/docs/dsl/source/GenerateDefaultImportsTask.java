@@ -16,45 +16,59 @@
 
 package org.gradle.build.docs.dsl.source;
 
-import com.google.common.collect.HashMultimap;
+import com.google.common.collect.LinkedHashMultimap;
 import com.google.common.collect.Multimap;
 import org.gradle.api.Action;
 import org.gradle.api.DefaultTask;
+import org.gradle.api.NonNullApi;
+import org.gradle.api.file.RegularFileProperty;
+import org.gradle.api.tasks.CacheableTask;
 import org.gradle.api.tasks.Input;
 import org.gradle.api.tasks.InputFile;
 import org.gradle.api.tasks.OutputFile;
+import org.gradle.api.tasks.PathSensitive;
+import org.gradle.api.tasks.PathSensitivity;
 import org.gradle.api.tasks.TaskAction;
 import org.gradle.build.docs.dsl.source.model.ClassMetaData;
 import org.gradle.build.docs.model.SimpleClassMetaDataRepository;
 
-import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.io.PrintWriter;
-import java.util.*;
+import java.util.Collection;
+import java.util.HashSet;
+import java.util.LinkedHashSet;
+import java.util.Map;
+import java.util.Set;
 
+@NonNullApi
+@CacheableTask
 public class GenerateDefaultImportsTask extends DefaultTask {
-    private File metaDataFile;
-    private File destFile;
-    private Set<String> excludePatterns = new HashSet<String>();
-    private Set<String> extraPackages = new HashSet<String>();
+    private RegularFileProperty metaDataFile;
+    private RegularFileProperty importsDestFile;
+    private RegularFileProperty mappingDestFile;
+    private Set<String> excludePatterns = new LinkedHashSet<>();
 
+    public GenerateDefaultImportsTask() {
+        metaDataFile = newInputFile();
+        importsDestFile = newOutputFile();
+        mappingDestFile = newOutputFile();
+    }
+
+    @PathSensitive(PathSensitivity.NONE)
     @InputFile
-    public File getMetaDataFile() {
+    public RegularFileProperty getMetaDataFile() {
         return metaDataFile;
     }
 
-    public void setMetaDataFile(File metaDataFile) {
-        this.metaDataFile = metaDataFile;
+    @OutputFile
+    public RegularFileProperty getImportsDestFile() {
+        return importsDestFile;
     }
 
     @OutputFile
-    public File getDestFile() {
-        return destFile;
-    }
-
-    public void setDestFile(File destFile) {
-        this.destFile = destFile;
+    public RegularFileProperty getMappingDestFile() {
+        return mappingDestFile;
     }
 
     @Input
@@ -73,25 +87,13 @@ public class GenerateDefaultImportsTask extends DefaultTask {
         excludePatterns.add(name);
     }
 
-    public Set<String> getExtraPackages() {
-        return extraPackages;
-    }
-
-    public void setExtraPackages(Set<String> extraPackages) {
-        this.extraPackages = extraPackages;
-    }
-
-    public void extraPackage(String name) {
-        extraPackages.add(name);
-    }
-
     @TaskAction
     public void generate() throws IOException {
-        SimpleClassMetaDataRepository<ClassMetaData> repository = new SimpleClassMetaDataRepository<ClassMetaData>();
-        repository.load(getMetaDataFile());
+        SimpleClassMetaDataRepository<ClassMetaData> repository = new SimpleClassMetaDataRepository<>();
+        repository.load(getMetaDataFile().getAsFile().get());
 
-        final Set<String> excludedPrefixes = new HashSet<String>();
-        final Set<String> excludedPackages = new HashSet<String>();
+        final Set<String> excludedPrefixes = new HashSet<>();
+        final Set<String> excludedPackages = new HashSet<>();
         for (String excludePattern : excludePatterns) {
             if (excludePattern.endsWith(".**")) {
                 String baseName = excludePattern.substring(0, excludePattern.length() - 3);
@@ -101,9 +103,8 @@ public class GenerateDefaultImportsTask extends DefaultTask {
                 excludedPackages.add(excludePattern);
             }
         }
-        final Set<String> packages = new TreeSet<String>();
-        packages.addAll(extraPackages);
-        final Multimap<String, String> simpleNames = HashMultimap.create();
+        final Set<String> packages = new LinkedHashSet<>();
+        final Multimap<String, String> simpleNames = LinkedHashMultimap.create();
 
         repository.each(new Action<ClassMetaData>() {
             public void execute(ClassMetaData classMetaData) {
@@ -125,24 +126,30 @@ public class GenerateDefaultImportsTask extends DefaultTask {
             }
         });
 
-        for (Map.Entry<String, Collection<String>> entry : simpleNames.asMap().entrySet()) {
-            if (entry.getValue().size() > 1) {
-                System.out.println(String.format("Multiple DSL types have short name '%s'", entry.getKey()));
-                for (String className : entry.getValue()) {
-                    System.out.println("    * " + className);
+        try (PrintWriter mappingFileWriter = new PrintWriter(new FileWriter(getMappingDestFile().getAsFile().get()))) {
+            for (Map.Entry<String, Collection<String>> entry : simpleNames.asMap().entrySet()) {
+                if (entry.getValue().size() > 1) {
+                    System.out.println(String.format("Multiple DSL types have short name '%s'", entry.getKey()));
+                    for (String className : entry.getValue()) {
+                        System.out.println("    * " + className);
+                    }
                 }
+                mappingFileWriter.print(entry.getKey());
+                mappingFileWriter.print(":");
+                for (String className : entry.getValue()) {
+                    mappingFileWriter.print(className);
+                    mappingFileWriter.print(";");
+                }
+                mappingFileWriter.println();
             }
         }
 
-        final PrintWriter writer = new PrintWriter(new FileWriter(getDestFile()));
-        try {
+        try (PrintWriter writer = new PrintWriter(new FileWriter(getImportsDestFile().getAsFile().get()))) {
             for (String packageName : packages) {
                 writer.print("import ");
                 writer.print(packageName);
                 writer.println(".*");
             }
-        } finally {
-            writer.close();
         }
     }
 }

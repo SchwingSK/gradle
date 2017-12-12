@@ -20,13 +20,17 @@ import com.google.common.collect.Lists;
 import org.gradle.api.InvalidUserDataException;
 import org.gradle.language.scala.ScalaPlatform;
 import org.gradle.play.platform.PlayPlatform;
+import org.gradle.util.CollectionUtils;
 import org.gradle.util.VersionNumber;
 
 import java.util.List;
 
 public enum PlayMajorVersion {
     PLAY_2_2_X("2.2.x", "2.10"),
-    PLAY_2_3_X("2.3.x", "2.11", "2.10");
+    PLAY_2_3_X("2.3.x", "2.11", "2.10"),
+    PLAY_2_4_X("2.4.x", "2.11", "2.10"),
+    PLAY_2_5_X("2.5.x", "2.11"),
+    PLAY_2_6_X("2.6.x", "2.12", "2.11");
 
     private final String name;
     private final List<String> compatibleScalaVersions;
@@ -55,13 +59,18 @@ public enum PlayMajorVersion {
 
     public static PlayMajorVersion forPlayVersion(String playVersion) {
         VersionNumber versionNumber = VersionNumber.parse(playVersion);
-        if (versionNumber.getMajor() == 2 && versionNumber.getMinor() == 2) {
-            return PlayMajorVersion.PLAY_2_2_X;
+        if (versionNumber.getMajor() == 2) {
+            int index = versionNumber.getMinor() - 2;
+            if (index < 0 || index >= values().length) {
+                throw invalidVersion(playVersion);
+            }
+            return values()[index];
         }
-        if (versionNumber.getMajor() == 2 && versionNumber.getMinor() == 3) {
-            return PlayMajorVersion.PLAY_2_3_X;
-        }
-        throw new InvalidUserDataException(String.format("Not a supported Play version: %s. This plugin is compatible with: [2.3.x, 2.2.x].", playVersion));
+        throw invalidVersion(playVersion);
     }
 
+    private static InvalidUserDataException invalidVersion(String playVersion) {
+        return new InvalidUserDataException(String.format("Not a supported Play version: %s. This plugin is compatible with: [%s].",
+            playVersion, CollectionUtils.join(", ", values())));
+    }
 }

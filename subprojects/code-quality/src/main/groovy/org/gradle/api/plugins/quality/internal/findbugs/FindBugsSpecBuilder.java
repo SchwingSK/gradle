@@ -16,19 +16,20 @@
 
 package org.gradle.api.plugins.quality.internal.findbugs;
 
-import java.io.File;
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.Set;
-
+import com.google.common.collect.ImmutableSet;
 import org.gradle.api.InvalidUserDataException;
 import org.gradle.api.file.FileCollection;
 import org.gradle.api.plugins.quality.FindBugsReports;
+import org.gradle.api.reporting.internal.CustomizableHtmlReportImpl;
 import org.gradle.api.plugins.quality.internal.FindBugsReportsImpl;
 import org.gradle.api.specs.Spec;
 import org.gradle.util.CollectionUtils;
 
-import com.google.common.collect.ImmutableSet;
+import java.io.File;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.Set;
 
 public class FindBugsSpecBuilder {
     private static final Set<String> VALID_EFFORTS = ImmutableSet.of("min", "default", "max");
@@ -37,7 +38,7 @@ public class FindBugsSpecBuilder {
     private FileCollection pluginsList;
     private FileCollection sources;
     private FileCollection classpath;
-    private FileCollection classes;
+    private FileCollection classesDirs;
     private FindBugsReports reports;
 
     private String effort;
@@ -48,13 +49,16 @@ public class FindBugsSpecBuilder {
     private File excludeFilter;
     private File includeFilter;
     private File excludeBugsFilter;
+    private Collection<String> extraArgs;
+    private Collection<String> jvmArgs;
     private boolean debugEnabled;
+    private boolean showProgress;
 
-    public FindBugsSpecBuilder(FileCollection classes) {
-        if(classes == null || classes.isEmpty()){
-            throw new InvalidUserDataException("No classes configured for FindBugs analysis.");
+    public FindBugsSpecBuilder(FileCollection classesDirs) {
+        if (classesDirs == null || classesDirs.isEmpty()) {
+            throw new InvalidUserDataException("No class directories configured for FindBugs analysis.");
         }
-        this.classes = classes;
+        this.classesDirs = classesDirs;
     }
 
     public FindBugsSpecBuilder withPluginsList(FileCollection pluginsClasspath) {
@@ -93,7 +97,7 @@ public class FindBugsSpecBuilder {
         this.reportLevel = reportLevel;
         return this;
     }
-    
+
     public FindBugsSpecBuilder withMaxHeapSize(String maxHeapSize) {
         this.maxHeapSize = maxHeapSize;
         return this;
@@ -136,30 +140,48 @@ public class FindBugsSpecBuilder {
         }
 
         this.excludeBugsFilter = excludeBugsFilter;
+
         return this;
     }
 
-    public FindBugsSpecBuilder withDebugging(boolean debugEnabled){
+    public FindBugsSpecBuilder withExtraArgs(Collection<String> extraArgs) {
+        this.extraArgs = extraArgs;
+        return this;
+    }
+
+    public FindBugsSpecBuilder withDebugging(boolean debugEnabled) {
         this.debugEnabled = debugEnabled;
+        return this;
+    }
+
+    public FindBugsSpecBuilder withJvmArgs(Collection<String> jvmArgs) {
+        this.jvmArgs = jvmArgs;
         return this;
     }
 
     public FindBugsSpec build() {
         ArrayList<String> args = new ArrayList<String>();
         args.add("-pluginList");
-        args.add(pluginsList==null ? "" : pluginsList.getAsPath());
+        args.add(pluginsList == null ? "" : pluginsList.getAsPath());
         args.add("-sortByClass");
         args.add("-timestampNow");
-        args.add("-progress");
+        if (showProgress) {
+            args.add("-progress");
+        }
 
         if (reports != null && !reports.getEnabled().isEmpty()) {
             if (reports.getEnabled().size() == 1) {
                 FindBugsReportsImpl reportsImpl = (FindBugsReportsImpl) reports;
                 String outputArg = "-" + reportsImpl.getFirstEnabled().getName();
                 if (reportsImpl.getFirstEnabled() instanceof FindBugsXmlReportImpl) {
-                    FindBugsXmlReportImpl r = (FindBugsXmlReportImpl)reportsImpl.getFirstEnabled();
+                    FindBugsXmlReportImpl r = (FindBugsXmlReportImpl) reportsImpl.getFirstEnabled();
                     if (r.isWithMessages()) {
                         outputArg += ":withMessages";
+                    }
+                } else if (reportsImpl.getFirstEnabled() instanceof CustomizableHtmlReportImpl) {
+                    CustomizableHtmlReportImpl r = (CustomizableHtmlReportImpl) reportsImpl.getFirstEnabled();
+                    if (r.getStylesheet() != null) {
+                        outputArg += ':' + r.getStylesheet().asFile().getAbsolutePath();
                     }
                 }
                 args.add(outputArg);
@@ -219,11 +241,18 @@ public class FindBugsSpecBuilder {
             args.add(excludeBugsFilter.getPath());
         }
 
-        for (File classFile : classes.getFiles()) {
-            args.add(classFile.getAbsolutePath());
+        if (has(extraArgs)) {
+            args.addAll(extraArgs);
         }
-        
-        return new FindBugsSpec(args, maxHeapSize, debugEnabled);
+
+        for (File classDir : classesDirs.getFiles()) {
+            // FindBugs cannot handle missing directories
+            if (classDir.exists()) {
+                args.add(classDir.getAbsolutePath());
+            }
+        }
+
+        return new FindBugsSpec(args, maxHeapSize, debugEnabled, jvmArgs == null ? Collections.<String>emptyList() : jvmArgs);
     }
 
     private boolean has(String str) {
@@ -240,5 +269,10 @@ public class FindBugsSpecBuilder {
 
     private boolean has(FileCollection fileCollection) {
         return fileCollection != null && !fileCollection.isEmpty();
+    }
+
+    public FindBugsSpecBuilder withShowProgress(boolean showProgress) {
+        this.showProgress = showProgress;
+        return this;
     }
 }

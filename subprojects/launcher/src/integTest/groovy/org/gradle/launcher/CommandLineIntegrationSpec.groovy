@@ -17,30 +17,22 @@
 package org.gradle.launcher
 
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
-import org.gradle.integtests.fixtures.AvailableJavaHomes
 import org.gradle.integtests.fixtures.executer.GradleContextualExecuter
-import org.gradle.util.GradleVersion
+import org.gradle.launcher.debug.JDWPUtil
+import org.gradle.test.fixtures.ConcurrentTestUtil
+import org.junit.Rule
 import spock.lang.IgnoreIf
 import spock.lang.Unroll
 
 class CommandLineIntegrationSpec extends AbstractIntegrationSpec {
-    @IgnoreIf({ AvailableJavaHomes.java5 == null })
-    def "provides reasonable failure message when attempting to run under java 5"() {
-        def jdk = AvailableJavaHomes.java5
-
-        given:
-        executer.withJavaHome(jdk.javaHome)
-
-        expect:
-        fails("help")
-        failure.assertHasDescription("Gradle ${GradleVersion.current().version} requires Java 6 or later to run. You are currently using Java 5.")
-    }
+    @Rule
+    JDWPUtil jdwpClient = new JDWPUtil(5005)
 
     @IgnoreIf({ GradleContextualExecuter.parallel })
     @Unroll
     def "reasonable failure message when --max-workers=#value"() {
         given:
-        requireGradleHome() // otherwise exception gets thrown in testing infrastructure
+        requireGradleDistribution() // otherwise exception gets thrown in testing infrastructure
 
         when:
         args("--max-workers=$value")
@@ -58,7 +50,7 @@ class CommandLineIntegrationSpec extends AbstractIntegrationSpec {
     @Unroll
     def "reasonable failure message when org.gradle.workers.max=#value"() {
         given:
-        requireGradleHome() // otherwise exception gets thrown in testing infrastructure
+        requireGradleDistribution() // otherwise exception gets thrown in testing infrastructure
 
         when:
         args("-Dorg.gradle.workers.max=$value")
@@ -67,9 +59,41 @@ class CommandLineIntegrationSpec extends AbstractIntegrationSpec {
         fails "help"
 
         and:
-        failure.assertHasDescription "Value '$value' given for org.gradle.workers.max system property is invalid (must be a positive, non-zero, integer)"
+        failure.assertHasDescription "Value '$value' given for org.gradle.workers.max Gradle property is invalid (must be a positive, non-zero, integer)"
 
         where:
         value << ["-1", "0", "foo", " 1"]
+    }
+
+    @IgnoreIf({ !CommandLineIntegrationSpec.debugPortIsFree() })
+    def "can debug with org.gradle.debug=true"() {
+        when:
+        def gradle = executer.withArgument("-Dorg.gradle.debug=true").withTasks("help").start()
+
+        then:
+        ConcurrentTestUtil.poll() {
+            // Connect, resume threads, and disconnect from VM
+            jdwpClient.connect().dispose()
+        }
+        gradle.waitForFinish()
+    }
+
+    static boolean debugPortIsFree() {
+        boolean free = true
+
+        ConcurrentTestUtil.poll(30) {
+            Socket probe
+            try {
+                probe = new Socket(InetAddress.getLocalHost(), 5005)
+                // something is listening, keep polling
+                free = false
+            } catch (Exception e) {
+                // nothing listening - exit the polling loop
+            } finally {
+                probe?.close()
+            }
+        }
+
+        free
     }
 }

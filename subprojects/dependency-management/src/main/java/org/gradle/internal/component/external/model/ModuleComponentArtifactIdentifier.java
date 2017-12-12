@@ -16,8 +16,8 @@
 
 package org.gradle.internal.component.external.model;
 
+import org.gradle.api.artifacts.component.ComponentArtifactIdentifier;
 import org.gradle.api.artifacts.component.ModuleComponentIdentifier;
-import org.gradle.internal.component.model.ComponentArtifactIdentifier;
 
 /**
  * An immutable identifier for an artifact that belongs to some module version.
@@ -27,4 +27,9 @@ public interface ModuleComponentArtifactIdentifier extends ComponentArtifactIden
      * Returns the id of the component that this artifact belongs to.
      */
     ModuleComponentIdentifier getComponentIdentifier();
+
+    /**
+     * Returns a file base name that can be used for this artifact.
+     */
+    String getFileName();
 }

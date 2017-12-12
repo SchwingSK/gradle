@@ -15,13 +15,14 @@
  */
 package org.gradle.integtests.resolve
 
+import groovy.transform.NotYetImplemented
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
+import org.gradle.integtests.fixtures.resolve.ResolveTestFixture
 import spock.lang.Issue
 
-import static org.gradle.util.TextUtil.toPlatformLineSeparators
 import static org.hamcrest.Matchers.containsString
 
-public class VersionConflictResolutionIntegrationTest extends AbstractIntegrationSpec {
+class VersionConflictResolutionIntegrationTest extends AbstractIntegrationSpec {
 
     void "strict conflict resolution should fail due to conflict"() {
         mavenRepo.module("org", "foo", '1.3.3').publish()
@@ -150,9 +151,11 @@ project(':tool') {
         resolve.expectGraph {
             root(":tool", "test:tool:") {
                 project(":api", "test:api:") {
+                    configuration = "runtimeElements"
                     edge("org:foo:1.3.3", "org:foo:1.4.4")
                 }
                 project(":impl", "test:impl:") {
+                    configuration = "runtimeElements"
                     module("org:foo:1.4.4").byConflictResolution()
                 }
             }
@@ -215,10 +218,12 @@ dependencies {
     compile 'org:child:2'
     compile 'org:dep:2'
 }
-task checkDeps(dependsOn: configurations.compile) << {
-    assert configurations.compile*.name == ['child-2.jar', 'dep-2.jar', 'parent-2.jar']
-    configurations.compile.resolvedConfiguration.firstLevelModuleDependencies*.name
-    configurations.compile.incoming.resolutionResult.allComponents*.id
+task checkDeps(dependsOn: configurations.compile) {
+    doLast {
+        assert configurations.compile*.name == ['dep-2.jar', 'parent-2.jar', 'child-2.jar']
+        configurations.compile.resolvedConfiguration.firstLevelModuleDependencies*.name
+        configurations.compile.incoming.resolutionResult.allComponents*.id
+    }
 }
 """
 
@@ -244,8 +249,10 @@ dependencies {
     compile 'org:dep:2.2'
 }
 
-task checkDeps << {
-    assert configurations.compile*.name == ['dep-2.2.jar', 'external-1.4.jar']
+task checkDeps {
+    doLast {
+        assert configurations.compile*.name == ['dep-2.2.jar', 'external-1.4.jar']
+    }
 }
 """
 
@@ -269,8 +276,10 @@ dependencies {
     compile 'org:dep:2.2'
 }
 
-task checkDeps << {
-    assert configurations.compile*.name == ['external-1.2.jar', 'dep-2.2.jar']
+task checkDeps {
+    doLast {
+        assert configurations.compile*.name == ['external-1.2.jar', 'dep-2.2.jar']
+    }
 }
 """
 
@@ -295,8 +304,10 @@ dependencies {
     compile 'org:dep:2.2'
 }
 
-task checkDeps << {
-    assert configurations.compile*.name == ['dep-2.2.jar', 'external-1.4.jar']
+task checkDeps {
+    doLast {
+        assert configurations.compile*.name == ['dep-2.2.jar', 'external-1.4.jar']
+    }
 }
 """
 
@@ -348,8 +359,10 @@ project(':tool') {
 	    }
 	}
 
-	task checkDeps << {
-        assert configurations.compile*.name.contains('foo-1.4.9.jar')
+	task checkDeps {
+        doLast {
+            assert configurations.compile*.name.contains('foo-1.4.9.jar')
+        }
     }
 }
 
@@ -394,11 +407,13 @@ configurations.all {
     }
 }
 
-task checkDeps << {
-    def deps = configurations.compile*.name
-    assert deps.contains('someArtifact-1.0.jar')
-    assert deps.contains('foo-1.3.0.jar')
-    assert deps.size() == 2
+task checkDeps {
+    doLast {
+        def deps = configurations.compile*.name
+        assert deps.contains('someArtifact-1.0.jar')
+        assert deps.contains('foo-1.3.0.jar')
+        assert deps.size() == 2
+    }
 }
 """
 
@@ -437,16 +452,18 @@ task checkDeps << {
             dependencies {
                 conf 'org:a:1.0', 'org:a:2.0'
             }
-            task checkDeps << {
-                assert configurations.conf*.name == ['a-2.0.jar', 'b-2.0.jar']
-                def result = configurations.conf.incoming.resolutionResult
-                assert result.allComponents.size() == 3
-                def root = result.root
-                assert root.dependencies*.toString() == ['org:a:1.0 -> org:a:2.0', 'org:a:2.0']
-                def a = result.allComponents.find { it.id instanceof ModuleComponentIdentifier && it.id.module == 'a' }
-                assert a.dependencies*.toString() == ['org:b:2.0']
-                def b = result.allComponents.find { it.id instanceof ModuleComponentIdentifier && it.id.module == 'b' }
-                assert b.dependencies*.toString() == ['org:a:1.0 -> org:a:2.0']
+            task checkDeps {
+                doLast {
+                    assert configurations.conf*.name == ['b-2.0.jar', 'a-2.0.jar']
+                    def result = configurations.conf.incoming.resolutionResult
+                    assert result.allComponents.size() == 3
+                    def root = result.root
+                    assert root.dependencies*.toString() == ['org:a:1.0 -> org:a:2.0', 'org:a:2.0']
+                    def a = result.allComponents.find { it.id instanceof ModuleComponentIdentifier && it.id.module == 'a' }
+                    assert a.dependencies*.toString() == ['org:b:2.0']
+                    def b = result.allComponents.find { it.id instanceof ModuleComponentIdentifier && it.id.module == 'b' }
+                    assert b.dependencies*.toString() == ['org:a:1.0 -> org:a:2.0']
+                }
             }
         """
 
@@ -492,16 +509,18 @@ task checkDeps << {
                 conf "org:a:1.0", "org:b:1.0"
             }
 
-        task checkDeps << {
-            assert configurations.conf*.name == ['a-1.0.jar', 'b-1.0.jar', 'b-child-1.0.jar', 'target-1.0.jar', 'in-conflict-2.0.jar', 'target-child-1.0.jar']
-            def result = configurations.conf.incoming.resolutionResult
-            assert result.allComponents.size() == 7
-            def a = result.allComponents.find { it.id instanceof ModuleComponentIdentifier && it.id.module == 'a' }
-            assert a.dependencies*.toString() == ['org:in-conflict:1.0 -> org:in-conflict:2.0']
-            def bChild = result.allComponents.find { it.id instanceof ModuleComponentIdentifier && it.id.module == 'b-child' }
-            assert bChild.dependencies*.toString() == ['org:in-conflict:2.0']
-            def target = result.allComponents.find { it.id instanceof ModuleComponentIdentifier && it.id.module == 'target' }
-            assert target.dependents*.from*.toString() == ['org:in-conflict:2.0']
+        task checkDeps {
+            doLast {
+                assert configurations.conf*.name == ['a-1.0.jar', 'b-1.0.jar', 'b-child-1.0.jar', 'in-conflict-2.0.jar', 'target-1.0.jar', 'target-child-1.0.jar']
+                def result = configurations.conf.incoming.resolutionResult
+                assert result.allComponents.size() == 7
+                def a = result.allComponents.find { it.id instanceof ModuleComponentIdentifier && it.id.module == 'a' }
+                assert a.dependencies*.toString() == ['org:in-conflict:1.0 -> org:in-conflict:2.0']
+                def bChild = result.allComponents.find { it.id instanceof ModuleComponentIdentifier && it.id.module == 'b-child' }
+                assert bChild.dependencies*.toString() == ['org:in-conflict:2.0']
+                def target = result.allComponents.find { it.id instanceof ModuleComponentIdentifier && it.id.module == 'target' }
+                assert target.dependents*.from*.toString() == ['org:in-conflict:2.0']
+            }
         }
         """
 
@@ -554,7 +573,7 @@ task checkDeps << {
         run("dependencies")
 
         then:
-        output.contains(toPlatformLineSeparators("""
+        output.contains """
 childFirst
 +--- org:d:1.0
 |    \\--- org:x:1.0 -> 2.0 FAILED
@@ -575,7 +594,7 @@ parentFirst
 +--- org:d:1.0
 |    \\--- org:x:1.0 -> 2.0 FAILED
 \\--- org:f:1.0
-     \\--- org:x:2.0 FAILED"""))
+     \\--- org:x:2.0 FAILED"""
     }
 
     @Issue("GRADLE-2752")
@@ -681,9 +700,11 @@ dependencies {
     compile "org:c:2"
 }
 
-task checkDeps(dependsOn: configurations.compile) << {
-    assert configurations.compile*.name == ['a-2.jar', 'c-2.jar', 'b-1.jar']
-    assert configurations.compile.incoming.resolutionResult.allComponents.find { it.id instanceof ModuleComponentIdentifier && it.id.module == 'b' }.dependencies.size() == 1
+task checkDeps(dependsOn: configurations.compile) {
+    doLast {
+        assert configurations.compile*.name.sort() == ['a-2.jar', 'b-1.jar', 'c-2.jar']
+        assert configurations.compile.incoming.resolutionResult.allComponents.find { it.id instanceof ModuleComponentIdentifier && it.id.module == 'b' }.dependencies.size() == 1
+    }
 }
 """
 
@@ -713,8 +734,10 @@ task checkDeps(dependsOn: configurations.compile) << {
             dependencies {
                 conf 'org:a:1.0', 'org:b:1.0', 'org:c:1.0'
             }
-            task resolve << {
-                configurations.conf.files
+            task resolve {
+                doLast {
+                    configurations.conf.files
+                }
             }
         """
 
@@ -722,6 +745,727 @@ task checkDeps(dependsOn: configurations.compile) << {
         runAndFail "resolve"
 
         then:
-        failure.assertResolutionFailure(":conf").assertFailedDependencyRequiredBy(":broken:12 > org:c:1.0")
+        failure.assertResolutionFailure(":conf").assertFailedDependencyRequiredBy("project : > org:c:1.0")
+    }
+
+    def "chooses highest version that is included in both ranges"() {
+        given:
+        (1..10).each {
+            mavenRepo.module("org", "leaf", "$it").publish()
+        }
+        mavenRepo.module("org", "a", "1.0").dependsOn("org", "leaf", "[2,6]").publish()
+        mavenRepo.module("org", "b", "1.0").dependsOn("org", "leaf", "[4,8]").publish()
+
+        buildFile << """
+            repositories {
+                maven { url "${mavenRepo.uri}" }
+            }
+            configurations {
+                conf
+            }
+            dependencies {
+                conf 'org:a:1.0', 'org:b:1.0'
+            }
+            task checkDeps {
+                doLast {
+                    def files = configurations.conf*.name.sort()
+                    assert files == ['a-1.0.jar', 'b-1.0.jar', 'leaf-6.jar']
+                }
+            }
+        """
+
+        when:
+        run 'checkDeps'
+
+        then:
+        noExceptionThrown()
+    }
+
+    def "chooses highest version that is included in both ranges when fail on conflict is set"() {
+        given:
+        (1..10).each {
+            mavenRepo.module("org", "leaf", "$it").publish()
+        }
+        mavenRepo.module("org", "a", "1.0").dependsOn("org", "leaf", "[2,6]").publish()
+        mavenRepo.module("org", "b", "1.0").dependsOn("org", "leaf", "[4,8]").publish()
+
+        buildFile << """
+            repositories {
+                maven { url "${mavenRepo.uri}" }
+            }
+            configurations {
+                conf {
+                    resolutionStrategy {
+                        failOnVersionConflict()
+                    }
+                }
+            }
+            dependencies {
+                conf 'org:a:1.0', 'org:b:1.0'
+            }
+            task checkDeps {
+                doLast {
+                    def files = configurations.conf*.name.sort()
+                    assert files == ['a-1.0.jar', 'b-1.0.jar', 'leaf-6.jar']
+                }
+            }
+        """
+
+        when:
+        run 'checkDeps'
+
+        then:
+        noExceptionThrown()
+    }
+
+    def "chooses highest version that is included in all ranges"() {
+        given:
+        (1..10).each {
+            mavenRepo.module("org", "leaf", "$it").publish()
+        }
+        mavenRepo.module("org", "a", "1.0").dependsOn("org", "leaf", "[2,6]").publish()
+        mavenRepo.module("org", "b", "1.0").dependsOn("org", "leaf", "[4,8]").publish()
+        mavenRepo.module("org", "c", "1.0").dependsOn("org", "leaf", "[3,5]").publish()
+
+        buildFile << """
+            repositories {
+                maven { url "${mavenRepo.uri}" }
+            }
+            configurations {
+                conf
+            }
+            dependencies {
+                conf 'org:a:1.0', 'org:b:1.0', 'org:c:1.0'
+            }
+            task checkDeps {
+                doLast {
+                    def files = configurations.conf*.name.sort()
+                    assert files == ['a-1.0.jar', 'b-1.0.jar', 'c-1.0.jar', 'leaf-5.jar']
+                }
+            }
+        """
+
+        when:
+        run 'checkDeps'
+
+        then:
+        noExceptionThrown()
+    }
+
+    def "chooses highest version that is included in all ranges, when dependencies are included at different transitivity levels"() {
+        given:
+        (1..10).each {
+            mavenRepo.module("org", "leaf", "$it").publish()
+        }
+        // top level
+        mavenRepo.module("org", "a", "1.0").dependsOn("org", "leaf", "[2,6]").publish()
+
+        // b will include 'leaf' through a transitive dependency
+        mavenRepo.module("org", "b", "1.0").dependsOn("org", "b2", "1.0").publish()
+        mavenRepo.module("org", "b2", "1.0").dependsOn("org", "leaf", "[3,5]").publish()
+
+        // c will include 'leaf' through a 2d level transitive dependency
+        mavenRepo.module("org", "c", "1.0").dependsOn("org", "c2", "1.0").publish()
+        mavenRepo.module("org", "c2", "1.0").dependsOn("org", "c3", "1.0").publish()
+        mavenRepo.module("org", "c3", "1.0").dependsOn("org", "leaf", "[3,5]").publish()
+
+        buildFile << """
+            repositories {
+                maven { url "${mavenRepo.uri}" }
+            }
+            configurations {
+                conf
+            }
+            dependencies {
+                conf 'org:a:1.0', 'org:b:1.0', 'org:c:1.0'
+            }
+            task checkDeps {
+                doLast {
+                    def files = configurations.conf*.name.sort()
+                    assert files == ['a-1.0.jar', 'b-1.0.jar', 'b2-1.0.jar', 'c-1.0.jar', 'c2-1.0.jar','c3-1.0.jar', 'leaf-5.jar']
+                }
+            }
+        """
+
+        when:
+        run 'checkDeps'
+
+        then:
+        noExceptionThrown()
+    }
+
+    def "upgrades version when ranges are disjoint"() {
+        given:
+        (1..10).each {
+            mavenRepo.module("org", "leaf", "$it").publish()
+        }
+        mavenRepo.module("org", "a", "1.0").dependsOn("org", "leaf", "[2,3]").publish()
+        mavenRepo.module("org", "b", "1.0").dependsOn("org", "leaf", "[5,8]").publish()
+
+        buildFile << """
+            repositories {
+                maven { url "${mavenRepo.uri}" }
+            }
+            configurations {
+                conf
+            }
+            dependencies {
+                conf 'org:a:1.0', 'org:b:1.0'
+            }
+            task checkDeps {
+                doLast {
+                    def files = configurations.conf*.name.sort()
+                    assert files == ['a-1.0.jar', 'b-1.0.jar', 'leaf-8.jar']
+                }
+            }
+        """
+
+        when:
+        run 'checkDeps'
+
+        then:
+        noExceptionThrown()
+    }
+
+    def "upgrades version when ranges are disjoint unless failOnVersionConflict is set"() {
+        given:
+        (1..10).each {
+            mavenRepo.module("org", "leaf", "$it").publish()
+        }
+        mavenRepo.module("org", "a", "1.0").dependsOn("org", "leaf", "[2,3]").publish()
+        mavenRepo.module("org", "b", "1.0").dependsOn("org", "leaf", "[5,8]").publish()
+
+        buildFile << """
+            repositories {
+                maven { url "${mavenRepo.uri}" }
+            }
+            configurations {
+                conf {
+                    resolutionStrategy.failOnVersionConflict()
+                }
+            }
+            dependencies {
+                conf 'org:a:1.0', 'org:b:1.0'
+            }
+            task checkDeps {
+                doLast {
+                    def files = configurations.conf*.name.sort()
+                }
+            }
+        """
+
+        when:
+        fails 'checkDeps'
+
+        then:
+        failure.assertThatCause(containsString('A conflict was found between the following modules:'))
+    }
+
+    def "upgrades version when one of the ranges is disjoint"() {
+        given:
+        (1..10).each {
+            mavenRepo.module("org", "leaf", "$it").publish()
+        }
+        mavenRepo.module("org", "a", "1.0").dependsOn("org", "leaf", "[2,6]").publish()
+        mavenRepo.module("org", "b", "1.0").dependsOn("org", "leaf", "[3,4]").publish()
+        mavenRepo.module("org", "c", "1.0").dependsOn("org", "leaf", "[7,8]").publish()
+
+        buildFile << """
+            repositories {
+                maven { url "${mavenRepo.uri}" }
+            }
+            configurations {
+                conf
+            }
+            dependencies {
+                conf 'org:a:1.0', 'org:b:1.0', 'org:c:1.0'
+            }
+            task checkDeps {
+                doLast {
+                    def files = configurations.conf*.name.sort()
+                    assert files == ['a-1.0.jar', 'b-1.0.jar', 'c-1.0.jar', 'leaf-8.jar']
+                }
+            }
+        """
+
+        when:
+        run 'checkDeps'
+
+        then:
+        noExceptionThrown()
+    }
+
+    def "fails when one of the ranges is disjoint and fail on conflict is set"() {
+        given:
+        (1..10).each {
+            mavenRepo.module("org", "leaf", "$it").publish()
+        }
+        mavenRepo.module("org", "a", "1.0").dependsOn("org", "leaf", "[2,6]").publish()
+        mavenRepo.module("org", "b", "1.0").dependsOn("org", "leaf", "[3,4]").publish()
+        mavenRepo.module("org", "c", "1.0").dependsOn("org", "leaf", "[7,8]").publish()
+
+        buildFile << """
+            repositories {
+                maven { url "${mavenRepo.uri}" }
+            }
+            configurations {
+                conf {
+                    resolutionStrategy {
+                        failOnVersionConflict()
+                    }
+                }
+            }
+            dependencies {
+                conf 'org:a:1.0', 'org:b:1.0', 'org:c:1.0'
+            }
+            task checkDeps {
+                doLast {
+                    def files = configurations.conf*.name.sort()
+                }
+            }
+        """
+
+        when:
+        fails 'checkDeps'
+
+        then:
+        failure.assertThatCause(containsString('A conflict was found between the following modules:'))
+    }
+
+    def "chooses highest version of all versions fully included within range"() {
+        given:
+        (1..12).each {
+            mavenRepo.module("org", "leaf", "$it").publish()
+        }
+        mavenRepo.module("org", "a", "1.0").dependsOn("org", "leaf", "[1,12]").publish()
+        mavenRepo.module("org", "b", "1.0").dependsOn("org", "leaf", "[3,8]").publish()
+        mavenRepo.module("org", "c", "1.0").dependsOn("org", "leaf", "[2,10]").publish()
+        mavenRepo.module("org", "d", "1.0").dependsOn("org", "leaf", "[4,7]").publish()
+        mavenRepo.module("org", "e", "1.0").dependsOn("org", "leaf", "[4,11]").publish()
+
+        buildFile << """
+            repositories {
+                maven { url "${mavenRepo.uri}" }
+            }
+            configurations {
+                conf
+            }
+            dependencies {
+                conf 'org:a:1.0', 'org:b:1.0', 'org:c:1.0', 'org:d:1.0', 'org:e:1.0'
+            }
+            task checkDeps {
+                doLast {
+                    def files = configurations.conf*.name.sort()
+                    assert files == ['a-1.0.jar', 'b-1.0.jar', 'c-1.0.jar', 'd-1.0.jar', 'e-1.0.jar', 'leaf-7.jar']
+                }
+            }
+        """
+
+        when:
+        run 'checkDeps'
+
+        then:
+        noExceptionThrown()
+    }
+
+    def "selects the minimal version when in there's an open range"() {
+        given:
+        (1..10).each {
+            mavenRepo.module("org", "leaf", "$it").publish()
+        }
+        mavenRepo.module("org", "a", "1.0").dependsOn("org", "leaf", "[2,6]").publish()
+        mavenRepo.module("org", "b", "1.0").dependsOn("org", "leaf", "[5,)").publish()
+
+        buildFile << """
+            repositories {
+                maven { url "${mavenRepo.uri}" }
+            }
+            configurations {
+                conf
+            }
+            dependencies {
+                conf 'org:a:1.0', 'org:b:1.0'
+            }
+            task checkDeps {
+                doLast {
+                    def files = configurations.conf*.name.sort()
+                    assert files == ['a-1.0.jar', 'b-1.0.jar', 'leaf-6.jar']
+                }
+            }
+        """
+
+        when:
+        run 'checkDeps'
+
+        then:
+        noExceptionThrown()
+    }
+
+    def "range selector should not win over sub-version selector"() {
+        given:
+        (1..10).each {
+            mavenRepo.module("org", "leaf", "1.$it").publish()
+        }
+        mavenRepo.module("org", "a", "1.0").dependsOn("org", "leaf", "[1.2,1.6]").publish()
+        mavenRepo.module("org", "b", "1.0").dependsOn("org", "leaf", "1.+").publish()
+
+        buildFile << """
+            repositories {
+                maven { url "${mavenRepo.uri}" }
+            }
+            configurations {
+                conf
+            }
+            dependencies {
+                conf 'org:a:1.0', 'org:b:1.0'
+            }
+            task checkDeps {
+                doLast {
+                    def files = configurations.conf*.name.sort()
+                    assert files == ['a-1.0.jar', 'b-1.0.jar', 'leaf-1.10.jar']
+                }
+            }
+        """
+
+        when:
+        run 'checkDeps'
+
+        then:
+        noExceptionThrown()
+    }
+
+    def "range conflict resolution not interfering between distinct configurations"() {
+        given:
+        (1..10).each {
+            mavenRepo.module("org", "leaf", "$it").publish()
+        }
+        mavenRepo.module("org", "a", "1.0").dependsOn("org", "leaf", "[2,6]").publish()
+        mavenRepo.module("org", "b", "1.0").dependsOn("org", "leaf", "[4,8]").publish()
+        mavenRepo.module("org", "c", "1.0").dependsOn("org", "leaf", "[3,5]").publish()
+        mavenRepo.module("org", "d", "1.0").dependsOn("org", "leaf", "8").publish()
+
+        buildFile << """
+            repositories {
+                maven { url "${mavenRepo.uri}" }
+            }
+            configurations {
+                conf
+                conf2
+                conf3
+                conf4
+            }
+            dependencies {
+                conf 'org:a:1.0', 'org:b:1.0'
+                conf2 'org:a:1.0', 'org:c:1.0'
+                conf3 'org:b:1.0', 'org:c:1.0'
+                conf4 'org:b:1.0', 'org:c:1.0', 'org:d:1.0'
+            }
+            task checkDeps {
+                doLast {
+                    def files = configurations.conf*.name.sort()
+                    assert files == ['a-1.0.jar', 'b-1.0.jar', 'leaf-6.jar']
+                    files = configurations.conf2*.name.sort()
+                    assert files == ['a-1.0.jar', 'c-1.0.jar', 'leaf-5.jar']
+                    files = configurations.conf3*.name.sort()
+                    assert files == ['b-1.0.jar', 'c-1.0.jar', 'leaf-5.jar']
+                    files = configurations.conf4*.name.sort()
+                    assert files == ['b-1.0.jar', 'c-1.0.jar', 'd-1.0.jar', 'leaf-8.jar']
+                }
+            }
+        """
+
+        when:
+        run 'checkDeps'
+
+        then:
+        noExceptionThrown()
+    }
+
+    def "conflict resolution on different dependencies are handled separately"() {
+        given:
+        (1..10).each {
+            mavenRepo.module("org", "leaf", "$it").publish()
+            mavenRepo.module("org", "leaf2", "$it").publish()
+        }
+        mavenRepo.module("org", "a", "1.0").dependsOn("org", "leaf", "[2,6]").publish()
+        mavenRepo.module("org", "b", "1.0").dependsOn("org", "leaf", "[4,8]").publish()
+        mavenRepo.module("org", "c", "1.0").dependsOn("org", "leaf2", "[3,4]").publish()
+        mavenRepo.module("org", "d", "1.0").dependsOn("org", "leaf2", "[1,7]").publish()
+
+        buildFile << """
+            repositories {
+                maven { url "${mavenRepo.uri}" }
+            }
+            configurations {
+                conf
+            }
+            dependencies {
+                conf 'org:a:1.0', 'org:b:1.0', 'org:c:1.0', 'org:d:1.0'
+            }
+            task checkDeps {
+                doLast {
+                    def files = configurations.conf*.name.sort()
+                    assert files == ['a-1.0.jar', 'b-1.0.jar', 'c-1.0.jar', 'd-1.0.jar', 'leaf-6.jar', 'leaf2-4.jar']
+                }
+            }
+        """
+
+        when:
+        run 'checkDeps'
+
+        then:
+        noExceptionThrown()
+    }
+
+    @NotYetImplemented
+    def "previously selected transitive dependency is not used when it becomes orphaned because of selection of a different version of its dependent module"() {
+        given:
+        (1..10).each {
+            def dep = mavenRepo.module('org', 'zdep', "$it").publish()
+            mavenRepo.module("org", "leaf", "$it").dependsOn(dep).publish()
+        }
+        mavenRepo.module("org", "a", "1.0")
+            .dependsOn("org", "c", "1.0")
+            .dependsOn('org', 'leaf', '[1,8]')
+            .publish()
+        mavenRepo.module("org", "b", "1.0").dependsOn("org", "c", "1.1").publish()
+        mavenRepo.module("org", "c", "1.0").dependsOn("org", "leaf", "[3,4]").publish()
+        mavenRepo.module("org", "c", "1.1").dependsOn("org", "leaf", "[4,6]").publish()
+
+        buildFile << """
+            repositories {
+                maven { url "${mavenRepo.uri}" }
+            }
+            configurations {
+                conf
+            }
+            dependencies {
+                conf 'org:a:1.0', 'org:b:1.0'
+            }
+            task checkDeps {
+                doLast {
+                    def files = configurations.conf*.name.sort()
+                    assert files == ['a-1.0.jar', 'b-1.0.jar', 'c-1.1.jar', 'leaf-6.jar', 'zdep-6.jar']
+                }
+            }
+        """
+
+        when:
+        run 'checkDeps'
+
+        then:
+        noExceptionThrown()
+    }
+
+    @NotYetImplemented
+    def "evicted version removes range constraint from transitive dependency"() {
+        given:
+        (1..10).each {
+            mavenRepo.module("org", "e", "$it").publish()
+        }
+        mavenRepo.module("org", "a", "1.0").dependsOn("org", "e", "[3,6]").publish()
+        mavenRepo.module("org", "b", "1.0").dependsOn("org", "e", "[1,10]").publish()
+        mavenRepo.module("org", "c", "1.0").dependsOn("org", "a", "2.0").publish()
+        mavenRepo.module("org", "a", "2.0").dependsOn("org", "e", "[4,8]").publish()
+
+
+        buildFile << """
+            repositories {
+                maven { url "${mavenRepo.uri}" }
+            }
+            configurations {
+                conf
+            }
+            dependencies {
+                conf 'org:a:1.0', 'org:b:1.0', 'org:c:1.0'
+            }
+            task checkDeps {
+                doLast {
+                    def files = configurations.conf*.name.sort()
+                    assert files == ['a-2.0.jar', 'b-1.0.jar', 'c-1.0.jar', 'e-8.jar']
+                }
+            }
+        """
+
+        when:
+        run 'checkDeps'
+
+        then:
+        noExceptionThrown()
+    }
+
+    def "orphan node can be re-selected later with a non short-circuiting selector"() {
+        given:
+        (1..10).each {
+            mavenRepo.module("org", "e", "$it").publish()
+        }
+        mavenRepo.module("org", "a", "1.0").dependsOn("org", "e", "10").publish()
+        mavenRepo.module("org", "b", "1.0").dependsOn("org", "a", "2.0").publish()
+        mavenRepo.module("org", "a", "2.0").publish()
+        mavenRepo.module("org", "c", "1.0").dependsOn("org", "d", "1.0").publish()
+        mavenRepo.module("org", "d", "1.0").dependsOn("org", "e", "latest.release").publish()
+
+
+        buildFile << """
+            repositories {
+                maven { url "${mavenRepo.uri}" }
+            }
+            configurations {
+                conf
+            }
+            dependencies {
+                conf 'org:a:1.0', 'org:b:1.0', 'org:c:1.0'
+            }
+            task checkDeps {
+                doLast {
+                    def files = configurations.conf*.name.sort()
+                    assert files == ['a-2.0.jar', 'b-1.0.jar', 'c-1.0.jar', 'd-1.0.jar', 'e-10.jar']
+                }
+            }
+        """
+
+        when:
+        run 'checkDeps'
+
+        then:
+        noExceptionThrown()
+    }
+
+    def "presence of evicted and orphan node for a module do not fail selection"() {
+        given:
+        mavenRepo.module("org", "a", "1.0").dependsOn("org", "b", "1.0").publish()
+        mavenRepo.module("org", "b", "1.0").publish()
+        mavenRepo.module("org", "b", "2.0").publish()
+        mavenRepo.module("org", "c", "1.0").dependsOn('org', 'b', '2.0').publish()
+        mavenRepo.module("org", "d", "1.0").dependsOn("org", 'e', '1.0').publish()
+        mavenRepo.module("org", "e", "1.0").dependsOn("org", 'a', '2.0').dependsOn('org', 'c', '1.0').publish()
+        mavenRepo.module("org", "a", "2.0").dependsOn("org", 'c', '2.0').publish()
+        mavenRepo.module('org', 'c', '2.0').publish()
+
+        buildFile << """
+            repositories {
+                maven { url "${mavenRepo.uri}" }
+            }
+            configurations {
+                conf
+            }
+            dependencies {
+                conf 'org:a:1.0', 'org:c:1.0', 'org:d:1.0'
+            }
+            task checkDeps {
+                doLast {
+                    def files = configurations.conf*.name.sort()
+                    assert files == ['a-2.0.jar', 'c-2.0.jar', 'd-1.0.jar', 'e-1.0.jar']
+                }
+            }
+        """
+
+        when:
+        run 'checkDeps'
+
+        then:
+        noExceptionThrown()
+    }
+
+
+    def "can have a dependency on evicted node"() {
+        given:
+        mavenRepo.module("org", "a", "1.0").dependsOn("org", "b", "1.0").publish()
+        mavenRepo.module("org", "b", "1.0").publish()
+        mavenRepo.module("org", "c", "1.0").dependsOn('org', 'a', '1.0').publish()
+        mavenRepo.module('org', 'd', '1.0').dependsOn('org', 'a', '2.0').publish()
+        mavenRepo.module('org', 'a', '2.0').publish()
+
+        buildFile << """
+            repositories {
+                maven { url "${mavenRepo.uri}" }
+            }
+            configurations {
+                conf
+            }
+            dependencies {
+                conf 'org:a:1.0', 'org:c:1.0', 'org:d:1.0'
+            }
+            task checkDeps {
+                doLast {
+                    def files = configurations.conf*.name.sort()
+                    assert files == ['a-2.0.jar', 'c-1.0.jar', 'd-1.0.jar']
+                }
+            }
+        """
+
+        when:
+        run 'checkDeps'
+
+        then:
+        noExceptionThrown()
+    }
+
+    @NotYetImplemented
+    def "evicted hard dependency shouldn't add constraint on range"() {
+        given:
+        4.times { mavenRepo.module("org", "a", "${it+1}").publish() }
+        mavenRepo.module("org", "b", "1").dependsOn('org', 'a', '4').publish() // this will be evicted
+        mavenRepo.module('org', 'c', '1').dependsOn('org', 'd', '1').publish()
+        mavenRepo.module('org', 'd', '1').dependsOn('org', 'b', '2').publish()
+        mavenRepo.module('org', 'b', '2').publish()
+
+        buildFile << """
+            repositories {
+                maven { url "${mavenRepo.uri}" }
+            }
+            configurations {
+                conf
+            }
+            dependencies {
+                conf 'org:a:[1,3]', 'org:b:1', 'org:c:1'
+            }
+            task checkDeps {
+                doLast {
+                    def files = configurations.conf*.name.sort()
+                    assert files == ['a-3.jar', 'b-2.jar', 'c-1.jar', 'd-1.jar']
+                }
+            }
+        """
+
+        when:
+        run 'checkDeps'
+
+        then:
+        noExceptionThrown()
+    }
+
+    @NotYetImplemented
+    def "doesn't include evicted version from branch which has been deselected"() {
+        given:
+        mavenRepo.module('org', 'a', '1').dependsOn('org', 'b', '2').publish()
+        mavenRepo.module('org', 'b', '1').publish()
+        mavenRepo.module('org', 'b', '2').publish()
+        mavenRepo.module('org', 'c', '1').dependsOn('org', 'a', '2').publish()
+        mavenRepo.module('org', 'a', '2').publish()
+
+        buildFile << """
+            repositories {
+                maven { url "${mavenRepo.uri}" }
+            }
+            configurations {
+                conf
+            }
+            dependencies {
+                conf 'org:a:1', 'org:b:1', 'org:c:1'
+            }
+            task checkDeps {
+                doLast {
+                    def files = configurations.conf*.name.sort()
+                    assert files == ['a-2.jar', 'b-1.jar', 'c-1.jar']
+                }
+            }
+        """
+
+        when:
+        run 'checkDeps'
+
+        then:
+        noExceptionThrown()
     }
 }

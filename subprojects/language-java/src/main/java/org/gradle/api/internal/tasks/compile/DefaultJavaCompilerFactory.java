@@ -15,29 +15,37 @@
  */
 package org.gradle.api.internal.tasks.compile;
 
-import org.gradle.api.internal.tasks.compile.daemon.CompilerDaemonFactory;
+import org.gradle.api.internal.file.FileResolver;
 import org.gradle.internal.Factory;
 import org.gradle.language.base.internal.compile.CompileSpec;
 import org.gradle.language.base.internal.compile.Compiler;
+import org.gradle.process.internal.ExecHandleFactory;
+import org.gradle.process.internal.worker.child.WorkerDirectoryProvider;
+import org.gradle.workers.internal.WorkerDaemonFactory;
 
 import javax.tools.JavaCompiler;
-import java.io.File;
 
 public class DefaultJavaCompilerFactory implements JavaCompilerFactory {
-    private final File daemonWorkingDir;
-    private final CompilerDaemonFactory compilerDaemonFactory;
+    private final WorkerDirectoryProvider workingDirProvider;
+    private final WorkerDaemonFactory workerDaemonFactory;
     private final Factory<JavaCompiler> javaHomeBasedJavaCompilerFactory;
+    private final FileResolver fileResolver;
+    private final ExecHandleFactory execHandleFactory;
 
-    public DefaultJavaCompilerFactory(File daemonWorkingDir, CompilerDaemonFactory compilerDaemonFactory, Factory<JavaCompiler> javaHomeBasedJavaCompilerFactory) {
-        this.daemonWorkingDir = daemonWorkingDir;
-        this.compilerDaemonFactory = compilerDaemonFactory;
+    public DefaultJavaCompilerFactory(WorkerDirectoryProvider workingDirProvider, WorkerDaemonFactory workerDaemonFactory, Factory<JavaCompiler> javaHomeBasedJavaCompilerFactory, FileResolver fileResolver, ExecHandleFactory execHandleFactory) {
+        this.workingDirProvider = workingDirProvider;
+        this.workerDaemonFactory = workerDaemonFactory;
         this.javaHomeBasedJavaCompilerFactory = javaHomeBasedJavaCompilerFactory;
+        this.fileResolver = fileResolver;
+        this.execHandleFactory = execHandleFactory;
     }
 
+    @Override
     public Compiler<JavaCompileSpec> createForJointCompilation(Class<? extends CompileSpec> type) {
         return createTargetCompiler(type, true);
     }
 
+    @Override
     public Compiler<JavaCompileSpec> create(Class<? extends CompileSpec> type) {
         Compiler<JavaCompileSpec> result = createTargetCompiler(type, false);
         return new NormalizingJavaCompiler(result);
@@ -49,12 +57,12 @@ public class DefaultJavaCompilerFactory implements JavaCompilerFactory {
         }
 
         if (CommandLineJavaCompileSpec.class.isAssignableFrom(type)) {
-            return new CommandLineJavaCompiler();
+            return new CommandLineJavaCompiler(execHandleFactory);
         }
 
         Compiler<JavaCompileSpec> compiler = new JdkJavaCompiler(javaHomeBasedJavaCompilerFactory);
         if (ForkingJavaCompileSpec.class.isAssignableFrom(type) && !jointCompilation) {
-            return new DaemonJavaCompiler(daemonWorkingDir, compiler, compilerDaemonFactory);
+            return new DaemonJavaCompiler(workingDirProvider.getIdleWorkingDirectory(), compiler, workerDaemonFactory, fileResolver);
         }
 
         return compiler;

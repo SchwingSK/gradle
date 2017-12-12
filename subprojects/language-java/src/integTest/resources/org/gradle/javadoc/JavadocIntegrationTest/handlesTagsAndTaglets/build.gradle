@@ -7,7 +7,9 @@ sourceSets {
 }
 
 dependencies {
-    tagletCompile files(Jvm.current().toolsJar)
+    if (Jvm.current().toolsJar) {
+        tagletCompile files(Jvm.current().toolsJar)
+    }
 }
 
 javadoc {
@@ -18,6 +20,6 @@ javadoc {
         tags 'deprecated'
         tags 'customtag:t:"Custom Tag:"'
         taglets 'CustomTaglet'
-        tagletPath sourceSets.taglet.output.classesDir
+        tagletPath sourceSets.taglet.java.outputDir
     }
 }

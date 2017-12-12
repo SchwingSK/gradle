@@ -32,7 +32,6 @@ public class ParallelProjectExecutionIntegrationTest extends AbstractIntegration
 
         settingsFile << 'include "a", "b", "c", "d"'
         buildFile << """
-assert gradle.startParameter.parallelThreadCount != 0
 allprojects {
     tasks.addRule("ping<>") { String name ->
         if (name.startsWith("ping")) {
@@ -55,8 +54,8 @@ allprojects {
         projectDependency from: 'a', to: ['b', 'c', 'd']
 
         expect:
-        blockingServer.expectConcurrentExecution(':b:pingServer', ':c:pingServer', ':d:pingServer')
-        blockingServer.expectSerialExecution(':a:pingServer')
+        blockingServer.expectConcurrent(':b:pingServer', ':c:pingServer', ':d:pingServer')
+        blockingServer.expect(':a:pingServer')
 
         run ':a:pingServer'
     }
@@ -68,9 +67,9 @@ allprojects {
         projectDependency from: 'c', to: ['d']
 
         expect:
-        blockingServer.expectSerialExecution(':d:pingServer')
-        blockingServer.expectConcurrentExecution(':b:pingServer', ':c:pingServer')
-        blockingServer.expectSerialExecution(':a:pingServer')
+        blockingServer.expect(':d:pingServer')
+        blockingServer.expectConcurrent(':b:pingServer', ':c:pingServer')
+        blockingServer.expect(':a:pingServer')
 
         run ':a:pingServer'
     }
@@ -81,7 +80,7 @@ allprojects {
         failingBuild 'c'
 
         when:
-        blockingServer.expectConcurrentExecution(':b:pingServer', ':c:pingServer')
+        blockingServer.expectConcurrent(':b:pingServer', ':c:pingServer')
 
         fails ':a:pingServer'
 
@@ -98,9 +97,9 @@ allprojects {
 
         expect:
         //project a and b are both executed even though alphabetically more important task is blocked
-        blockingServer.expectConcurrentExecution(':b:pingB', ':a:pingA')
-        blockingServer.expectSerialExecution(':b:pingA')
-        blockingServer.expectSerialExecution(':b:pingC')
+        blockingServer.expectConcurrent(':b:pingB', ':a:pingA')
+        blockingServer.expect(':b:pingA')
+        blockingServer.expect(':b:pingC')
 
         run 'b:pingC'
     }
@@ -112,8 +111,8 @@ allprojects {
         """
 
         expect:
-        blockingServer.expectConcurrentExecution(':a:pingA', ':b:pingA')
-        blockingServer.expectSerialExecution(':b:pingB')
+        blockingServer.expectConcurrent(':a:pingA', ':b:pingA')
+        blockingServer.expect(':b:pingB')
 
         run 'a:pingA', 'b:pingB'
     }

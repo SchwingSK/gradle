@@ -17,11 +17,6 @@
 package org.gradle.tooling;
 
 import org.gradle.api.Incubating;
-import org.gradle.tooling.events.test.TestProgressListener;
-
-import java.io.File;
-import java.io.InputStream;
-import java.io.OutputStream;
 
 /**
  * Used to execute a {@link BuildAction} in the build process.
@@ -30,79 +25,38 @@ import java.io.OutputStream;
  * @since 1.8
  */
 @Incubating
-public interface BuildActionExecuter<T> extends LongRunningOperation {
+public interface BuildActionExecuter<T> extends ConfigurableLauncher<BuildActionExecuter<T>> {
 
     /**
-     * {@inheritDoc}
-     * @since 2.3
-     */
-    BuildActionExecuter<T> withArguments(String... arguments);
-
-    /**
-     * {@inheritDoc}
-     * @since 2.3
-     */
-    BuildActionExecuter<T> setStandardOutput(OutputStream outputStream);
-
-    /**
-     * {@inheritDoc}
-     * @since 2.3
-     */
-    BuildActionExecuter<T> setStandardError(OutputStream outputStream);
-
-    /**
-     * {@inheritDoc}
-     * @since 2.3
+     * Specifies the tasks to execute before executing the BuildAction.
+     *
+     * If not configured, null, or an empty array is passed, then no tasks will be executed.
+     *
+     * @param tasks The paths of the tasks to be executed. Relative paths are evaluated relative to the project for which this launcher was created.
+     * @return this
+     * @since 3.5
      */
     @Incubating
-    BuildActionExecuter<T> setColorOutput(boolean colorOutput);
+    BuildActionExecuter<T> forTasks(String... tasks);
 
     /**
-     * {@inheritDoc}
-     * @since 2.3
-     */
-    BuildActionExecuter<T> setStandardInput(InputStream inputStream);
-
-    /**
-     * {@inheritDoc}
-     * @since 2.3
-     */
-    BuildActionExecuter<T> setJavaHome(File javaHome);
-
-    /**
-     * {@inheritDoc}
-     * @since 2.3
-     */
-    BuildActionExecuter<T> setJvmArguments(String... jvmArguments);
-
-    /**
-     * {@inheritDoc}
-     * @since 2.3
-     */
-    BuildActionExecuter<T> addProgressListener(ProgressListener listener);
-
-    /**
-     * {@inheritDoc}
-     * @since 2.4
+     * Specifies the tasks to execute before executing the BuildAction.
+     *
+     * If not configured, null, or an empty array is passed, then no tasks will be executed.
+     *
+     * @param tasks The paths of the tasks to be executed. Relative paths are evaluated relative to the project for which this launcher was created.
+     * @return this
+     * @since 3.5
      */
     @Incubating
-    BuildActionExecuter<T> addTestProgressListener(TestProgressListener listener);
-
-    /**
-     * {@inheritDoc}
-     * @since 2.3
-     */
-    @Incubating
-    BuildActionExecuter<T> withCancellationToken(CancellationToken cancellationToken);
+    BuildActionExecuter<T> forTasks(Iterable<String> tasks);
 
     /**
      * Runs the action, blocking until its result is available.
      *
      * @throws UnsupportedVersionException When the target Gradle version does not support build action execution.
      * @throws org.gradle.tooling.exceptions.UnsupportedOperationConfigurationException
-     *          When the target Gradle version does not support some requested configuration option such as
-     *          {@link #setStandardInput(java.io.InputStream)}, {@link #setJavaHome(java.io.File)},
-     *          {@link #setJvmArguments(String...)}.
+     *          When the target Gradle version does not support some requested configuration option.
      * @throws org.gradle.tooling.exceptions.UnsupportedBuildArgumentException When there is a problem with build arguments provided by {@link #withArguments(String...)}.
      * @throws BuildActionFailureException When the build action fails with an exception.
      * @throws BuildCancelledException When the operation was cancelled before it completed successfully.

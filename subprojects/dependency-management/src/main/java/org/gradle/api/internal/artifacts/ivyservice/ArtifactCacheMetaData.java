@@ -18,5 +18,34 @@ package org.gradle.api.internal.artifacts.ivyservice;
 import java.io.File;
 
 public interface ArtifactCacheMetaData {
-    public File getCacheDir();
+    /**
+     * Returns the root directory for the cache.
+     */
+    File getCacheDir();
+
+    /**
+     * Returns the root directory for the module artifacts file store.
+     *
+     * @return File store location
+     */
+    File getFileStoreDirectory();
+
+    /**
+     * Returns the root directory for the external resources file store.
+     *
+     * @return File store location
+     */
+    File getExternalResourcesStoreDirectory();
+
+    /**
+     * Returns the root directory for the meta-data file store.
+     *
+     * @return Metadata store location
+     */
+    File getMetaDataStoreDirectory();
+
+    /**
+     * Returns the root directory for the transforms cache.
+     */
+    File getTransformsStoreDirectory();
 }

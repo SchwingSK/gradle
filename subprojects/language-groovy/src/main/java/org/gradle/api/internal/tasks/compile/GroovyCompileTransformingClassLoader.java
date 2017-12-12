@@ -31,12 +31,21 @@ import java.util.List;
 class GroovyCompileTransformingClassLoader extends TransformingClassLoader {
     private static final String ANNOTATION_DESCRIPTOR = Type.getType(GroovyASTTransformationClass.class).getDescriptor();
 
+    static {
+        try {
+            //noinspection Since15
+            ClassLoader.registerAsParallelCapable();
+        } catch (NoSuchMethodError ignore) {
+            // Not supported on Java 6
+        }
+    }
+
     public GroovyCompileTransformingClassLoader(ClassLoader parent, ClassPath classPath) {
         super(parent, classPath);
     }
 
     @Override
-    protected byte[] transform(byte[] bytes) {
+    protected byte[] transform(String className, byte[] bytes) {
         // First scan for annotation, and short circuit transformation if not present
         ClassReader classReader = new ClassReader(bytes);
 
@@ -56,9 +65,10 @@ class GroovyCompileTransformingClassLoader extends TransformingClassLoader {
         private boolean found;
 
         private AnnotationDetector() {
-            super(Opcodes.ASM5);
+            super(Opcodes.ASM6);
         }
 
+        @Override
         public AnnotationVisitor visitAnnotation(String desc, boolean visible) {
             if (desc.equals(ANNOTATION_DESCRIPTOR)) {
                 found = true;
@@ -69,7 +79,7 @@ class GroovyCompileTransformingClassLoader extends TransformingClassLoader {
 
     private static class TransformingAdapter extends ClassVisitor {
         public TransformingAdapter(ClassWriter classWriter) {
-            super(Opcodes.ASM5, classWriter);
+            super(Opcodes.ASM6, classWriter);
         }
 
         @Override
@@ -84,12 +94,13 @@ class GroovyCompileTransformingClassLoader extends TransformingClassLoader {
             private final List<String> names = new ArrayList<String>();
 
             public AnnotationTransformingVisitor(AnnotationVisitor annotationVisitor) {
-                super(Opcodes.ASM5, annotationVisitor);
+                super(Opcodes.ASM6, annotationVisitor);
             }
 
+            @Override
             public AnnotationVisitor visitArray(String name) {
                 if (name.equals("classes")) {
-                    return new AnnotationVisitor(Opcodes.ASM5){
+                    return new AnnotationVisitor(Opcodes.ASM6){
                         @Override
                         public void visit(String name, Object value) {
                             Type type = (Type) value;
@@ -97,7 +108,7 @@ class GroovyCompileTransformingClassLoader extends TransformingClassLoader {
                         }
                     };
                 } else if (name.equals("value")) {
-                    return new AnnotationVisitor(Opcodes.ASM5) {
+                    return new AnnotationVisitor(Opcodes.ASM6) {
                         @Override
                         public void visit(String name, Object value) {
                             String type = (String) value;
@@ -109,6 +120,7 @@ class GroovyCompileTransformingClassLoader extends TransformingClassLoader {
                 }
             }
 
+            @Override
             public void visitEnd() {
                 if (!names.isEmpty()) {
                     AnnotationVisitor visitor = super.visitArray("value");

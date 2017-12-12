@@ -16,15 +16,14 @@
 
 package org.gradle.play.internal.run;
 
-import org.gradle.scala.internal.reflect.ScalaMethod;
-
 import java.io.File;
 import java.io.IOException;
+import java.net.InetSocketAddress;
 
 public interface VersionedPlayRunAdapter {
-    Object getBuildLink(ClassLoader classLoader, final File projectPath, Iterable<File> classpath) throws ClassNotFoundException;
+    Object getBuildLink(ClassLoader classLoader, Reloader reloader, File projectPath, File applicationJar, Iterable<File> changingClasspath, File assetsJar, Iterable<File> assetsDirs) throws ClassNotFoundException;
 
     Object getBuildDocHandler(ClassLoader docsClassLoader, Iterable<File> classpath) throws NoSuchMethodException, ClassNotFoundException, IOException, IllegalAccessException;
 
-    ScalaMethod getNettyServerDevHttpMethod(ClassLoader classLoader, ClassLoader docsClassLoader) throws ClassNotFoundException;
+    InetSocketAddress runDevHttpServer(ClassLoader classLoader, ClassLoader docsClassLoader, Object buildLink, Object buildDocHandler, int httpPort) throws ClassNotFoundException;
 }

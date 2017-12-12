@@ -16,11 +16,14 @@
 
 package org.gradle.api.internal.artifacts.ivyservice.ivyresolve;
 
+import org.gradle.api.artifacts.ComponentMetadataSupplier;
+import org.gradle.api.artifacts.component.ComponentArtifactIdentifier;
+import org.gradle.api.internal.artifacts.ivyservice.resolveengine.artifact.ResolvableArtifact;
+
+import java.util.Map;
+
 /**
  * A repository of module components.
- *
- * The plan is to sync this with {@link org.gradle.internal.resolve.resolver.DependencyToComponentResolver} and rename it
- * to have 'resolver' instead of 'repository' in its name.
  */
 public interface ModuleComponentRepository {
     String getId();
@@ -30,4 +33,9 @@ public interface ModuleComponentRepository {
     ModuleComponentRepositoryAccess getLocalAccess();
 
     ModuleComponentRepositoryAccess getRemoteAccess();
+
+    ComponentMetadataSupplier createMetadataSupplier();
+
+    // TODO - put this somewhere else
+    Map<ComponentArtifactIdentifier, ResolvableArtifact> getArtifactCache();
 }

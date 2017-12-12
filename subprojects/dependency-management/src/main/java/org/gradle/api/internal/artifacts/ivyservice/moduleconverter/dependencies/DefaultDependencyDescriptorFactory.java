@@ -16,12 +16,21 @@
 
 package org.gradle.api.internal.artifacts.ivyservice.moduleconverter.dependencies;
 
-import org.apache.ivy.core.module.descriptor.ModuleDescriptor;
 import org.gradle.api.InvalidUserDataException;
+import org.gradle.api.artifacts.DependencyConstraint;
 import org.gradle.api.artifacts.ModuleDependency;
-import org.gradle.internal.component.model.DependencyMetaData;
+import org.gradle.api.artifacts.component.ComponentIdentifier;
+import org.gradle.api.artifacts.component.ModuleComponentSelector;
+import org.gradle.api.attributes.AttributeContainer;
+import org.gradle.internal.component.external.model.DefaultModuleComponentSelector;
+import org.gradle.internal.component.local.model.DslOriginDependencyMetadataWrapper;
+import org.gradle.internal.component.model.ExcludeMetadata;
+import org.gradle.internal.component.model.IvyArtifactName;
+import org.gradle.internal.component.model.LocalComponentDependencyMetadata;
+import org.gradle.internal.component.model.LocalOriginDependencyMetadata;
 import org.gradle.util.WrapUtil;
 
+import java.util.Collections;
 import java.util.List;
 
 public class DefaultDependencyDescriptorFactory implements DependencyDescriptorFactory {
@@ -31,9 +40,17 @@ public class DefaultDependencyDescriptorFactory implements DependencyDescriptorF
         this.dependencyDescriptorFactories = WrapUtil.toList(dependencyDescriptorFactories);
     }
 
-    public DependencyMetaData createDependencyDescriptor(String configuration, ModuleDescriptor moduleDescriptor, ModuleDependency dependency) {
+    public LocalOriginDependencyMetadata createDependencyDescriptor(ComponentIdentifier componentId, String clientConfiguration, AttributeContainer attributes, ModuleDependency dependency) {
         IvyDependencyDescriptorFactory factoryInternal = findFactoryForDependency(dependency);
-        return factoryInternal.createDependencyDescriptor(configuration, dependency, moduleDescriptor);
+        return factoryInternal.createDependencyDescriptor(componentId, clientConfiguration, attributes, dependency);
+    }
+
+    public LocalOriginDependencyMetadata createDependencyConstraintDescriptor(ComponentIdentifier componentId, String clientConfiguration, AttributeContainer attributes, DependencyConstraint dependencyConstraint) {
+        ModuleComponentSelector selector = DefaultModuleComponentSelector.newSelector(
+            nullToEmpty(dependencyConstraint.getGroup()), nullToEmpty(dependencyConstraint.getName()), dependencyConstraint.getVersionConstraint());
+        LocalComponentDependencyMetadata dependencyMetaData = new LocalComponentDependencyMetadata(componentId, selector, clientConfiguration, attributes, null,
+            Collections.<IvyArtifactName>emptyList(), Collections.<ExcludeMetadata>emptyList(), false, false, true, true);
+        return new DslOriginDependencyMetadataWrapper(dependencyMetaData, dependencyConstraint);
     }
 
     private IvyDependencyDescriptorFactory findFactoryForDependency(ModuleDependency dependency) {
@@ -43,5 +60,9 @@ public class DefaultDependencyDescriptorFactory implements DependencyDescriptorF
             }
         }
         throw new InvalidUserDataException("Can't map dependency of type: " + dependency.getClass());
+    }
+
+    private String nullToEmpty(String input) {
+        return input == null ? "" : input;
     }
 }

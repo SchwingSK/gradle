@@ -18,11 +18,13 @@ package org.gradle.integtests.resolve.ivy
 
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
 import org.gradle.integtests.fixtures.executer.ProgressLoggingFixture
+import org.gradle.test.fixtures.file.LeaksFileHandles
 import org.gradle.test.fixtures.server.RepositoryServer
 import org.junit.Rule
 import spock.lang.Unroll
 
 @Unroll
+@LeaksFileHandles
 abstract class AbstractIvyRemoteRepoResolveIntegrationTest extends AbstractIntegrationSpec {
 
     abstract RepositoryServer getServer()
@@ -177,9 +179,6 @@ abstract class AbstractIvyRemoteRepoResolveIntegrationTest extends AbstractInteg
         def missingModuleB = repo1.module('group', 'projectB')
         def moduleB = repo2.module('group', 'projectB')
         moduleB.publish()
-        def brokenModuleC = repo1.module('group', 'projectC')
-        def moduleC = repo2.module('group', 'projectC')
-        moduleC.publish()
 
         and:
         buildFile << """
@@ -199,10 +198,12 @@ abstract class AbstractIvyRemoteRepoResolveIntegrationTest extends AbstractInteg
                 }
             }
             dependencies {
-                compile 'group:projectA:1.0', 'group:projectB:1.0', 'group:projectC:1.0'
+                compile 'group:projectA:1.0', 'group:projectB:1.0'
             }
-            task listJars << {
-                assert configurations.compile.collect { it.name } == ['projectA-1.0.jar', 'projectB-1.0.jar', 'projectC-1.0.jar']
+            task listJars {
+                doLast {
+                    assert configurations.compile.collect { it.name } == ['projectA-1.0.jar', 'projectB-1.0.jar']
+                }
             }
         """
 
@@ -217,20 +218,12 @@ abstract class AbstractIvyRemoteRepoResolveIntegrationTest extends AbstractInteg
         moduleB.ivy.expectDownload()
         moduleB.jar.expectDownload()
 
-        // Handles from broken url in repo1 (but does not cache)
-        brokenModuleC.ivy.expectDownloadBroken()
-
-        moduleC.ivy.expectDownload()
-        moduleC.jar.expectDownload()
 
         then:
         succeeds('listJars')
 
         when:
         server.resetExpectations()
-        // Will always re-attempt a broken repository
-        brokenModuleC.ivy.expectMetadataRetrieveBroken()
-        // No extra calls for cached dependencies
 
         then:
         succeeds('listJars')
@@ -255,8 +248,10 @@ abstract class AbstractIvyRemoteRepoResolveIntegrationTest extends AbstractInteg
                 }
             }
             dependencies { compile 'group:projectA:1.2' }
-            task listJars << {
-                assert configurations.compile.collect { it.name } == ['projectA-1.2.jar']
+            task listJars {
+                doLast {
+                    assert configurations.compile.collect { it.name } == ['projectA-1.2.jar']
+                }
             }
         """
         when:
@@ -294,8 +289,10 @@ abstract class AbstractIvyRemoteRepoResolveIntegrationTest extends AbstractInteg
                 }
             }
             dependencies { compile 'group:projectA:1.2@jar' }
-            task listJars << {
-                assert configurations.compile.collect { it.name } == ['projectA-1.2.jar']
+            task listJars {
+                doLast {
+                    assert configurations.compile.collect { it.name } == ['projectA-1.2.jar']
+                }
             }
         """
 
@@ -334,8 +331,10 @@ abstract class AbstractIvyRemoteRepoResolveIntegrationTest extends AbstractInteg
                 }
             }
             dependencies { compile 'group:projectA:1.2@jar' }
-            task listJars << {
-                assert configurations.compile.collect { it.name } == ['projectA-1.2.jar']
+            task listJars {
+                doLast {
+                    assert configurations.compile.collect { it.name } == ['projectA-1.2.jar']
+                }
             }
         """
 

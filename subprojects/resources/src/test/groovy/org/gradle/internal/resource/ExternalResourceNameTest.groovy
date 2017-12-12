@@ -15,6 +15,7 @@
  */
 
 package org.gradle.internal.resource
+
 import org.gradle.util.Matchers
 import org.gradle.util.Requires
 import org.gradle.util.TestPrecondition
@@ -99,8 +100,22 @@ class ExternalResourceNameTest extends Specification {
         "file:/a/b/c"                | "file:/a/b/c"
     }
 
+    def "short display name is last element of the path if present"() {
+        expect:
+        def name = new ExternalResourceName(URI.create(uri))
+        name.shortDisplayName == expectedDisplayName
+
+        where:
+        uri               | expectedDisplayName
+        "http://host:80"  | "http://host:80"
+        "http://host/a/b" | "b"
+        "http://host"     | "http://host"
+        "a/b/c"           | "c"
+        "file:/a/b/c"     | "c"
+    }
+
     @Requires(TestPrecondition.WINDOWS)
-    def "can handle UNC paths"(){
+    def "can handle UNC paths"() {
         expect:
         def name = new ExternalResourceName(uri)
         name.decoded == expectedDecoded
@@ -135,30 +150,40 @@ class ExternalResourceNameTest extends Specification {
         name.uri == URI.create(expectedUri)
 
         where:
-        uri                      | path     | expectedUri
-        "http://host/a/b/c"      | "/z"     | "http://host/z"
-        "http://host:8080/a/b/c" | "/path"  | "http://host:8080/path"
-        base.toURI().toString()  | "/z"     | "file:/z"
-        "/a/b/c"                 | "/z"     | "/z"
-        "a/b/c"                  | "/z"     | "/z"
-        "a/b/c"                  | "/"      | "/"
-        "/"                      | "/a/b/c" | "/a/b/c"
-        ""                       | "/a/b/c" | "/a/b/c"
+        uri                      | path           | expectedUri
+        "http://host/a/b/c"      | "/z"           | "http://host/z"
+        "http://host:8080/a/b/c" | "/path"        | "http://host:8080/path"
+        "http://host:8080/a/b/c" | "/path/"       | "http://host:8080/path/"
+        "http://host:8080/a/b/c" | "/a/./../path" | "http://host:8080/path"
+        "http://host:8080/a/b/c" | "/a/b/../path" | "http://host:8080/a/path"
+        base.toURI().toString()  | "/z"           | "file:/z"
+        "/a/b/c"                 | "/z"           | "/z"
+        "a/b/c"                  | "/z"           | "/z"
+        "a/b/c"                  | "/"            | "/"
+        "/"                      | "/a/b/c"       | "/a/b/c"
+        ""                       | "/a/b/c"       | "/a/b/c"
     }
 
-    def "can resolve an relative path"() {
+    def "can resolve a relative path"() {
         expect:
         def name = new ExternalResourceName(URI.create(uri)).resolve(path)
         name.uri == URI.create(expectedUri)
 
         where:
-        uri                      | path    | expectedUri
-        "http://host/a/b/c"      | "d"     | "http://host/a/b/c/d"
-        "http://host:8080/a/b/c" | "d/e"   | "http://host:8080/a/b/c/d/e"
-        base.toURI().toString()  | "a/b/c" | new File(base, "a/b/c").toURI().toString()
-        "/a/b/c"                 | "z"     | "/a/b/c/z"
-        "a/b/c"                  | "z"     | "a/b/c/z"
-        "/"                      | "z"     | "/z"
-        ""                       | "z"     | "z"
+        uri                      | path                  | expectedUri
+        "http://host/a/b/c"      | "d"                   | "http://host/a/b/c/d"
+        "http://host:8080/a/b/c" | "d/e"                 | "http://host:8080/a/b/c/d/e"
+        "http://host:8080/a/b/c" | "d/e/"                | "http://host:8080/a/b/c/d/e/"
+        "http://host:8080/a/b/c" | "."                   | "http://host:8080/a/b/c"
+        "http://host:8080/a/b/c" | ".."                  | "http://host:8080/a/b"
+        "http://host:8080/a/b/c" | "../../.."            | "http://host:8080/"
+        "http://host:8080/a/b/c" | ".././.././z/../abc"  | "http://host:8080/a/abc"
+        "http://host:8080/a/b/c" | "z/././//./../z/../d" | "http://host:8080/a/b/c/d"
+        "http://host:8080/"      | "z/././//./../z/../d" | "http://host:8080/d"
+        base.toURI().toString()  | "a/b/c"               | new File(base, "a/b/c").toURI().toString()
+        "/a/b/c"                 | "z"                   | "/a/b/c/z"
+        "a/b/c"                  | "z"                   | "a/b/c/z"
+        "/"                      | "z"                   | "/z"
+        ""                       | "z"                   | "z"
     }
 }

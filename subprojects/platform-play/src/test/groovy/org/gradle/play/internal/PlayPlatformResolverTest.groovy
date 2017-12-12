@@ -15,11 +15,16 @@
  */
 
 package org.gradle.play.internal
+
 import org.gradle.api.InvalidUserDataException
 import org.gradle.api.JavaVersion
 import org.gradle.platform.base.internal.DefaultPlatformRequirement
+import org.gradle.play.internal.platform.PlayMajorVersion
 import org.gradle.play.platform.PlayPlatform
 import spock.lang.Specification
+import spock.lang.Unroll
+
+import static org.gradle.play.internal.PlayPlatformResolver.*
 
 class PlayPlatformResolverTest extends Specification {
     def resolver = new PlayPlatformResolver()
@@ -44,38 +49,39 @@ class PlayPlatformResolverTest extends Specification {
 
         then:
         def e = thrown(InvalidUserDataException)
-        e.message == "Not a supported Play version: 2.1.0. This plugin is compatible with: [2.3.x, 2.2.x]."
+        e.message == "Not a supported Play version: 2.1.0. This plugin is compatible with: [${PlayMajorVersion.values().join(', ')}]."
 
         where:
         requirement << ["play-2.1.0", [play: '2.1.0']]
     }
 
-    def "resolves platform for Play 2.2.x"() {
+    def "resolves platform for play"() {
         when:
-        def playPlatform = resolve(requirement)
+        def playPlatform = resolve("play-${playVersion}")
 
         then:
-        playPlatform.name == "play-2.2.3"
-        playPlatform.playVersion == "2.2.3"
-        playPlatform.javaPlatform.targetCompatibility == JavaVersion.current()
-        playPlatform.scalaPlatform.scalaVersion == "2.10.4"
+        assertPlayPlatform(playPlatform, play: playVersion, scala: scalaVersion)
+
+        when:
+        playPlatform = resolve play: playVersion
+
+        then:
+        assertPlayPlatform(playPlatform, play: playVersion, scala: scalaVersion)
 
         where:
-        requirement << ["play-2.2.3", [play: '2.2.3']]
+        playVersion | scalaVersion
+        "2.2.3"     | "2.10.6"
+        "2.3.4"     | "2.11.11"
+        "2.4.8"     | "2.11.11"
+        "2.5.4"     | "2.11.11"
+        "2.6.5"     | "2.12.4"
     }
 
-    def "resolves platform for Play 2.3.x"() {
-        when:
-        def playPlatform = resolve(requirement)
-
-        then:
-        playPlatform.name == "play-2.3.4"
-        playPlatform.playVersion == "2.3.4"
-        playPlatform.javaPlatform.targetCompatibility == JavaVersion.current()
-        playPlatform.scalaPlatform.scalaVersion == "2.11.4"
-
-        where:
-        requirement << ["play-2.3.4", [play: '2.3.4']]
+    private void assertPlayPlatform(Map versions, PlayPlatform platform) {
+        assert platform.name == "play-${versions.play}".toString()
+        assert platform.playVersion == versions.play
+        assert platform.javaPlatform.targetCompatibility == JavaVersion.current()
+        assert platform.scalaPlatform.scalaVersion == versions.scala
     }
 
     def "resolves platform with specified scala version"() {
@@ -86,34 +92,25 @@ class PlayPlatformResolverTest extends Specification {
         playPlatform.name == "play-2.3.1-2.10"
         playPlatform.playVersion == "2.3.1"
         playPlatform.javaPlatform.targetCompatibility == JavaVersion.current()
-        playPlatform.scalaPlatform.scalaVersion == "2.10.4"
+        playPlatform.scalaPlatform.scalaVersion == "2.10.6"
     }
 
-    def "fails to resolve Play platform with incompatible Scala version"() {
+    @Unroll
+    def "fails to resolve Play platform #playVersion incompatible Scala version #scalaVersion"() {
         when:
-        resolve play: "2.2.6", scala: "2.11"
+        resolve play: playVersion, scala: scalaVersion
 
         then:
         def e = thrown(InvalidUserDataException)
-        e.message == "Play versions 2.2.x are not compatible with Scala platform 2.11. Compatible Scala platforms are [2.10]."
-    }
+        e.message == message
 
-    def "fails to resolve Play platform with unsupported Scala version"() {
-        when:
-        resolve play: "2.2.6", scala: "2.9"
-
-        then:
-        def e = thrown(InvalidUserDataException)
-        e.message == "Not a supported Scala platform identifier 2.9. Supported values are: ['2.10', '2.11']."
-    }
-
-    def "fails to resolve Play platform with full Scala version"() {
-        when:
-        resolve play: "2.2.6", scala: "2.10.4"
-
-        then:
-        def e = thrown(InvalidUserDataException)
-        e.message == "Not a supported Scala platform identifier 2.10.4. Supported values are: ['2.10', '2.11']."
+        where:
+        playVersion | scalaVersion | message
+        '2.6.5'     | '2.10'       | "Play versions 2.6.x are not compatible with Scala platform 2.10. Compatible Scala platforms are [2.12, 2.11]."
+        '2.5.4'     | '2.10'       | "Play versions 2.5.x are not compatible with Scala platform 2.10. Compatible Scala platforms are [2.11]."
+        '2.2.6'     | '2.11'       | "Play versions 2.2.x are not compatible with Scala platform 2.11. Compatible Scala platforms are [2.10]."
+        '2.2.6'     | '2.9'        | "Not a supported Scala platform identifier 2.9. Supported values are: [${LATEST_SCALA_VERSIONS.keySet().join(', ')}]."
+        '2.2.6'     | '2.10.6'     | "Not a supported Scala platform identifier 2.10.6. Supported values are: [${LATEST_SCALA_VERSIONS.keySet().join(', ')}]."
     }
 
     def "resolves platform with specified java version"() {
@@ -124,7 +121,7 @@ class PlayPlatformResolverTest extends Specification {
         playPlatform.name == "play-2.3.1_1.6"
         playPlatform.playVersion == "2.3.1"
         playPlatform.javaPlatform.targetCompatibility == JavaVersion.toVersion("1.6")
-        playPlatform.scalaPlatform.scalaVersion == "2.11.4"
+        playPlatform.scalaPlatform.scalaVersion == "2.11.11"
     }
 
     private PlayPlatform resolve(String playPlatform) {

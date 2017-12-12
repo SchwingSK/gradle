@@ -17,23 +17,42 @@
 package org.gradle.test.fixtures.archive
 
 import com.google.common.collect.ArrayListMultimap
+import com.google.common.collect.LinkedListMultimap
 import com.google.common.collect.ListMultimap
+import org.gradle.util.CollectionUtils
 import org.hamcrest.Matcher
 
-import static org.hamcrest.MatcherAssert.assertThat
 import static org.hamcrest.Matchers.equalTo
 import static org.hamcrest.Matchers.hasItem
 import static org.junit.Assert.assertEquals
+import static org.junit.Assert.assertThat
 
 class ArchiveTestFixture {
-    private final ListMultimap<String, String> filesByRelativePath = ArrayListMultimap.create()
+    private final ListMultimap<String, String> filesByRelativePath = LinkedListMultimap.create()
+    private final ListMultimap<String, Integer> fileModesByRelativePath = ArrayListMultimap.create()
 
     protected void add(String relativePath, String content) {
         filesByRelativePath.put(relativePath, content)
     }
 
+    protected void addMode(String relativePath, int mode) {
+        fileModesByRelativePath.put(relativePath, mode & 0777)
+    }
+
+    def assertFileMode(String relativePath, int fileMode) {
+        List<Integer> modes = fileModesByRelativePath.get(relativePath)
+        assert modes.size() == 1
+        assertThat(modes.get(0), equalTo(fileMode))
+        this
+    }
+
     def assertContainsFile(String relativePath) {
         assert filesByRelativePath.keySet().contains(relativePath)
+        this
+    }
+
+    def assertNotContainsFile(String relativePath) {
+        assert !filesByRelativePath.keySet().contains(relativePath)
         this
     }
 
@@ -47,7 +66,7 @@ class ArchiveTestFixture {
 
     String content(String relativePath) {
         List<String> files = filesByRelativePath.get(relativePath)
-        assertEquals(1, files.size())
+        assert files.size() == 1
         files.get(0)
     }
 
@@ -56,6 +75,10 @@ class ArchiveTestFixture {
     }
 
     def hasDescendants(String... relativePaths) {
+        hasDescendants(relativePaths as List)
+    }
+
+    def hasDescendants(Collection<String> relativePaths) {
         assertThat(filesByRelativePath.keySet(), equalTo(relativePaths as Set))
         def expectedCounts = ArrayListMultimap.create()
         for (String fileName : relativePaths) {
@@ -67,9 +90,23 @@ class ArchiveTestFixture {
         this
     }
 
+    def hasDescendantsInOrder(String... relativePaths) {
+        def expectedOrder = CollectionUtils.toList(relativePaths)
+        def actualOrder = CollectionUtils.toList(filesByRelativePath.keySet())
+        assertEquals(actualOrder, expectedOrder)
+        this
+    }
+
     def containsDescendants(String... relativePaths) {
         for (String path : relativePaths) {
             assertContainsFile(path)
+        }
+        this
+    }
+
+    def doesNotContainDescendants(String... relativePaths) {
+        for (String path : relativePaths) {
+            assertNotContainsFile(path)
         }
         this
     }

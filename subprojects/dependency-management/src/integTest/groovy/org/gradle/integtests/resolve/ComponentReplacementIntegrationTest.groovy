@@ -185,7 +185,9 @@ class ComponentReplacementIntegrationTest extends AbstractIntegrationSpec {
         declaredReplacements 'a->b'
 
         expect:
-        fails("resolvedFiles").assertResolutionFailure(":conf")
+        fails("resolvedFiles")
+        failure.assertHasCause("Could not resolve all files for configuration ':conf'.")
+        failure.assertHasCause("Could not find org:b:1")
     }
 
     def "replacement source unresolved"() {
@@ -194,7 +196,9 @@ class ComponentReplacementIntegrationTest extends AbstractIntegrationSpec {
         declaredReplacements 'a->b'
 
         expect:
-        fails("resolvedFiles").assertResolutionFailure(":conf")
+        fails("resolvedFiles")
+        failure.assertHasCause("Could not resolve all files for configuration ':conf'.")
+        failure.assertHasCause("Could not find org:b:1")
     }
 
     def "human error in declaring replacements is neatly reported"() {
@@ -234,8 +238,8 @@ class ComponentReplacementIntegrationTest extends AbstractIntegrationSpec {
         declaredDependencies 'a', 'b'
         declaredReplacements 'a->b'
         buildFile << """
-            configurations.all { resolutionStrategy.dependencySubstitution.eachModule { dep ->
-                if (dep.requested.module == 'b') {
+            configurations.all { resolutionStrategy.eachDependency { dep ->
+                if (dep.requested.name == 'b') {
                     dep.useTarget 'org:d:1'
                 }
             }}
@@ -247,8 +251,8 @@ class ComponentReplacementIntegrationTest extends AbstractIntegrationSpec {
         declaredDependencies 'a', 'b'
         declaredReplacements 'a->b'
         buildFile << """
-            configurations.all { resolutionStrategy.dependencySubstitution.eachModule { dep ->
-                if (dep.requested.module == 'a') {
+            configurations.all { resolutionStrategy.eachDependency { dep ->
+                if (dep.requested.name == 'a') {
                     dep.useTarget 'org:b:1'
                 }
             }}
@@ -261,8 +265,8 @@ class ComponentReplacementIntegrationTest extends AbstractIntegrationSpec {
         declaredDependencies 'a', 'b'
         declaredReplacements 'a->d'
         buildFile << """
-            configurations.all { resolutionStrategy.dependencySubstitution.eachModule { dep ->
-                if (dep.requested.module == 'b') {
+            configurations.all { resolutionStrategy.eachDependency { dep ->
+                if (dep.requested.name == 'b') {
                     dep.useTarget 'org:d:1'
                 }
             }}
@@ -275,9 +279,9 @@ class ComponentReplacementIntegrationTest extends AbstractIntegrationSpec {
         declaredDependencies 'c', 'd'
         declaredReplacements 'a->b'
         buildFile << """
-            configurations.all { resolutionStrategy.dependencySubstitution.eachModule { dep ->
-                if (dep.requested.module == 'c') { dep.useTarget 'org:a:1' }
-                if (dep.requested.module == 'd') { dep.useTarget 'org:b:1' }
+            configurations.all { resolutionStrategy.eachDependency { dep ->
+                if (dep.requested.name == 'c') { dep.useTarget 'org:a:1' }
+                if (dep.requested.name == 'd') { dep.useTarget 'org:b:1' }
             }}
         """
         expect: resolvedModules 'b'
@@ -288,8 +292,8 @@ class ComponentReplacementIntegrationTest extends AbstractIntegrationSpec {
         declaredDependencies 'a', 'b', 'c'
         declaredReplacements 'a->b', 'c->d'
         buildFile << """
-            configurations.all { resolutionStrategy.dependencySubstitution.eachModule { dep ->
-                if (dep.requested.module == 'b') { dep.useTarget 'org:d:1' }
+            configurations.all { resolutionStrategy.eachDependency { dep ->
+                if (dep.requested.name == 'b') { dep.useTarget 'org:d:1' }
             }}
         """
         expect: resolvedModules 'a', 'd'
@@ -300,8 +304,8 @@ class ComponentReplacementIntegrationTest extends AbstractIntegrationSpec {
         declaredDependencies 'a', 'b'
         declaredReplacements 'a->b', 'd->a'
         buildFile << """
-            configurations.all { resolutionStrategy.dependencySubstitution.eachModule { dep ->
-                if (dep.requested.module == 'b') { dep.useTarget 'org:d:1' }
+            configurations.all { resolutionStrategy.eachDependency { dep ->
+                if (dep.requested.name == 'b') { dep.useTarget 'org:d:1' }
             }}
         """
         //a->b->d->a

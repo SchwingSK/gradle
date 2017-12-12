@@ -20,6 +20,7 @@ package org.gradle.java.compile
 import org.gradle.api.Action
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
 import org.gradle.test.fixtures.file.ClassFile
+import org.gradle.test.fixtures.file.LeaksFileHandles
 import org.gradle.util.Requires
 import org.gradle.util.TestPrecondition
 
@@ -40,7 +41,7 @@ abstract class BasicJavaCompilerIntegrationSpec extends AbstractIntegrationSpec 
         succeeds("compileJava")
         output.contains(logStatement())
         !errorOutput
-        file("build/classes/main/compile/test/Person.class").exists()
+        javaClassFile("compile/test/Person.class").exists()
     }
 
     def compileBadCodeBreaksTheBuild() {
@@ -51,7 +52,7 @@ abstract class BasicJavaCompilerIntegrationSpec extends AbstractIntegrationSpec 
         fails("compileJava")
         output.contains(logStatement())
         compilerErrorOutput.contains("';' expected")
-        file("build/classes/main").assertHasDescendants()
+        javaClassFile("").assertHasDescendants()
     }
 
     def compileBadCodeWithoutFailing() {
@@ -65,7 +66,7 @@ abstract class BasicJavaCompilerIntegrationSpec extends AbstractIntegrationSpec 
         succeeds("compileJava")
         output.contains(logStatement())
         compilerErrorOutput.contains("';' expected")
-        file("build/classes/main").assertHasDescendants()
+        javaClassFile("").assertHasDescendants()
     }
 
     def compileWithSpecifiedEncoding() {
@@ -94,7 +95,7 @@ abstract class BasicJavaCompilerIntegrationSpec extends AbstractIntegrationSpec 
         run("compileJava")
 
         then:
-        def fullDebug = classFile("build/classes/main/compile/test/Person.class")
+        def fullDebug = classFile("compile/test/Person.class")
         fullDebug.debugIncludesSourceFile
         fullDebug.debugIncludesLineNumbers
         fullDebug.debugIncludesLocalVariables
@@ -106,7 +107,7 @@ compileJava.options.debugOptions.debugLevel='lines'
         run("compileJava")
 
         then:
-        def linesOnly = classFile("build/classes/main/compile/test/Person.class")
+        def linesOnly = classFile("compile/test/Person.class")
         !linesOnly.debugIncludesSourceFile
         linesOnly.debugIncludesLineNumbers
         !linesOnly.debugIncludesLocalVariables
@@ -118,7 +119,7 @@ compileJava.options.debug = false
         run("compileJava")
 
         then:
-        def noDebug = classFile("build/classes/main/compile/test/Person.class")
+        def noDebug = classFile("compile/test/Person.class")
         !noDebug.debugIncludesSourceFile
         !noDebug.debugIncludesLineNumbers
         !noDebug.debugIncludesLocalVariables
@@ -141,22 +142,58 @@ public class FxApp extends Application {
         succeeds("compileJava")
     }
 
+    @Requires(TestPrecondition.JDK9_OR_LATER)
+    def "compile with release option"() {
+        given:
+        goodCode()
+        buildFile << """
+compileJava.options.compilerArgs.addAll(['--release', '7'])
+"""
+
+        expect:
+        succeeds 'compileJava'
+    }
+
+    @Requires(TestPrecondition.JDK9_OR_LATER)
+    def "compile fails when using newer API with release option"() {
+        given:
+        file("src/main/java/compile/test/FailsOnJava7.java") << '''
+package compile.test;
+
+import java.util.Optional;
+
+public class FailsOnJava7 {
+    public Optional<String> someOptional() {
+        return Optional.of("Hello");
+    }
+}
+'''
+
+        buildFile << """
+compileJava.options.compilerArgs.addAll(['--release', '7'])
+"""
+
+        expect:
+        fails 'compileJava'
+        output.contains(logStatement())
+        compilerErrorOutput.contains("cannot find symbol")
+        compilerErrorOutput.contains("class Optional")
+
+    }
+
     def getCompilerErrorOutput() {
         return errorOutput
     }
 
     def buildScript() {
-        '''
+        """
 apply plugin: "java"
-
-repositories {
-    mavenCentral()
-}
+${mavenCentralRepository()}
 
 dependencies {
-    compile "org.codehaus.groovy:groovy:2.3.10"
+    compile "org.codehaus.groovy:groovy:2.4.10"
 }
-'''
+"""
     }
 
     abstract compilerConfiguration()
@@ -230,9 +267,10 @@ class Main {
     }
 
     def classFile(String path) {
-        return new ClassFile(file(path))
+        return new ClassFile(javaClassFile(path))
     }
 
+    @LeaksFileHandles("holds processor.jar open for in process compiler")
     def "can use annotation processor"() {
         when:
         buildFile << """
@@ -248,7 +286,7 @@ class Main {
 
         then:
         succeeds("compileJava")
-        file('build/classes/main/Java$$Generated.java').exists()
+        javaClassFile('Java$$Generated.java').exists()
     }
 
     def writeAnnotationProcessorProject() {
@@ -290,8 +328,8 @@ class Main {
                         public class SimpleAnnotationProcessor extends AbstractProcessor {
                             @Override
                             public boolean process(final Set<? extends TypeElement> annotations, final RoundEnvironment roundEnv) {
-                                if (isClasspathContaminated()) {
-                                    throw new RuntimeException("Annotation Processor Classpath is contaminated by Gradle ClassLoader");
+                                if (${gradleLeaksIntoAnnotationProcessor() ? '!' : ''}isClasspathContaminated()) {
+                                    throw new RuntimeException("Annotation Processor Classpath is ${gradleLeaksIntoAnnotationProcessor() ? 'not ' : ''}}contaminated by Gradle ClassLoader");
                                 }
 
                                 for (final Element classElement : roundEnv.getElementsAnnotatedWith(SimpleAnnotation.class)) {
@@ -352,6 +390,10 @@ class Main {
         then:
         fails("compileJava")
         compilerErrorOutput.contains("package ${gradleBaseServicesClass.package.name} does not exist")
+    }
+
+    protected boolean gradleLeaksIntoAnnotationProcessor() {
+        return false;
     }
 
 }

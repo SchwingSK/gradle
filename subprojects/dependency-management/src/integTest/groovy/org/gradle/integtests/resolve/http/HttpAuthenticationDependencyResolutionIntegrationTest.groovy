@@ -15,23 +15,29 @@
  */
 package org.gradle.integtests.resolve.http
 
+import org.gradle.authentication.http.BasicAuthentication
+import org.gradle.authentication.http.DigestAuthentication
 import org.gradle.integtests.fixtures.AbstractHttpDependencyResolutionTest
-import org.gradle.test.fixtures.server.http.HttpServer
+import org.gradle.test.fixtures.server.http.AuthScheme
 import org.hamcrest.Matchers
 import spock.lang.Unroll
+
+import static org.gradle.test.fixtures.server.http.AuthScheme.BASIC
+import static org.gradle.test.fixtures.server.http.AuthScheme.DIGEST
+import static org.gradle.test.fixtures.server.http.AuthScheme.HIDE_UNAUTHORIZED
+import static org.gradle.test.fixtures.server.http.AuthScheme.NTLM
 
 class HttpAuthenticationDependencyResolutionIntegrationTest extends AbstractHttpDependencyResolutionTest {
     static String badCredentials = "credentials{username 'testuser'; password 'bad'}"
 
     @Unroll
-    public void "can resolve dependencies from #authScheme authenticated HTTP ivy repository"() {
+    def "can resolve dependencies using #authSchemeName scheme from #authScheme authenticated HTTP ivy repository"() {
         given:
         def moduleA = ivyHttpRepo.module('group', 'projectA', '1.2').publish()
         ivyHttpRepo.module('group', 'projectB', '2.1').publish()
         ivyHttpRepo.module('group', 'projectB', '2.2').publish()
         def moduleB = ivyHttpRepo.module('group', 'projectB', '2.3').publish()
         ivyHttpRepo.module('group', 'projectB', '3.0').publish()
-
         and:
         buildFile << """
 repositories {
@@ -42,6 +48,8 @@ repositories {
             password 'password'
             username 'username'
         }
+
+        ${configuredAuthentication}
     }
 }
 configurations { compile }
@@ -49,13 +57,15 @@ dependencies {
     compile 'group:projectA:1.2'
     compile 'group:projectB:2.+'
 }
-task listJars << {
-    assert configurations.compile.collect { it.name } == ['projectA-1.2.jar','projectB-2.3.jar']
+task listJars {
+    doLast {
+        assert configurations.compile.collect { it.name } == ['projectA-1.2.jar','projectB-2.3.jar']
+    }
 }
 """
 
         when:
-        server.authenticationScheme = authScheme
+        serverAuthScheme = authScheme
 
         and:
         moduleA.ivy.expectGet('username', 'password')
@@ -66,13 +76,22 @@ task listJars << {
 
         then:
         succeeds('listJars')
+        and:
+        server.authenticationAttempts.asList() == authenticationAttempts
 
         where:
-        authScheme << [HttpServer.AuthScheme.BASIC, HttpServer.AuthScheme.DIGEST]
+        authSchemeName     | configuredAuthentication                                                      | authScheme        | authenticationAttempts
+        'basic'            | 'authentication { auth(BasicAuthentication) }'                                | BASIC             | ['Basic']
+        'digest'           | 'authentication { auth(DigestAuthentication) }'                               | DIGEST            | ['None', 'Digest']
+        'default'          | ''                                                                            | BASIC             | ['None', 'Basic']
+        'default'          | ''                                                                            | DIGEST            | ['None', 'Digest']
+        'default'          | ''                                                                            | NTLM              | ['None', 'NTLM']
+        'basic'            | 'authentication { auth(BasicAuthentication) }'                                | HIDE_UNAUTHORIZED | ['Basic']
+        'basic and digest' | 'authentication { basic(BasicAuthentication)\ndigest(DigestAuthentication) }' | DIGEST            | ['Basic', 'Digest']
     }
 
     @Unroll
-    public void "can resolve dependencies from #authScheme authenticated HTTP maven repository"() {
+    public void "can resolve dependencies using #authSchemeName scheme from #authScheme authenticated HTTP maven repository"() {
         given:
         def moduleA = mavenHttpRepo.module('group', 'projectA', '1.2').publish()
         mavenHttpRepo.module('group', 'projectB', '2.0').publish()
@@ -91,6 +110,8 @@ repositories {
             password 'password'
             username 'username'
         }
+
+        ${configuredAuthentication}
     }
 }
 configurations { compile }
@@ -100,13 +121,15 @@ dependencies {
     compile 'group:projectC:3.1-SNAPSHOT'
     compile 'group:projectD:4-SNAPSHOT'
 }
-task listJars << {
-    assert configurations.compile.collect { it.name } == ['projectA-1.2.jar', 'projectB-2.3.jar', 'projectC-3.1-SNAPSHOT.jar', 'projectD-4-SNAPSHOT.jar']
+task listJars {
+    doLast {
+        assert configurations.compile.collect { it.name } == ['projectA-1.2.jar', 'projectB-2.3.jar', 'projectC-3.1-SNAPSHOT.jar', 'projectD-4-SNAPSHOT.jar']
+    }
 }
 """
 
         when:
-        server.authenticationScheme = authScheme
+        serverAuthScheme = authScheme
 
         and:
         moduleA.pom.expectGet('username', 'password')
@@ -125,9 +148,18 @@ task listJars << {
 
         then:
         succeeds('listJars')
+        and:
+        server.authenticationAttempts.asList() == authenticationAttempts
 
         where:
-        authScheme << [HttpServer.AuthScheme.BASIC, HttpServer.AuthScheme.DIGEST]
+        authSchemeName     | configuredAuthentication                                                      | authScheme  | authenticationAttempts
+        'basic'            | 'authentication { auth(BasicAuthentication) }'                                | BASIC             | ['Basic']
+        'digest'           | 'authentication { auth(DigestAuthentication) }'                               | DIGEST            | ['None', 'Digest']
+        'default'          | ''                                                                            | BASIC             | ['None', 'Basic']
+        'default'          | ''                                                                            | DIGEST            | ['None', 'Digest']
+        'default'          | ''                                                                            | NTLM              | ['None', 'NTLM']
+        'basic'            | 'authentication { auth(BasicAuthentication) }'                                | HIDE_UNAUTHORIZED | ['Basic']
+        'basic and digest' | 'authentication { basic(BasicAuthentication)\ndigest(DigestAuthentication) }' | DIGEST            | ['Basic', 'Digest']
     }
 
     @Unroll
@@ -137,23 +169,25 @@ task listJars << {
         when:
         settingsFile << 'rootProject.name = "publish"'
         buildFile << """
-   repositories {
-       ivy {
-            url "${ivyHttpRepo.uri}"
-            $creds
-        }
-   }
-   configurations { compile }
-   dependencies {
-       compile 'group:projectA:1.2'
-   }
-   task listJars << {
-       assert configurations.compile.collect { it.name } == ['projectA-1.2.jar']
-   }
-   """
+repositories {
+    ivy {
+        url "${ivyHttpRepo.uri}"
+        $creds
+    }
+}
+configurations { compile }
+dependencies {
+    compile 'group:projectA:1.2'
+}
+task listJars {
+    doLast {
+        assert configurations.compile.collect { it.name } == ['projectA-1.2.jar']
+    }
+}
+"""
 
         and:
-        server.authenticationScheme = authScheme
+        serverAuthScheme = authScheme
         server.allowGetOrHead('/repo/group/projectA/1.2/ivy-1.2.xml', 'username', 'password', module.ivyFile)
 
         then:
@@ -166,9 +200,13 @@ task listJars << {
             .assertThatCause(Matchers.containsString('Received status code 401 from server: Unauthorized'))
 
         where:
-        authScheme << [HttpServer.AuthScheme.BASIC, HttpServer.AuthScheme.DIGEST, HttpServer.AuthScheme.BASIC, HttpServer.AuthScheme.DIGEST]
-        credsName << ['empty', 'empty', 'bad', 'bad']
-        creds << ['', '', badCredentials, badCredentials]
+        authScheme | credsName | creds
+        BASIC      | 'missing' | ''
+        DIGEST     | 'missing' | ''
+        NTLM       | 'missing' | ''
+        BASIC      | 'bad'     | badCredentials
+        DIGEST     | 'bad'     | badCredentials
+        NTLM       | 'bad'     | badCredentials
     }
 
     @Unroll
@@ -179,23 +217,25 @@ task listJars << {
         when:
         settingsFile << 'rootProject.name = "publish"'
         buildFile << """
- repositories {
-     maven {
-         url "${mavenHttpRepo.uri}"
-        $creds
-     }
- }
- configurations { compile }
- dependencies {
-     compile 'group:projectA:1.2'
- }
- task listJars << {
-     assert configurations.compile.collect { it.name } == ['projectA-1.2.jar']
- }
- """
+repositories {
+    maven {
+        url "${mavenHttpRepo.uri}"
+       $creds
+    }
+}
+configurations { compile }
+dependencies {
+    compile 'group:projectA:1.2'
+}
+task listJars {
+    doLast {
+        assert configurations.compile.collect { it.name } == ['projectA-1.2.jar']
+    }
+}
+"""
 
         and:
-        server.authenticationScheme = authScheme
+        serverAuthScheme = authScheme
         module.pom.allowGetOrHead('username', 'password')
 
         then:
@@ -208,8 +248,200 @@ task listJars << {
             .assertThatCause(Matchers.containsString('Received status code 401 from server: Unauthorized'))
 
         where:
-        authScheme << [HttpServer.AuthScheme.BASIC, HttpServer.AuthScheme.DIGEST, HttpServer.AuthScheme.BASIC, HttpServer.AuthScheme.DIGEST]
-        credsName << ['empty', 'empty', 'bad', 'bad']
-        creds << ['', '', badCredentials, badCredentials]
+        authScheme | credsName | creds
+        BASIC      | 'missing' | ''
+        DIGEST     | 'missing' | ''
+        NTLM       | 'missing' | ''
+        BASIC      | 'bad'     | badCredentials
+        DIGEST     | 'bad'     | badCredentials
+        NTLM       | 'bad'     | badCredentials
+    }
+
+    @Unroll
+    def "reports failure resolving with #configuredAuthScheme from #authScheme authenticated HTTP ivy repository"() {
+        given:
+        def module = ivyHttpRepo.module('group', 'projectA', '1.2').publish()
+        when:
+        settingsFile << 'rootProject.name = "publish"'
+        buildFile << """
+repositories {
+    ivy {
+        url "${ivyHttpRepo.uri}"
+        credentials {
+            username = 'username'
+            password = 'password'
+        }
+
+        authentication {
+            auth(${configuredAuthScheme})
+        }
+    }
+}
+configurations { compile }
+dependencies {
+    compile 'group:projectA:1.2'
+}
+task listJars {
+    doLast {
+        assert configurations.compile.collect { it.name } == ['projectA-1.2.jar']
+    }
+}
+"""
+
+        and:
+        serverAuthScheme = authScheme
+        server.allowGetOrHead('/repo/group/projectA/1.2/ivy-1.2.xml', 'username', 'password', module.ivyFile)
+
+        then:
+        fails 'listJars'
+
+        and:
+        failure
+            .assertHasDescription('Execution failed for task \':listJars\'.')
+            .assertResolutionFailure(':compile')
+            .assertThatCause(Matchers.containsString('Received status code 401 from server: Unauthorized'))
+
+        where:
+        authScheme | configuredAuthScheme
+        BASIC      | DigestAuthentication.class.getSimpleName()
+        DIGEST     | BasicAuthentication.class.getSimpleName()
+    }
+
+    @Unroll
+    def "reports failure resolving with #configuredAuthScheme from #authScheme authenticated HTTP maven repository"() {
+        given:
+        def module = mavenHttpRepo.module('group', 'projectA', '1.2').publish()
+
+        when:
+        settingsFile << 'rootProject.name = "publish"'
+        buildFile << """
+repositories {
+    maven {
+        url "${mavenHttpRepo.uri}"
+        credentials {
+            username = 'username'
+            password = 'password'
+        }
+
+        authentication {
+            auth(${configuredAuthScheme})
+        }
+    }
+}
+configurations { compile }
+dependencies {
+    compile 'group:projectA:1.2'
+}
+task listJars {
+    doLast {
+        assert configurations.compile.collect { it.name } == ['projectA-1.2.jar']
+    }
+}
+"""
+
+        and:
+        serverAuthScheme = authScheme
+        module.pom.allowGetOrHead('username', 'password')
+
+        then:
+        fails 'listJars'
+
+        and:
+        failure
+            .assertHasDescription('Execution failed for task \':listJars\'.')
+            .assertResolutionFailure(':compile')
+            .assertThatCause(Matchers.containsString('Received status code 401 from server: Unauthorized'))
+
+        where:
+        authScheme | configuredAuthScheme
+        BASIC      | DigestAuthentication.class.getSimpleName()
+        DIGEST     | BasicAuthentication.class.getSimpleName()
+    }
+
+    def "fails resolving from preemptive authenticated HTTP ivy repository"() {
+        given:
+        def module = ivyHttpRepo.module('group', 'projectA', '1.2').publish()
+        when:
+        settingsFile << 'rootProject.name = "publish"'
+        buildFile << """
+repositories {
+    ivy {
+        url "${ivyHttpRepo.uri}"
+        credentials {
+            username = 'username'
+            password = 'password'
+        }
+    }
+}
+configurations { compile }
+dependencies {
+    compile 'group:projectA:1.2'
+}
+task listJars {
+    doLast {
+        assert configurations.compile.collect { it.name } == ['projectA-1.2.jar']
+    }
+}
+"""
+
+        and:
+        serverAuthScheme = HIDE_UNAUTHORIZED
+        server.allowGetOrHead('/repo/group/projectA/1.2/ivy-1.2.xml', 'username', 'password', module.ivyFile)
+        server.allowGetOrHead('/repo/group/projectA/1.2/projectA-1.2.jar', 'username', 'password', module.jarFile)
+
+        then:
+        fails 'listJars'
+
+        and:
+        failure
+            .assertHasDescription('Execution failed for task \':listJars\'.')
+            .assertResolutionFailure(':compile')
+            .assertThatCause(Matchers.containsString('Could not find group:projectA:1.2'))
+    }
+
+    def "fails resolving from preemptive authenticated HTTP maven repository"() {
+        given:
+        def module = mavenHttpRepo.module('group', 'projectA', '1.2').publish()
+
+        when:
+        settingsFile << 'rootProject.name = "publish"'
+        buildFile << """
+repositories {
+    maven {
+        url "${mavenHttpRepo.uri}"
+        credentials {
+            username = 'username'
+            password = 'password'
+        }
+    }
+}
+configurations { compile }
+dependencies {
+    compile 'group:projectA:1.2'
+}
+task listJars {
+    doLast {
+        assert configurations.compile.collect { it.name } == ['projectA-1.2.jar']
+    }
+}
+"""
+
+        and:
+        serverAuthScheme = HIDE_UNAUTHORIZED
+        module.pom.allowGetOrHead('username', 'password')
+        module.artifact.allowGetOrHead('username', 'password')
+
+        then:
+        fails 'listJars'
+
+        and:
+        failure
+            .assertHasDescription('Execution failed for task \':listJars\'.')
+            .assertResolutionFailure(':compile')
+            .assertThatCause(Matchers.containsString('Could not find group:projectA:1.2'))
+    }
+
+    void setServerAuthScheme(AuthScheme authScheme) {
+        server.authenticationScheme = authScheme
     }
 }

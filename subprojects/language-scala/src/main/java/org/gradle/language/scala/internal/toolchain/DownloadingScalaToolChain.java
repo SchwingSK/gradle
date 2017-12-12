@@ -22,8 +22,8 @@ import org.gradle.api.artifacts.ConfigurationContainer;
 import org.gradle.api.artifacts.Dependency;
 import org.gradle.api.artifacts.ResolveException;
 import org.gradle.api.artifacts.dsl.DependencyHandler;
-import org.gradle.api.internal.artifacts.dsl.dependencies.ProjectFinder;
-import org.gradle.api.internal.tasks.compile.daemon.CompilerDaemonManager;
+import org.gradle.api.internal.file.FileResolver;
+import org.gradle.workers.internal.WorkerDaemonFactory;
 import org.gradle.language.scala.ScalaPlatform;
 import org.gradle.platform.base.internal.toolchain.ToolProvider;
 
@@ -31,37 +31,42 @@ import java.io.File;
 import java.util.Set;
 
 public class DownloadingScalaToolChain implements ScalaToolChainInternal {
-    public static final String DEFAULT_ZINC_VERSION = "0.3.0";
-
-    private ProjectFinder projectFinder;
-    private CompilerDaemonManager compilerDaemonManager;
+    private final File gradleUserHomeDir;
+    private final File daemonWorkingDir;
+    private final WorkerDaemonFactory workerDaemonFactory;
     private final ConfigurationContainer configurationContainer;
     private final DependencyHandler dependencyHandler;
     private final JavaVersion javaVersion;
+    private final FileResolver fileResolver;
 
-    public DownloadingScalaToolChain(ProjectFinder projectFinder, CompilerDaemonManager compilerDaemonManager, ConfigurationContainer configurationContainer, DependencyHandler dependencyHandler) {
-        this.projectFinder = projectFinder;
-        this.compilerDaemonManager = compilerDaemonManager;
+    public DownloadingScalaToolChain(File gradleUserHomeDir, File daemonWorkingDir, WorkerDaemonFactory workerDaemonFactory, ConfigurationContainer configurationContainer, DependencyHandler dependencyHandler, FileResolver fileResolver) {
+        this.gradleUserHomeDir = gradleUserHomeDir;
+        this.daemonWorkingDir = daemonWorkingDir;
+        this.workerDaemonFactory = workerDaemonFactory;
         this.configurationContainer = configurationContainer;
         this.dependencyHandler = dependencyHandler;
+        this.fileResolver = fileResolver;
         this.javaVersion = JavaVersion.current();
     }
 
+    @Override
     public String getName() {
-        return String.format("Scala Toolchain");
+        return "Scala Toolchain";
     }
 
+    @Override
     public String getDisplayName() {
-        return String.format("Scala Toolchain (JDK %s (%s))", javaVersion.getMajorVersion(), javaVersion);
+        return "Scala Toolchain (JDK " + javaVersion.getMajorVersion() + " (" + javaVersion + "))";
     }
 
+    @Override
     public ToolProvider select(ScalaPlatform targetPlatform) {
         try {
-            Configuration scalaClasspath = resolveDependency(String.format("org.scala-lang:scala-compiler:%s", targetPlatform.getScalaVersion()));
-            Configuration zincClasspath = resolveDependency(String.format("com.typesafe.zinc:zinc:%s", DEFAULT_ZINC_VERSION));
+            Configuration scalaClasspath = resolveDependency("org.scala-lang:scala-compiler:" + targetPlatform.getScalaVersion());
+            Configuration zincClasspath = resolveDependency("com.typesafe.zinc:zinc:" + DefaultScalaToolProvider.DEFAULT_ZINC_VERSION);
             Set<File> resolvedScalaClasspath = scalaClasspath.resolve();
             Set<File> resolvedZincClasspath = zincClasspath.resolve();
-            return new DefaultScalaToolProvider(projectFinder, compilerDaemonManager, resolvedScalaClasspath, resolvedZincClasspath);
+            return new DefaultScalaToolProvider(gradleUserHomeDir, daemonWorkingDir, workerDaemonFactory, fileResolver, resolvedScalaClasspath, resolvedZincClasspath);
 
         } catch(ResolveException resolveException) {
             return new NotFoundScalaToolProvider(resolveException);

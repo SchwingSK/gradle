@@ -16,28 +16,27 @@
 
 package org.gradle.api.internal.tasks.compile.incremental.jar;
 
-import org.gradle.api.internal.changedetection.state.FileSnapshot;
-import org.gradle.api.internal.changedetection.state.FilesSnapshotSet;
-import org.gradle.api.internal.hash.Hasher;
 import org.gradle.api.internal.tasks.compile.incremental.analyzer.ClassDependenciesAnalyzer;
 import org.gradle.internal.Factory;
+import org.gradle.internal.hash.FileHasher;
+import org.gradle.internal.hash.HashCode;
+import org.gradle.internal.hash.StreamHasher;
 
 public class CachingJarSnapshotter implements JarSnapshotter {
 
     private final DefaultJarSnapshotter snapshotter;
-    private final Hasher hasher;
+    private final FileHasher fileHasher;
     private final JarSnapshotCache cache;
-    private final FilesSnapshotSet inputFilesSnapshot;
 
-    public CachingJarSnapshotter(Hasher hasher, ClassDependenciesAnalyzer analyzer, JarSnapshotCache cache, FilesSnapshotSet inputFilesSnapshot) {
-        this.inputFilesSnapshot = inputFilesSnapshot;
-        this.snapshotter = new DefaultJarSnapshotter(hasher, analyzer);
-        this.hasher = hasher;
+    public CachingJarSnapshotter(StreamHasher streamHasher, FileHasher fileHasher, ClassDependenciesAnalyzer analyzer, JarSnapshotCache cache) {
+        this.snapshotter = new DefaultJarSnapshotter(streamHasher, analyzer);
+        this.fileHasher = fileHasher;
         this.cache = cache;
     }
 
+    @Override
     public JarSnapshot createSnapshot(final JarArchive jarArchive) {
-        final byte[] hash = getHash(jarArchive);
+        final HashCode hash = getHash(jarArchive);
         return cache.get(hash, new Factory<JarSnapshot>() {
             public JarSnapshot create() {
                 return snapshotter.createSnapshot(hash, jarArchive);
@@ -45,11 +44,7 @@ public class CachingJarSnapshotter implements JarSnapshotter {
         });
     }
 
-    private byte[] getHash(JarArchive jarArchive) {
-        FileSnapshot s = inputFilesSnapshot.findSnapshot(jarArchive.file);
-        if (s != null) {
-            return s.getHash();
-        }
-        return hasher.hash(jarArchive.file);
+    private HashCode getHash(JarArchive jarArchive) {
+        return fileHasher.hash(jarArchive.file);
     }
 }

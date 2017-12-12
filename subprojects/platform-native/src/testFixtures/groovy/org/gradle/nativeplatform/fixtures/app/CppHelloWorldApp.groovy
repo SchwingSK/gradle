@@ -32,7 +32,7 @@ class CppHelloWorldApp extends IncrementalHelloWorldApp {
               std::cout << sum(5, 7);
               return 0;
             }
-        """);
+        """)
     }
 
     SourceFile getAlternateMainSource() {
@@ -53,6 +53,8 @@ class CppHelloWorldApp extends IncrementalHelloWorldApp {
     @Override
     SourceFile getLibraryHeader() {
         return sourceFile("headers", "hello.h", """
+            #ifndef HELLO_H
+            #define HELLO_H
             #ifdef _WIN32
             #define DLL_FUNC __declspec(dllexport)
             #else
@@ -65,13 +67,31 @@ class CppHelloWorldApp extends IncrementalHelloWorldApp {
             };
 
             int DLL_FUNC sum(int a, int b);
-        """);
+
+            #ifdef FRENCH
+            #pragma message("<==== compiling bonjour.h ====>")
+            #else
+            #pragma message("<==== compiling hello.h ====>")
+            #endif
+
+            #endif
+        """)
+    }
+
+    @Override
+    SourceFile getCommonHeader() {
+        sourceFile("headers", "common.h", """
+            #ifndef COMMON_H
+            #define COMMON_H
+            #include "hello.h"
+            #include <iostream>
+            #endif
+        """)
     }
 
     List<SourceFile> librarySources = [
         sourceFile("cpp", "hello.cpp", """
-            #include <iostream>
-            #include "hello.h"
+            #include "common.h"
 
             #ifdef FRENCH
             const char* greeting() {
@@ -88,7 +108,7 @@ class CppHelloWorldApp extends IncrementalHelloWorldApp {
             }
         """),
         sourceFile("cpp", "sum.cpp", """
-            #include "hello.h"
+            #include "common.h"
 
             int DLL_FUNC sum(int a, int b) {
                 return a + b;
@@ -98,8 +118,7 @@ class CppHelloWorldApp extends IncrementalHelloWorldApp {
 
     List<SourceFile> alternateLibrarySources = [
         sourceFile("cpp", "hello.cpp", """
-            #include <iostream>
-            #include "hello.h"
+            #include "common.h"
 
             void DLL_FUNC Greeter::sayHello() {
                 std::cout << "[${HELLO_WORLD} - ${HELLO_WORLD_FRENCH}]" << std::endl;
@@ -111,7 +130,7 @@ class CppHelloWorldApp extends IncrementalHelloWorldApp {
             }
         """),
         sourceFile("cpp", "sum.cpp", """
-            #include "hello.h"
+            #include "common.h"
 
             int DLL_FUNC sum(int a, int b) {
                 return a + b;
@@ -146,24 +165,33 @@ int main(int argc, char **argv) {
             ]
             List<SourceFile> headerFiles = [
             ]
-
-            String testOutput = """
-Running main() from gtest_main.cc
-[==========] Running 1 test from 1 test case.
-[----------] Global test environment set-up.
-[----------] 1 test from MathSuite
-[ RUN      ] MathSuite.sum
-[       OK ] MathSuite.sum (0 ms)
-[----------] 1 test from MathSuite (0 ms total)
-
-[----------] Global test environment tear-down
-[==========] 1 test from 1 test case ran. (1 ms total)
-[  PASSED  ] 1 test.
-"""
-        };
+        }
     }
 
-    public SourceFile getBrokenFile() {
+    TestNativeComponent getSimpleTestExecutable() {
+        return new TestNativeComponent() {
+            List<SourceFile> sourceFiles = [
+                sourceFile("cpp", "test.cpp", """
+#include "hello.h"
+
+int main(int argc, char **argv) {
+  if (sum(2, 2) == 4) {
+    return 0;
+  }
+  return -1;
+}"""),
+            ]
+            List<SourceFile> headerFiles = [
+            ]
+        }
+    }
+
+    SourceFile getBrokenFile() {
         return sourceFile("cpp", "broken.cpp", """'broken""")
+    }
+
+    @Override
+    String getSourceSetType() {
+        return "CppSourceSet"
     }
 }

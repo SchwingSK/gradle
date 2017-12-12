@@ -1,5 +1,5 @@
 /*
- * Copyright 2013 the original author or authors.
+ * Copyright 2017 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,27 +13,26 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.gradle.language.nativeplatform.internal.incremental;
 
+import org.gradle.api.file.FileCollection;
 import org.gradle.api.internal.TaskInternal;
-import org.gradle.api.internal.changedetection.state.FileSnapshotter;
-import org.gradle.api.internal.changedetection.state.TaskArtifactStateCacheAccess;
 import org.gradle.language.base.internal.compile.Compiler;
-import org.gradle.nativeplatform.toolchain.NativeToolChain;
 import org.gradle.nativeplatform.toolchain.internal.NativeCompileSpec;
+import org.gradle.nativeplatform.toolchain.internal.NativeToolChainInternal;
 
-public class IncrementalCompilerBuilder {
-    private final TaskArtifactStateCacheAccess cacheAccess;
-    private final FileSnapshotter fileSnapshotter;
-    private final CompilationStateCacheFactory compilationStateCacheFactory;
+public interface IncrementalCompilerBuilder {
+    IncrementalCompiler newCompiler(TaskInternal task, FileCollection sourceFiles, FileCollection includeDirs);
 
-    public IncrementalCompilerBuilder(TaskArtifactStateCacheAccess cacheAccess, FileSnapshotter fileSnapshotter, CompilationStateCacheFactory compilationStateCacheFactory) {
-        this.cacheAccess = cacheAccess;
-        this.fileSnapshotter = fileSnapshotter;
-        this.compilationStateCacheFactory = compilationStateCacheFactory;
-    }
+    interface IncrementalCompiler {
+        <T extends NativeCompileSpec> Compiler<T> createCompiler(Compiler<T> compiler);
 
-    public <T extends NativeCompileSpec> Compiler<T> createIncrementalCompiler(TaskInternal task, Compiler<T> compiler, NativeToolChain toolchain) {
-        return new IncrementalNativeCompiler<T>(task, cacheAccess, fileSnapshotter, compilationStateCacheFactory, compiler, toolchain);
+        void setToolChain(NativeToolChainInternal toolChain);
+
+        /**
+         * Returns a file collection that contains the header files required by the source files.
+         */
+        FileCollection getHeaderFiles();
     }
 }

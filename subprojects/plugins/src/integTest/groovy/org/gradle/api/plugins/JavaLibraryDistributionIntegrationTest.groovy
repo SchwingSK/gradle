@@ -17,9 +17,11 @@
 package org.gradle.api.plugins
 
 import org.gradle.integtests.fixtures.WellBehavedPluginTest
+import org.gradle.integtests.fixtures.archives.TestReproducibleArchives
 
 import static org.hamcrest.Matchers.containsString
 
+@TestReproducibleArchives
 class JavaLibraryDistributionIntegrationTest extends WellBehavedPluginTest {
 
     @Override
@@ -40,11 +42,9 @@ class JavaLibraryDistributionIntegrationTest extends WellBehavedPluginTest {
         buildFile << """
         apply plugin: 'java-library-distribution'
 
-        repositories {
-            mavenCentral()
-        }
+        ${mavenCentralRepository()}
         dependencies {
-            compile 'commons-collections:commons-collections:3.1'
+            compile 'commons-collections:commons-collections:3.2.2'
             runtime 'commons-lang:commons-lang:2.6'
         }
         """
@@ -56,7 +56,7 @@ class JavaLibraryDistributionIntegrationTest extends WellBehavedPluginTest {
         def expandDir = file('expanded')
         file('build/distributions/DefaultJavaDistribution.zip').unzipTo(expandDir)
         expandDir.assertHasDescendants(
-                'DefaultJavaDistribution/lib/commons-collections-3.1.jar',
+                'DefaultJavaDistribution/lib/commons-collections-3.2.2.jar',
                 'DefaultJavaDistribution/lib/commons-lang-2.6.jar',
                 'DefaultJavaDistribution/DefaultJavaDistribution.jar')
         expandDir.file('DefaultJavaDistribution/DefaultJavaDistribution.jar').assertIsCopyOf(file('build/libs/DefaultJavaDistribution.jar'))
@@ -101,9 +101,7 @@ class JavaLibraryDistributionIntegrationTest extends WellBehavedPluginTest {
             }
         }
 
-        repositories {
-            mavenCentral()
-        }
+        ${mavenCentralRepository()}
         dependencies {
             runtime 'commons-lang:commons-lang:2.6'
         }
@@ -141,5 +139,36 @@ class JavaLibraryDistributionIntegrationTest extends WellBehavedPluginTest {
         expect:
         runAndFail 'distZip'
         failure.assertThatDescription(containsString("Distribution baseName must not be null or empty! Check your configuration of the distribution plugin."))
+    }
+
+    def "compile only dependencies are not included in distribution"() {
+        given:
+        mavenRepo.module('org.gradle.test', 'compile', '1.0').publish()
+        mavenRepo.module('org.gradle.test', 'compileOnly', '1.0').publish()
+
+        and:
+        buildFile << """
+apply plugin:'java-library-distribution'
+
+distributions{
+    main{
+        baseName = 'sample'
+    }
+}
+
+repositories {
+    maven { url '$mavenRepo.uri' }
+}
+
+dependencies {
+    compile 'org.gradle.test:compile:1.0'
+    compileOnly 'org.gradle.test:compileOnly:1.0'
+}
+"""
+        when:
+        run "installDist"
+
+        then:
+        file('build/install/sample/lib').allDescendants() == ['compile-1.0.jar'] as Set
     }
 }

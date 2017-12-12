@@ -17,6 +17,8 @@ package org.gradle.internal.nativeintegration.processenvironment;
 
 import com.google.common.collect.Lists;
 import com.google.common.collect.Sets;
+import org.gradle.api.JavaVersion;
+import org.gradle.internal.nativeintegration.EnvironmentModificationResult;
 import org.gradle.internal.nativeintegration.NativeIntegrationException;
 import org.gradle.internal.nativeintegration.ProcessEnvironment;
 import org.gradle.internal.nativeintegration.ReflectiveEnvironment;
@@ -29,18 +31,23 @@ public abstract class AbstractProcessEnvironment implements ProcessEnvironment {
     //for updates to private JDK caches of the environment state
     private final ReflectiveEnvironment reflectiveEnvironment = new ReflectiveEnvironment();
 
-    public boolean maybeSetEnvironment(Map<String, String> source) {
+    @Override
+    public EnvironmentModificationResult maybeSetEnvironment(Map<String, String> source) {
+        if (JavaVersion.current().isJava9Compatible()) {
+            return EnvironmentModificationResult.JAVA_9_IMMUTABLE_ENVIRONMENT;
+        }
         // need to take copy to prevent ConcurrentModificationException
         List<String> keysToRemove = Lists.newArrayList(Sets.difference(System.getenv().keySet(), source.keySet()));
         for (String key : keysToRemove) {
             removeEnvironmentVariable(key);
         }
         for (Map.Entry<String, String> entry : source.entrySet()) {
-            setEnvironmentVariable(entry.getKey(), entry.getValue());
+           setEnvironmentVariable(entry.getKey(), entry.getValue());
         }
-        return true;
+        return EnvironmentModificationResult.SUCCESS;
     }
 
+    @Override
     public void removeEnvironmentVariable(String name) throws NativeIntegrationException {
         removeNativeEnvironmentVariable(name);
         reflectiveEnvironment.unsetenv(name);
@@ -48,11 +55,16 @@ public abstract class AbstractProcessEnvironment implements ProcessEnvironment {
 
     protected abstract void removeNativeEnvironmentVariable(String name);
 
-    public boolean maybeRemoveEnvironmentVariable(String name) {
+    @Override
+    public EnvironmentModificationResult maybeRemoveEnvironmentVariable(String name) {
+        if (JavaVersion.current().isJava9Compatible()) {
+            return EnvironmentModificationResult.JAVA_9_IMMUTABLE_ENVIRONMENT;
+        }
         removeEnvironmentVariable(name);
-        return true;
+        return EnvironmentModificationResult.SUCCESS;
     }
 
+    @Override
     public void setEnvironmentVariable(String name, String value) throws NativeIntegrationException {
         if (value == null) {
             removeEnvironmentVariable(name);
@@ -65,28 +77,37 @@ public abstract class AbstractProcessEnvironment implements ProcessEnvironment {
 
     protected abstract void setNativeEnvironmentVariable(String name, String value);
 
-    public boolean maybeSetEnvironmentVariable(String name, String value) {
+    @Override
+    public EnvironmentModificationResult maybeSetEnvironmentVariable(String name, String value) {
+        if (JavaVersion.current().isJava9Compatible()) {
+            return EnvironmentModificationResult.JAVA_9_IMMUTABLE_ENVIRONMENT;
+        }
         setEnvironmentVariable(name, value);
-        return true;
+        return EnvironmentModificationResult.SUCCESS;
     }
 
+    @Override
     public void setProcessDir(File processDir) throws NativeIntegrationException {
-        if (!processDir.exists()) {
-            return;
-        }
-
         setNativeProcessDir(processDir);
         System.setProperty("user.dir", processDir.getAbsolutePath());
     }
 
     protected abstract void setNativeProcessDir(File processDir);
 
+    @Override
     public boolean maybeSetProcessDir(File processDir) {
         setProcessDir(processDir);
         return true;
     }
 
+    @Override
     public Long maybeGetPid() {
         return getPid();
+    }
+
+    @Override
+    public boolean maybeDetachProcess() {
+        detachProcess();
+        return true;
     }
 }

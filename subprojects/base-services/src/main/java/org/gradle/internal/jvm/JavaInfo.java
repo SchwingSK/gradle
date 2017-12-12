@@ -16,6 +16,7 @@
 
 package org.gradle.internal.jvm;
 
+import javax.annotation.Nullable;
 import java.io.File;
 
 public interface JavaInfo {
@@ -51,14 +52,9 @@ public interface JavaInfo {
     File getJavaHome();
 
     /**
-     * Returns the runtime jar. May return null, for example when Jvm was created
-     * with custom jdk location.
-     */
-    File getRuntimeJar();
-
-    /**
      * Returns the tools jar. May return null, for example when Jvm was created via
      * with custom jre location or if jdk is not installed.
      */
+    @Nullable
     File getToolsJar();
 }

@@ -33,8 +33,8 @@ class MavenLocalRepository implements MavenRepository {
         return rootDir.toURI()
     }
 
-    MavenLocalModule module(String groupId, String artifactId, Object version = '1.0') {
+    MavenLocalModule module(String groupId, String artifactId, String version = '1.0') {
         def artifactDir = rootDir.file("${groupId.replace('.', '/')}/$artifactId/$version")
-        return new MavenLocalModule(artifactDir, groupId, artifactId, version as String)
+        return new MavenLocalModule(rootDir, artifactDir, groupId, artifactId, version as String)
     }
 }

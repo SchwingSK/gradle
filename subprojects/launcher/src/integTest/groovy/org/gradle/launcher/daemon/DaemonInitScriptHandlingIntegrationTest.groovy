@@ -18,16 +18,18 @@
 
 package org.gradle.launcher.daemon
 
+import org.gradle.integtests.fixtures.daemon.DaemonIntegrationSpec
 import org.gradle.integtests.fixtures.executer.DaemonGradleExecuter
 import org.gradle.integtests.fixtures.executer.DefaultGradleDistribution
 import org.gradle.internal.os.OperatingSystem
+import org.gradle.test.fixtures.file.LeaksFileHandles
 import org.gradle.test.fixtures.file.TestFile
 import spock.lang.Issue
-
 /**
  * Tests that init scripts are used from the _clients_ GRADLE_HOME, not the daemon server's.
  */
 @Issue("https://issues.gradle.org/browse/GRADLE-2408")
+@LeaksFileHandles("isolated daemons are not always stopped in time") //may fail with 'Unable to delete file: daemon.out.log'
 class DaemonInitScriptHandlingIntegrationTest extends DaemonIntegrationSpec {
 
     TestFile createDistribution(int i) {
@@ -36,7 +38,7 @@ class DaemonInitScriptHandlingIntegrationTest extends DaemonIntegrationSpec {
         distro.file("bin", OperatingSystem.current().getScriptName("gradle")).permissions = 'rwx------'
         distro.file("init.d/init.gradle") << """
             gradle.allprojects {
-                task echo << { println "from distro $i" }
+                task echo { doLast { println "from distro $i" } }
             }
         """
         distro
@@ -44,7 +46,13 @@ class DaemonInitScriptHandlingIntegrationTest extends DaemonIntegrationSpec {
 
     def runWithGradleHome(TestFile gradleHome) {
         def copiedDistro = new DefaultGradleDistribution(executer.distribution.version, gradleHome, null)
-        executer.copyTo(new DaemonGradleExecuter(copiedDistro, executer.testDirectoryProvider)).run()
+        def daemonExecuter = new DaemonGradleExecuter(copiedDistro, executer.testDirectoryProvider)
+        executer.copyTo(daemonExecuter)
+        try {
+            return daemonExecuter.run()
+        } finally {
+            daemonExecuter.cleanup();
+        }
     }
 
     def "init scripts from client distribution are used, not from the test"() {
@@ -74,7 +82,7 @@ class DaemonInitScriptHandlingIntegrationTest extends DaemonIntegrationSpec {
 
         then:
         distro2Result.output.contains "from distro 2"
-        distro1Result.output.contains "runtime gradle home: ${distro1.absolutePath}"
+        distro2Result.output.contains "runtime gradle home: ${distro2.absolutePath}"
     }
 
 }

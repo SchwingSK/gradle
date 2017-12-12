@@ -18,6 +18,7 @@ package org.gradle.test.fixtures.ivy;
 
 import groovy.lang.Closure;
 import org.gradle.test.fixtures.Module;
+import org.gradle.test.fixtures.ModuleArtifact;
 import org.gradle.test.fixtures.file.TestFile;
 
 import java.util.Map;
@@ -27,23 +28,60 @@ public interface IvyModule extends Module {
     String getModule();
     String getRevision();
 
+    ModuleArtifact getIvy();
+
+    ModuleArtifact getJar();
+
     TestFile getIvyFile();
 
     TestFile getJarFile();
 
+    TestFile getModuleMetadataFile();
+
     /**
-     * Don't publish an ivy.xml for this module.
+     * Don't publish an ivy.xml / .module for this module.
      */
     IvyModule withNoMetaData();
 
+    /**
+     * Don't publish any ivy.xml for this module, but publish .module
+     */
+    IvyModule withNoIvyMetaData();
+
     IvyModule withStatus(String status);
+
+    IvyModule withBranch(String branch);
 
     IvyModule dependsOn(String organisation, String module, String revision);
 
     IvyModule extendsFrom(Map<String, ?> attributes);
 
+    /**
+     * Attributes:
+     *  organisation
+     *  module
+     *  revision
+     *  revConstraint
+     *  conf
+     *  exclusions - list of maps: [[group: ?, module: ?], ...]
+     */
     IvyModule dependsOn(Map<String, ?> attributes);
 
+    IvyModule dependsOn(Module target);
+
+    IvyModule dependsOn(Map<String, ?> attributes, Module target);
+
+    IvyModule dependencyConstraint(Module module);
+
+    IvyModule dependencyConstraint(Map<String, ?> attributes, Module module);
+
+    /**
+     * Options:
+     *  name
+     *  type
+     *  classifier
+     *  conf
+     */
     IvyModule artifact(Map<String, ?> options);
 
     /**
@@ -55,7 +93,18 @@ public interface IvyModule extends Module {
 
     IvyModule configuration(String name);
 
+    /**
+     * Options:
+     *  extendsFrom
+     *  transitive
+     *  visibility
+     */
     IvyModule configuration(Map<String, ?> options, String name);
+
+    /**
+     * Define a variant with attributes. Variants are only published when using {@link #withModuleMetadata()}.
+     */
+    IvyModule variant(String variant, Map<String, String> attributes);
 
     /**
      * Publishes ivy.xml plus all artifacts with different content (and size) to previous publication.
@@ -85,5 +134,12 @@ public interface IvyModule extends Module {
      */
     void assertIvyAndJarFilePublished();
 
+    /**
+     * Assert that exactly the module metadata file, ivy.xml and jar file for this module, plus checksum files, have been published.
+     */
+    void assertMetadataAndJarFilePublished();
+
     void assertPublishedAsJavaModule();
+
+    void assertPublishedAsWebModule();
 }

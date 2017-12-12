@@ -16,37 +16,90 @@
 
 package org.gradle.tooling.internal.provider;
 
-import org.gradle.cache.CacheRepository;
+import org.gradle.api.execution.internal.TaskInputsListener;
 import org.gradle.initialization.GradleLauncherFactory;
-import org.gradle.internal.classloader.ClassLoaderFactory;
+import org.gradle.internal.classpath.CachedClasspathTransformer;
+import org.gradle.internal.concurrent.ExecutorFactory;
+import org.gradle.internal.concurrent.ParallelismConfigurationManager;
+import org.gradle.internal.filewatch.DefaultFileSystemChangeWaiterFactory;
+import org.gradle.internal.filewatch.FileSystemChangeWaiterFactory;
+import org.gradle.internal.filewatch.FileWatcherFactory;
 import org.gradle.internal.invocation.BuildActionRunner;
+import org.gradle.internal.logging.LoggingManagerInternal;
+import org.gradle.internal.logging.text.StyledTextOutputFactory;
+import org.gradle.internal.progress.BuildOperationListenerManager;
 import org.gradle.internal.service.ServiceRegistration;
-import org.gradle.internal.service.ServiceRegistry;
-import org.gradle.internal.service.scopes.PluginServiceRegistry;
+import org.gradle.internal.service.scopes.AbstractPluginServiceRegistry;
+import org.gradle.internal.service.scopes.GradleUserHomeScopeServiceRegistry;
+import org.gradle.internal.time.Time;
+import org.gradle.launcher.exec.BuildExecuter;
+import org.gradle.launcher.exec.BuildTreeScopeBuildActionExecuter;
 import org.gradle.launcher.exec.ChainingBuildActionRunner;
 import org.gradle.launcher.exec.InProcessBuildActionExecuter;
+import org.gradle.launcher.exec.RunAsBuildOperationBuildActionRunner;
+import org.gradle.tooling.internal.provider.serialization.ClassLoaderCache;
+import org.gradle.tooling.internal.provider.serialization.DaemonSidePayloadClassLoaderFactory;
+import org.gradle.tooling.internal.provider.serialization.DefaultPayloadClassLoaderRegistry;
+import org.gradle.tooling.internal.provider.serialization.ModelClassLoaderFactory;
+import org.gradle.tooling.internal.provider.serialization.PayloadClassLoaderFactory;
+import org.gradle.tooling.internal.provider.serialization.PayloadSerializer;
+import org.gradle.tooling.internal.provider.serialization.WellKnownClassLoaderRegistry;
 
 import java.util.List;
 
-public class LauncherServices implements PluginServiceRegistry {
+public class LauncherServices extends AbstractPluginServiceRegistry {
+    @Override
     public void registerGlobalServices(ServiceRegistration registration) {
         registration.addProvider(new ToolingGlobalScopeServices());
     }
 
-    public void registerBuildServices(ServiceRegistration registration) {
-        registration.addProvider(new ToolingBuildScopeServices());
-    }
-
-    public void registerGradleServices(ServiceRegistration registration) {
-    }
-
-    public void registerProjectServices(ServiceRegistration registration) {
+    @Override
+    public void registerGradleUserHomeServices(ServiceRegistration registration) {
+        registration.addProvider(new ToolingBuildSessionScopeServices());
     }
 
     static class ToolingGlobalScopeServices {
-        InProcessBuildActionExecuter createBuildActionExecuter(GradleLauncherFactory gradleLauncherFactory, ServiceRegistry services) {
-            List<BuildActionRunner> buildActionRunners = services.getAll(BuildActionRunner.class);
-            return new InProcessBuildActionExecuter(gradleLauncherFactory, new ChainingBuildActionRunner(buildActionRunners));
+        BuildExecuter createBuildExecuter(List<BuildActionRunner> buildActionRunners,
+                                          List<SubscribableBuildActionRunnerRegistration> registrations,
+                                          GradleLauncherFactory gradleLauncherFactory,
+                                          BuildOperationListenerManager buildOperationListenerManager,
+                                          TaskInputsListener inputsListener,
+                                          StyledTextOutputFactory styledTextOutputFactory,
+                                          ExecutorFactory executorFactory,
+                                          LoggingManagerInternal loggingManager,
+                                          GradleUserHomeScopeServiceRegistry userHomeServiceRegistry,
+                                          FileSystemChangeWaiterFactory fileSystemChangeWaiterFactory,
+                                          ParallelismConfigurationManager parallelismConfigurationManager
+        ) {
+            return new SetupLoggingActionExecuter(
+                new SessionFailureReportingActionExecuter(
+                    new StartParamsValidatingActionExecuter(
+                        new ParallelismConfigurationBuildActionExecuter(
+                            new GradleThreadBuildActionExecuter(
+                                new ServicesSetupBuildActionExecuter(
+                                    new ContinuousBuildActionExecuter(
+                                        new BuildTreeScopeBuildActionExecuter(
+                                            new InProcessBuildActionExecuter(
+                                                new SubscribableBuildActionRunner(
+                                                    new RunAsBuildOperationBuildActionRunner(
+                                                        new ValidatingBuildActionRunner(
+                                                            new ChainingBuildActionRunner(buildActionRunners))),
+                                                    buildOperationListenerManager,
+                                                    registrations),
+                                                gradleLauncherFactory)),
+                                        fileSystemChangeWaiterFactory,
+                                        inputsListener,
+                                        styledTextOutputFactory,
+                                        executorFactory),
+                                    userHomeServiceRegistry)),
+                            parallelismConfigurationManager)),
+                    styledTextOutputFactory,
+                    Time.clock()),
+                loggingManager);
+        }
+
+        FileSystemChangeWaiterFactory createFileSystemChangeWaiterFactory(FileWatcherFactory fileWatcherFactory) {
+            return new DefaultFileSystemChangeWaiterFactory(fileWatcherFactory);
         }
 
         ExecuteBuildActionRunner createExecuteBuildActionRunner() {
@@ -56,26 +109,21 @@ public class LauncherServices implements PluginServiceRegistry {
         ClassLoaderCache createClassLoaderCache() {
             return new ClassLoaderCache();
         }
-
-        JarCache createJarCache() {
-            return new JarCache();
-        }
     }
 
-    static class ToolingBuildScopeServices {
-        PayloadClassLoaderFactory createClassLoaderFactory(ClassLoaderFactory classLoaderFactory, JarCache jarCache, CacheRepository cacheRepository) {
+    static class ToolingBuildSessionScopeServices {
+        PayloadClassLoaderFactory createClassLoaderFactory(CachedClasspathTransformer cachedClasspathTransformer) {
             return new DaemonSidePayloadClassLoaderFactory(
-                    new ModelClassLoaderFactory(
-                            classLoaderFactory),
-                    jarCache,
-                    cacheRepository);
+                new ModelClassLoaderFactory(),
+                cachedClasspathTransformer);
         }
 
         PayloadSerializer createPayloadSerializer(ClassLoaderCache classLoaderCache, PayloadClassLoaderFactory classLoaderFactory) {
             return new PayloadSerializer(
+                new WellKnownClassLoaderRegistry(
                     new DefaultPayloadClassLoaderRegistry(
-                            classLoaderCache,
-                            classLoaderFactory)
+                        classLoaderCache,
+                        classLoaderFactory))
             );
         }
     }

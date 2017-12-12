@@ -15,6 +15,7 @@
  */
 package org.gradle.test.fixtures.file
 
+import com.google.common.io.ByteStreams
 import org.apache.commons.io.FileUtils
 import org.apache.commons.lang.StringUtils
 import org.apache.tools.ant.Project
@@ -22,7 +23,12 @@ import org.apache.tools.ant.taskdefs.Expand
 import org.apache.tools.ant.taskdefs.Tar
 import org.apache.tools.ant.taskdefs.Untar
 import org.apache.tools.ant.taskdefs.Zip
+import org.apache.tools.ant.types.ArchiveFileSet
+import org.apache.tools.ant.types.EnumeratedAttribute
+import org.apache.tools.ant.types.ZipFileSet
+import org.apache.tools.bzip2.CBZip2OutputStream
 
+import java.util.zip.GZIPOutputStream
 import java.util.zip.ZipInputStream
 
 import static org.hamcrest.Matchers.equalTo
@@ -38,7 +44,7 @@ class TestFileHelper {
 
     void unzipTo(File target, boolean nativeTools) {
         // Check that each directory in hierarchy is present
-        file.withInputStream {InputStream instr ->
+        file.withInputStream { InputStream instr ->
             def dirs = [] as Set
             def zipStr = new ZipInputStream(instr)
             def entry
@@ -159,7 +165,7 @@ class TestFileHelper {
                 throw new RuntimeException("Could not delete '$file': $error")
             }
         } else {
-            FileUtils.deleteQuietly(file);
+            FileUtils.deleteQuietly(file)
         }
     }
 
@@ -179,24 +185,47 @@ class TestFileHelper {
 
     ExecOutput execute(List args, List env) {
         def process = ([file.absolutePath] + args).execute(env, null)
-        String output = process.inputStream.text
-        String error = process.errorStream.text
-        if (process.waitFor() != 0) {
-            throw new RuntimeException("Could not execute $file. Error: $error, Output: $output")
-        }
-        return new ExecOutput(output, error)
+
+        // Prevent process from hanging by consuming the output as we go.
+        def output = new ByteArrayOutputStream()
+        def error = new ByteArrayOutputStream()
+
+        Thread outputThread = Thread.start { ByteStreams.copy(process.in, output) }
+        Thread errorThread = Thread.start { ByteStreams.copy(process.err, error) }
+
+        int exitCode = process.waitFor()
+        outputThread.join()
+        errorThread.join()
+
+        return new ExecOutput(exitCode, output.toString(), error.toString())
     }
 
-    public void zipTo(TestFile zipFile, boolean nativeTools) {
+    ExecOutput executeSuccess(List args, List env) {
+        def result = execute(args, env)
+        if (result.exitCode != 0) {
+            throw new RuntimeException("Could not execute $file. Error: ${result.error}, Output: ${result.out}")
+        }
+        return result
+    }
+
+    ExecOutput executeFailure(List args, List env) {
+        def result = execute(args, env)
+        if (result.exitCode == 0) {
+            throw new RuntimeException("Unexpected success, executing $file. Error: ${result.error}, Output: ${result.out}")
+        }
+        return result
+    }
+
+    public void zipTo(TestFile zipFile, boolean nativeTools, boolean readOnly) {
         if (nativeTools && isUnix()) {
             def process = ['zip', zipFile.absolutePath, "-r", file.name].execute(null, zipFile.parentFile)
             process.consumeProcessOutput(System.out, System.err)
             assertThat(process.waitFor(), equalTo(0))
         } else {
             Zip zip = new Zip();
-            zip.setBasedir(file);
+            zip.setProject(new Project())
+            setSourceDirectory(zip, readOnly);
             zip.setDestFile(zipFile);
-            zip.setProject(new Project());
             def whenEmpty = new Zip.WhenEmpty()
             whenEmpty.setValue("create")
             zip.setWhenempty(whenEmpty);
@@ -204,17 +233,68 @@ class TestFileHelper {
         }
     }
 
-    public void tarTo(TestFile tarFile, boolean nativeTools) {
+    private void setSourceDirectory(archiveTask, boolean readOnly) {
+        if (readOnly) {
+            ArchiveFileSet archiveFileSet = archiveTask instanceof Zip ? new ZipFileSet() : archiveTask.createTarFileSet();
+            archiveFileSet.setDir(file);
+            archiveFileSet.setFileMode("0444");
+            archiveFileSet.setDirMode("0555");
+            archiveTask.add(archiveFileSet);
+        } else {
+            archiveTask.setBasedir(file);
+        }
+    }
+
+    public void tarTo(TestFile tarFile, boolean nativeTools, boolean readOnly) {
         if (nativeTools && isUnix()) {
             def process = ['tar', "-cf", tarFile.absolutePath, file.name].execute(null, tarFile.parentFile)
             process.consumeProcessOutput(System.out, System.err)
             assertThat(process.waitFor(), equalTo(0))
         } else {
             Tar tar = new Tar();
-            tar.setBasedir(file);
-            tar.setDestFile(tarFile);
             tar.setProject(new Project())
-            tar.execute()
+            setSourceDirectory(tar, readOnly);
+            tar.setDestFile(tarFile);
+            tar.execute();
+        }
+    }
+
+    public void tgzTo(TestFile tarFile, boolean readOnly) {
+        Tar tar = new Tar();
+        tar.setProject(new Project())
+        setSourceDirectory(tar, readOnly);
+        tar.setDestFile(tarFile);
+        tar.setCompression((Tar.TarCompressionMethod) EnumeratedAttribute.getInstance(Tar.TarCompressionMethod.class, "gzip"));
+        tar.execute();
+    }
+
+    public void tbzTo(TestFile tarFile, boolean readOnly) {
+        Tar tar = new Tar();
+        tar.setProject(new Project())
+        setSourceDirectory(tar, readOnly);
+        tar.setDestFile(tarFile);
+        tar.setCompression((Tar.TarCompressionMethod) EnumeratedAttribute.getInstance(Tar.TarCompressionMethod.class, "bzip2"));
+        tar.execute();
+    }
+
+    void bzip2To(TestFile compressedFile) {
+        def outStr = new FileOutputStream(compressedFile)
+        try {
+            outStr.write('BZ'.getBytes("us-ascii"))
+            def zipStream = new CBZip2OutputStream(outStr)
+            zipStream.bytes = file.bytes
+            zipStream.close()
+        } finally {
+            outStr.close()
+        }
+    }
+
+    void gzipTo(TestFile compressedFile) {
+        def outStr = new GZIPOutputStream(new FileOutputStream(compressedFile))
+        try {
+            outStr.bytes = file.bytes
+        } finally {
+            outStr.close()
         }
     }
 }

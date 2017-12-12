@@ -22,10 +22,14 @@ import org.gradle.test.fixtures.file.TestFile
 
 class NativeInstallationFixture {
     private final TestFile installDir
-    private final OperatingSystem os = OperatingSystem.current()
+    private final OperatingSystem os
 
     NativeInstallationFixture(TestFile installDir) {
+        this(installDir, OperatingSystem.current())
+    }
+    NativeInstallationFixture(TestFile installDir, OperatingSystem os) {
         this.installDir = installDir
+        this.os = os
     }
 
     ExecOutput exec(Object... args) {
@@ -49,6 +53,11 @@ class NativeInstallationFixture {
         def libDir = installDir.file("lib")
         libDir.assertIsDir()
         libDir.file(os.getExecutableName(script.name)).assertIsFile()
+        this
+    }
+
+    NativeInstallationFixture assertNotInstalled() {
+        installDir.assertDoesNotExist()
         this
     }
 

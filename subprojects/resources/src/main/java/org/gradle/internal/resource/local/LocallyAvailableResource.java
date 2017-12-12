@@ -16,10 +16,14 @@
 package org.gradle.internal.resource.local;
 
 import org.gradle.internal.hash.HashValue;
+import org.gradle.internal.resource.Resource;
 
 import java.io.File;
 
-public interface LocallyAvailableResource {
+/**
+ * Represents a file backed local resource.
+ */
+public interface LocallyAvailableResource extends Resource {
 
     File getFile();
 

@@ -18,15 +18,21 @@ package org.gradle.api.internal.artifacts.repositories.resolver;
 
 import org.apache.ivy.core.IvyPatternHelper;
 import org.gradle.api.artifacts.ModuleIdentifier;
+import org.gradle.api.resources.ResourceException;
 import org.gradle.internal.component.model.IvyArtifactName;
 import org.gradle.internal.resolve.result.ResourceAwareResolveResult;
 import org.gradle.internal.resource.ExternalResourceName;
-import org.gradle.internal.resource.ResourceException;
-import org.gradle.internal.resource.transport.ExternalResourceRepository;
+import org.gradle.internal.resource.ResourceExceptions;
+import org.gradle.internal.resource.ExternalResourceRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -55,7 +61,7 @@ public class ResourceVersionLister implements VersionLister {
                         dest.add(versionString);
                     }
                 } catch (Exception e) {
-                    throw ResourceException.failure(versionListPattern.getUri(), String.format("Could not list versions using %s.", pattern), e);
+                    throw ResourceExceptions.failure(versionListPattern.getUri(), String.format("Could not list versions using %s.", pattern), e);
                 }
             }
 
@@ -79,14 +85,14 @@ public class ResourceVersionLister implements VersionLister {
                         return Collections.emptyList();
                     }
                     result.attempted(parent);
-                    List<String> all = repository.list(parent.getUri());
+                    List<String> all = repository.resource(parent).list();
                     if (all == null) {
                         return Collections.emptyList();
                     }
                     LOGGER.debug("found {} urls", all.size());
                     Pattern regexPattern = createRegexPattern(pattern, parentFolderSlashIndex);
                     List<String> ret = filterMatchedValues(all, regexPattern);
-                    LOGGER.debug("{} matched {}" + pattern, ret.size(), pattern);
+                    LOGGER.debug("{} matched {}", ret.size(), pattern);
                     return ret;
                 }
             }
@@ -137,7 +143,7 @@ public class ResourceVersionLister implements VersionLister {
                 }
                 LOGGER.debug("using {} to list all in {}", repository, parent);
                 result.attempted(parent.toString());
-                List<String> paths = repository.list(parent.getUri());
+                List<String> paths = repository.resource(parent).list();
                 if (paths == null) {
                     return Collections.emptyList();
                 }

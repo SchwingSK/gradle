@@ -16,7 +16,9 @@
 package org.gradle.tooling.model.eclipse;
 
 import org.gradle.tooling.model.DomainObjectSet;
+import org.gradle.tooling.model.HasGradleProject;
 import org.gradle.tooling.model.HierarchicalElement;
+import org.gradle.tooling.model.UnsupportedMethodException;
 
 import java.io.File;
 
@@ -25,7 +27,8 @@ import java.io.File;
  *
  * @since 1.0-milestone-3
  */
-public interface HierarchicalEclipseProject extends HierarchicalElement {
+public interface HierarchicalEclipseProject extends HierarchicalElement, HasGradleProject {
+
     /**
      * {@inheritDoc}
      */
@@ -65,7 +68,8 @@ public interface HierarchicalEclipseProject extends HierarchicalElement {
      *
      * @return The project directory.
      * @since 1.0-milestone-9
+     * @throws UnsupportedMethodException For Gradle versions older than 1.0-milestone-9, where this method is not supported.
      */
-    File getProjectDirectory();
+    File getProjectDirectory() throws UnsupportedMethodException;
 
 }

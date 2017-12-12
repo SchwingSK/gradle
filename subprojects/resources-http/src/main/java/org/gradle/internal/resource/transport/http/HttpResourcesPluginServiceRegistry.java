@@ -16,27 +16,38 @@
 
 package org.gradle.internal.resource.transport.http;
 
+import org.gradle.authentication.http.BasicAuthentication;
+import org.gradle.authentication.http.DigestAuthentication;
+import org.gradle.internal.authentication.AuthenticationSchemeRegistry;
+import org.gradle.internal.authentication.DefaultBasicAuthentication;
+import org.gradle.internal.authentication.DefaultDigestAuthentication;
 import org.gradle.internal.resource.connector.ResourceConnectorFactory;
 import org.gradle.internal.service.ServiceRegistration;
-import org.gradle.internal.service.scopes.PluginServiceRegistry;
+import org.gradle.internal.service.scopes.AbstractPluginServiceRegistry;
 
-public class HttpResourcesPluginServiceRegistry implements PluginServiceRegistry {
+public class HttpResourcesPluginServiceRegistry extends AbstractPluginServiceRegistry {
     public void registerGlobalServices(ServiceRegistration registration) {
         registration.addProvider(new GlobalScopeServices());
     }
 
     public void registerBuildServices(ServiceRegistration registration) {
-    }
-
-    public void registerGradleServices(ServiceRegistration registration) {
-    }
-
-    public void registerProjectServices(ServiceRegistration registration) {
+        registration.addProvider(new AuthenticationSchemeAction());
     }
 
     private static class GlobalScopeServices {
-        ResourceConnectorFactory createHttpConnectorFactory() {
-            return new HttpConnectorFactory();
+        SslContextFactory createSslContextFactory() {
+            return new DefaultSslContextFactory();
+        }
+
+        ResourceConnectorFactory createHttpConnectorFactory(SslContextFactory sslContextFactory) {
+            return new HttpConnectorFactory(sslContextFactory);
+        }
+    }
+
+    private static class AuthenticationSchemeAction {
+        public void configure(ServiceRegistration registration, AuthenticationSchemeRegistry authenticationSchemeRegistry) {
+            authenticationSchemeRegistry.registerScheme(BasicAuthentication.class, DefaultBasicAuthentication.class);
+            authenticationSchemeRegistry.registerScheme(DigestAuthentication.class, DefaultDigestAuthentication.class);
         }
     }
 }

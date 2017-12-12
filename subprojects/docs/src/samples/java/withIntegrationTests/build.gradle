@@ -13,7 +13,7 @@ sourceSets {
 
 dependencies {
     testCompile 'junit:junit:4.12'
-    integrationTestCompile 'commons-collections:commons-collections:3.2'
+    integrationTestCompile 'commons-collections:commons-collections:3.2.2'
     integrationTestCompile sourceSets.main.output
     integrationTestCompile configurations.testCompile
     integrationTestCompile sourceSets.test.output
@@ -23,7 +23,7 @@ dependencies {
 task integrationTest(type: Test, dependsOn: jar) {
     group 'Verification'
     description 'Runs the integration tests.'
-    testClassesDir = sourceSets.integrationTest.output.classesDir
+    testClassesDirs = sourceSets.integrationTest.output.classesDirs
     classpath = sourceSets.integrationTest.runtimeClasspath
     systemProperties['jar.path'] = jar.archivePath
 }

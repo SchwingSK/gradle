@@ -18,8 +18,9 @@ package org.gradle.api.internal.initialization
 
 import org.gradle.api.internal.initialization.loadercache.ClassLoaderCache
 import org.gradle.api.internal.initialization.loadercache.DefaultClassLoaderCache
-import org.gradle.api.internal.initialization.loadercache.FileClassPathSnapshotter
+import org.gradle.api.internal.initialization.loadercache.FileClasspathHasher
 import org.gradle.internal.classloader.CachingClassLoader
+import org.gradle.internal.classloader.DefaultHashingClassLoaderFactory
 import org.gradle.internal.classpath.ClassPath
 import org.gradle.internal.classpath.DefaultClassPath
 import org.gradle.test.fixtures.file.TestFile
@@ -34,7 +35,8 @@ class DefaultClassLoaderScopeTest extends Specification {
     ClassLoaderScope root
     ClassLoaderScope scope
 
-    ClassLoaderCache classLoaderCache = new DefaultClassLoaderCache(new FileClassPathSnapshotter())
+    def classpathHasher = new FileClasspathHasher()
+    ClassLoaderCache classLoaderCache = new DefaultClassLoaderCache(new DefaultHashingClassLoaderFactory(classpathHasher), classpathHasher)
 
     @Rule
     TestNameTestDirectoryProvider testDirectoryProvider = new TestNameTestDirectoryProvider()
@@ -100,9 +102,9 @@ class DefaultClassLoaderScopeTest extends Specification {
         file("export/1/foo") << "foo"
         file("export/2/bar") << "bar"
         scope.
-                export(classPath("export/1")).
-                export(classPath("export/2")).
-                lock()
+            export(classPath("export/1")).
+            export(classPath("export/2")).
+            lock()
 
         then:
         scope.exportClassLoader.getResource("root").text == "root"
@@ -116,9 +118,9 @@ class DefaultClassLoaderScopeTest extends Specification {
         file("local/1/foo") << "foo"
         file("local/2/bar") << "bar"
         scope.
-                local(classPath("local/1")).
-                local(classPath("local/2")).
-                lock()
+            local(classPath("local/1")).
+            local(classPath("local/2")).
+            lock()
 
         then:
         scope.localClassLoader.getResource("root").text == "root"
@@ -146,9 +148,9 @@ class DefaultClassLoaderScopeTest extends Specification {
         file("local/local") << "bar"
         file("export/export") << "bar"
         scope.
-                local(classPath("local")).
-                export(classPath("export")).
-                lock()
+            local(classPath("local")).
+            export(classPath("export")).
+            lock()
 
         then:
         scope.exportClassLoader.getResource("export").text == "bar"
@@ -166,9 +168,9 @@ class DefaultClassLoaderScopeTest extends Specification {
         copyTo(TestClass1, file("local"))
         copyTo(TestClass2, file("export"))
         scope.
-                local(classPath("local")).
-                export(classPath("export")).
-                lock()
+            local(classPath("local")).
+            export(classPath("export")).
+            lock()
 
         then:
         def local = scope.localClassLoader.loadClass(TestClass1.name)
@@ -187,8 +189,8 @@ class DefaultClassLoaderScopeTest extends Specification {
         file("local/local") << "bar"
         file("export/export") << "bar"
         scope.
-                local(classPath("local")).
-                export(classPath("export"))
+            local(classPath("local")).
+            export(classPath("export"))
 
         then:
         scope.exportClassLoader instanceof CachingClassLoader
@@ -210,8 +212,8 @@ class DefaultClassLoaderScopeTest extends Specification {
         copyTo(TestClass1, file("local"))
         copyTo(TestClass2, file("export"))
         scope.
-                local(classPath("local")).
-                export(classPath("export"))
+            local(classPath("local")).
+            export(classPath("export"))
 
         then:
         def local = scope.localClassLoader.loadClass(TestClass1.name)
@@ -327,6 +329,94 @@ class DefaultClassLoaderScopeTest extends Specification {
 
         then:
         classLoaderCache.size() == 0
+    }
+
+    static ClassLoader isolatedLoader(File... paths) {
+        new URLClassLoader(paths*.toURI()*.toURL() as URL[], ClassLoader.getSystemClassLoader().parent)
+    }
+
+    def "can attach export loader with no extra classpath before realize"() {
+        when:
+        def attachLoaderPath = file("attach")
+        copyTo(TestClass1, attachLoaderPath)
+        def attachLoader = isolatedLoader(attachLoaderPath)
+        def exportLoader = scope.export(attachLoader).lock().exportClassLoader
+        def localLoader = scope.localClassLoader
+
+        then:
+        exportLoader.loadClass(TestClass1.name)
+        localLoader.loadClass(TestClass1.name)
+    }
+
+    def "can attach export loader with extra classpath before realize"() {
+        when:
+        def attachLoaderPath = file("attach")
+        def exportClasspath = file("path")
+        copyTo(TestClass1, attachLoaderPath)
+        copyTo(TestClass2, exportClasspath)
+        def attachLoader = isolatedLoader(attachLoaderPath)
+        def exportLoader = scope
+            .export(classPath("path"))
+            .export(attachLoader)
+            .lock()
+            .exportClassLoader
+        def localLoader = scope.localClassLoader
+
+        then:
+        exportLoader.loadClass(TestClass1.name)
+        exportLoader.loadClass(TestClass2.name)
+        localLoader.loadClass(TestClass1.name)
+        localLoader.loadClass(TestClass2.name)
+
+        when:
+        exportLoader.loadClass(TestClass2.name).classLoader.loadClass(TestClass1.name)
+
+        then:
+        thrown ClassNotFoundException
+
+        when:
+        exportLoader.loadClass(TestClass1.name).classLoader.loadClass(TestClass2.name)
+
+        then:
+        thrown ClassNotFoundException
+
+        and:
+        !scope.defines(exportLoader.loadClass(TestClass1.name))
+        scope.defines(exportLoader.loadClass(TestClass2.name))
+    }
+
+    def "can't add exported loader after lock"() {
+        when:
+        scope.lock().export(isolatedLoader(file("foo")))
+
+        then:
+        thrown IllegalStateException
+    }
+
+    def "can add export loaders after eagerly creating"() {
+        when:
+        def attachLoaderPath = file("attach")
+        copyTo(TestClass1, attachLoaderPath)
+        def attachLoader = isolatedLoader(attachLoaderPath)
+        def exportLoader = scope.export(attachLoader).exportClassLoader
+        def localLoader = scope.localClassLoader
+
+        then:
+        exportLoader.loadClass(TestClass1.name)
+        localLoader.loadClass(TestClass1.name)
+
+        when:
+        def second = file("second")
+        copyTo(TestClass2, second)
+        scope.export(isolatedLoader(second))
+
+        then:
+        exportLoader.loadClass(TestClass2.name)
+        localLoader.loadClass(TestClass2.name)
+
+        and:
+        !scope.defines(exportLoader.loadClass(TestClass1.name))
+        !scope.defines(exportLoader.loadClass(TestClass2.name))
     }
 
     void copyTo(Class<?> clazz, TestFile destDir) {

@@ -16,18 +16,22 @@
 
 package org.gradle.api.internal.artifacts.ivyservice.ivyresolve.parser;
 
-import org.gradle.internal.component.external.model.MutableModuleComponentResolveMetaData;
-import org.gradle.internal.resource.local.DefaultLocallyAvailableExternalResource;
+import org.gradle.internal.component.external.model.MutableModuleComponentResolveMetadata;
+import org.gradle.internal.hash.HashUtil;
+import org.gradle.internal.resource.local.FileResourceRepository;
 import org.gradle.internal.resource.local.LocallyAvailableExternalResource;
-import org.gradle.internal.resource.local.DefaultLocallyAvailableResource;
-import org.gradle.internal.resource.local.LocallyAvailableResource;
 
 import java.io.File;
 
-public abstract class AbstractModuleDescriptorParser<T extends MutableModuleComponentResolveMetaData> implements MetaDataParser<T> {
+public abstract class AbstractModuleDescriptorParser<T extends MutableModuleComponentResolveMetadata> implements MetaDataParser<T> {
+    private final FileResourceRepository fileResourceRepository;
+
+    public AbstractModuleDescriptorParser(FileResourceRepository fileResourceRepository) {
+        this.fileResourceRepository = fileResourceRepository;
+    }
+
     public T parseMetaData(DescriptorParseContext ivySettings, File descriptorFile, boolean validate) throws MetaDataParseException {
-        LocallyAvailableResource localResource = new DefaultLocallyAvailableResource(descriptorFile);
-        LocallyAvailableExternalResource resource = new DefaultLocallyAvailableExternalResource(descriptorFile.toURI(), localResource);
+        LocallyAvailableExternalResource resource = fileResourceRepository.resource(descriptorFile);
         return parseDescriptor(ivySettings, resource, validate);
     }
 
@@ -41,7 +45,9 @@ public abstract class AbstractModuleDescriptorParser<T extends MutableModuleComp
 
     protected T parseDescriptor(DescriptorParseContext ivySettings, LocallyAvailableExternalResource resource, boolean validate) throws MetaDataParseException {
         try {
-            return doParseDescriptor(ivySettings, resource, validate);
+            T metadata = doParseDescriptor(ivySettings, resource, validate);
+            metadata.setContentHash(HashUtil.createHash(resource.getFile(), "MD5"));
+            return metadata;
         } catch (MetaDataParseException e) {
             throw e;
         } catch (Exception e) {

@@ -27,7 +27,7 @@ class IvyPublishValidationIntegTest extends AbstractIvyPublishIntegTest {
         given:
         file("content-file") << "some content"
         def organisation = identifier.safeForFileName().decorate("org")
-        def moduleName = identifier.safeForFileName().decorate("module")
+        def moduleName = identifier.safeForGradleDomainObjectName().decorate("module")
         def version = identifier.safeForFileName().decorate("revision")
         def extraValue = identifier.decorate("extra")
         def resolver = identifier.decorate("description")
@@ -76,7 +76,10 @@ class IvyPublishValidationIntegTest extends AbstractIvyPublishIntegTest {
         ]
 
         and:
-        resolveArtifactsWithStatus(module, status) == [moduleName + '-' + version + '.jar']
+        resolveArtifacts(module) {
+            setStatus(status)
+            expectFiles "${moduleName}-${version}.jar"
+        }
 
         where:
         identifier << Identifier.all
@@ -88,7 +91,7 @@ class IvyPublishValidationIntegTest extends AbstractIvyPublishIntegTest {
         file("content-file") << "some content"
 
         def organisation = identifier.safeForFileName().decorate("org")
-        def moduleName = identifier.safeForFileName().decorate("module")
+        def moduleName = identifier.safeForGradleDomainObjectName().decorate("module")
         def version = identifier.safeForFileName().decorate("revision")
         def module = ivyRepo.module(organisation, moduleName, version)
 
@@ -125,7 +128,15 @@ class IvyPublishValidationIntegTest extends AbstractIvyPublishIntegTest {
         module.assertArtifactsPublished("ivy-${version}.xml", "${artifact}-${version}-${classifier}.${extension}")
 
         and:
-        resolveArtifacts(module, conf) == ["${artifact}-${version}-${classifier}.${extension}"]
+        resolveArtifacts(module) {
+            configuration = conf
+            withoutModuleMetadata {
+                expectFiles "${artifact}-${version}-${classifier}.${extension}"
+            }
+            withModuleMetadata {
+                noComponentPublished()
+            }
+        }
 
         where:
         identifier << Identifier.all

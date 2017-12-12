@@ -16,9 +16,25 @@
 
 package org.gradle.api.internal.artifacts.dsl;
 
-import org.gradle.api.Nullable;
 import org.gradle.api.artifacts.ModuleIdentifier;
 
+import javax.annotation.Nullable;
+
 public interface ModuleReplacementsData {
+    ModuleReplacementsData NO_OP = new ModuleReplacementsData() {
+        @Nullable
+        @Override
+        public ModuleIdentifier getReplacementFor(ModuleIdentifier sourceModule) {
+            return null;
+        }
+
+        @Override
+        public boolean participatesInReplacements(ModuleIdentifier moduleId) {
+            return false;
+        }
+    };
+
     @Nullable ModuleIdentifier getReplacementFor(ModuleIdentifier sourceModule);
+
+    boolean participatesInReplacements(ModuleIdentifier moduleId);
 }

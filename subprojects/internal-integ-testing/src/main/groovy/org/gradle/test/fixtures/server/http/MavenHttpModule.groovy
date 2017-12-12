@@ -16,29 +16,33 @@
 package org.gradle.test.fixtures.server.http
 
 import org.gradle.test.fixtures.HttpModule
-import org.gradle.test.fixtures.file.TestFile
 import org.gradle.test.fixtures.maven.DelegatingMavenModule
 import org.gradle.test.fixtures.maven.MavenFileModule
-import org.gradle.test.fixtures.maven.MavenModule
+import org.gradle.test.fixtures.maven.RemoteMavenModule
 
-class MavenHttpModule extends DelegatingMavenModule<MavenHttpModule> implements MavenModule, HttpModule {
+class MavenHttpModule extends DelegatingMavenModule<MavenHttpModule> implements RemoteMavenModule, HttpModule {
     private final HttpServer server
-    private final String moduleRootPath
+    private final String repoRoot
+    private final String moduleRootUriPath
+    private final String uriPath
     private final MavenFileModule backingModule
 
     MavenHttpModule(HttpServer server, String repoRoot, MavenFileModule backingModule) {
         super(backingModule)
         this.backingModule = backingModule
         this.server = server
-        this.moduleRootPath = "${repoRoot}/${backingModule.groupId.replace('.', '/')}/${backingModule.artifactId}"
-    }
-
-    protected String getModuleVersionPath() {
-        "${moduleRootPath}/${backingModule.version}"
+        this.repoRoot = repoRoot
+        this.moduleRootUriPath = "${repoRoot}/${backingModule.moduleRootPath}"
+        this.uriPath = "${repoRoot}/${backingModule.path}"
     }
 
     HttpArtifact getArtifact(Map options = [:]) {
-        return new MavenHttpArtifact(server, "${moduleRootPath}/${backingModule.version}", backingModule, options)
+        return new MavenHttpArtifact(server, repoRoot, backingModule, backingModule.getArtifact(options))
+    }
+
+    @Override
+    HttpArtifact getArtifact(String relativePath) {
+        return new MavenHttpArtifact(server, repoRoot, backingModule, backingModule.getArtifact(relativePath))
     }
 
     /**
@@ -47,7 +51,7 @@ class MavenHttpModule extends DelegatingMavenModule<MavenHttpModule> implements 
      */
     HttpArtifact artifact(Map<String, ?> options = [:]) {
         backingModule.artifact(options)
-        return new MavenHttpArtifact(server, "${moduleRootPath}/${backingModule.version}", backingModule, options)
+        return getArtifact(options)
     }
 
     MavenHttpModule withSourceAndJavadoc() {
@@ -56,25 +60,33 @@ class MavenHttpModule extends DelegatingMavenModule<MavenHttpModule> implements 
         return this
     }
 
-    MavenHttpModule withNoMetaData() {
-        backingModule.withNoMetaData()
+    MavenHttpModule withNoPom() {
+        backingModule.withNoPom()
         return this
     }
 
     PomHttpArtifact getPom() {
-        return new PomHttpArtifact(server, getModuleVersionPath(), backingModule)
+        return new PomHttpArtifact(server, uriPath, backingModule)
+    }
+
+    @Override
+    HttpArtifact getModuleMetadata() {
+        return getArtifact(type: 'module')
     }
 
     MetaDataArtifact getRootMetaData() {
-        return new MetaDataArtifact(server, "$moduleRootPath", backingModule)
-    }
-
-    TestFile getRootMetaDataFile() {
-        return backingModule.rootMetaDataFile
+        return new MetaDataArtifact(server, moduleRootUriPath, backingModule)
     }
 
     MavenHttpModule allowAll() {
-        server.allowGetOrHead(moduleVersionPath, backingModule.moduleDir)
+        server.allowGetOrHead(uriPath, backingModule.moduleDir)
+        return this
+    }
+
+    MavenHttpModule revalidate() {
+        server.allowGetOrHeadMissing(pomPath)
+        server.allowGetOrHeadMissing(metaDataPath)
+        server.allowGetOrHeadWithRevalidate(artifactPath, artifactFile)
         return this
     }
 
@@ -89,14 +101,14 @@ class MavenHttpModule extends DelegatingMavenModule<MavenHttpModule> implements 
     }
 
     String getMetaDataPath() {
-        "$moduleVersionPath/$metaDataFile.name"
+        return "$uriPath/$metaDataFile.name"
     }
 
     String getArtifactPath() {
-        "$moduleVersionPath/$artifactFile.name"
+        return "$uriPath/$artifactFile.name"
     }
 
     String getPomPath() {
-        "$moduleVersionPath/$pomFile.name"
+        return "$uriPath/$pomFile.name"
     }
 }

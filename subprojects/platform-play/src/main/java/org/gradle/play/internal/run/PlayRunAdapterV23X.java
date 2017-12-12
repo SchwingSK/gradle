@@ -16,6 +16,12 @@
 
 package org.gradle.play.internal.run;
 
+import org.gradle.api.Transformer;
+import org.gradle.util.CollectionUtils;
+
+import java.io.File;
+import java.util.List;
+
 public class PlayRunAdapterV23X extends DefaultVersionedPlayRunAdapter {
     @Override
     protected Class<?> getBuildLinkClass(ClassLoader classLoader) throws ClassNotFoundException {
@@ -32,4 +38,15 @@ public class PlayRunAdapterV23X extends DefaultVersionedPlayRunAdapter {
         return docsClassLoader.loadClass("play.docs.BuildDocHandlerFactory");
     }
 
+    @Override
+    protected ClassLoader createAssetsClassLoader(File assetsJar, Iterable<File> assetsDirs, ClassLoader classLoader) {
+        List<AssetsClassLoader.AssetDir> assetDirs = CollectionUtils.collect(assetsDirs, new Transformer<AssetsClassLoader.AssetDir, File>() {
+            @Override
+            public AssetsClassLoader.AssetDir transform(File file) {
+                // TODO: This prefix shouldn't be hardcoded
+                return new AssetsClassLoader.AssetDir("public", file);
+            }
+        });
+        return new AssetsClassLoader(classLoader, assetDirs);
+    }
 }

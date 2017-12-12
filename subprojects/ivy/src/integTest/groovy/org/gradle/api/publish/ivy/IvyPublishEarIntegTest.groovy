@@ -31,12 +31,10 @@ class IvyPublishEarIntegTest extends AbstractIvyPublishIntegTest {
             group = 'org.gradle.test'
             version = '1.9'
 
-            repositories {
-                mavenCentral()
-            }
+            ${mavenCentralRepository()}
 
             dependencies {
-                compile "commons-collections:commons-collections:3.2.1"
+                compile "commons-collections:commons-collections:3.2.2"
                 runtime "commons-io:commons-io:1.4"
             }
 
@@ -68,7 +66,7 @@ class IvyPublishEarIntegTest extends AbstractIvyPublishIntegTest {
         ivyModule.assertPublishedAsEarModule()
 
         and: "correct configurations and dependencies declared"
-        with (ivyModule.parsedIvy) {
+        with(ivyModule.parsedIvy) {
             configurations.keySet() == ["default", "master"] as Set
             configurations.default.extend == ["master"] as Set
             configurations.master.extend == null
@@ -77,6 +75,14 @@ class IvyPublishEarIntegTest extends AbstractIvyPublishIntegTest {
         }
 
         and: "can resolve ear module"
-        resolveArtifacts(ivyModule) == ["publishEar-1.9.ear"]
+        resolveArtifacts(ivyModule) {
+            withoutModuleMetadata {
+                expectFiles "publishEar-1.9.ear"
+            }
+            withModuleMetadata {
+                noComponentPublished()
+            }
+        }
     }
+
 }

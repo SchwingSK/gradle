@@ -18,8 +18,20 @@ package org.gradle.language.nativeplatform.tasks;
 import org.gradle.api.DefaultTask;
 import org.gradle.api.Incubating;
 import org.gradle.api.file.ConfigurableFileCollection;
+import org.gradle.api.file.DirectoryProperty;
 import org.gradle.api.file.FileCollection;
-import org.gradle.api.tasks.*;
+import org.gradle.api.internal.file.FileCollectionFactory;
+import org.gradle.api.internal.file.TaskFileVarFactory;
+import org.gradle.api.provider.ListProperty;
+import org.gradle.api.tasks.Input;
+import org.gradle.api.tasks.InputFiles;
+import org.gradle.api.tasks.Internal;
+import org.gradle.api.tasks.Nested;
+import org.gradle.api.tasks.OutputDirectory;
+import org.gradle.api.tasks.PathSensitive;
+import org.gradle.api.tasks.PathSensitivity;
+import org.gradle.api.tasks.TaskAction;
+import org.gradle.api.tasks.WorkResult;
 import org.gradle.api.tasks.incremental.IncrementalTaskInputs;
 import org.gradle.internal.Cast;
 import org.gradle.internal.operations.logging.BuildOperationLogger;
@@ -32,15 +44,11 @@ import org.gradle.nativeplatform.platform.internal.NativePlatformInternal;
 import org.gradle.nativeplatform.toolchain.NativeToolChain;
 import org.gradle.nativeplatform.toolchain.internal.NativeCompileSpec;
 import org.gradle.nativeplatform.toolchain.internal.NativeToolChainInternal;
-import org.gradle.nativeplatform.toolchain.internal.PCHObjectDirectoryGeneratorUtil;
 import org.gradle.nativeplatform.toolchain.internal.PlatformToolProvider;
 
 import javax.inject.Inject;
-import java.io.File;
-import java.util.List;
+import java.util.LinkedHashMap;
 import java.util.Map;
-import java.util.Set;
-import java.util.concurrent.Callable;
 
 /**
  * Compiles native source files into object files.
@@ -50,34 +58,41 @@ public abstract class AbstractNativeCompileTask extends DefaultTask {
     private NativeToolChainInternal toolChain;
     private NativePlatformInternal targetPlatform;
     private boolean positionIndependentCode;
-    private File objectFileDir;
-    private ConfigurableFileCollection includes;
-    private ConfigurableFileCollection source;
-    private Map<String, String> macros;
-    private List<String> compilerArgs;
-    private File prefixHeaderFile;
-    private Set<String> preCompiledHeaders;
-    private ConfigurableFileCollection preCompiledHeaderInclude;
+    private boolean debug;
+    private boolean optimize;
+    private final DirectoryProperty objectFileDir;
+    private final ConfigurableFileCollection includes;
+    private final ConfigurableFileCollection source;
+    private final Map<String, String> macros = new LinkedHashMap<String, String>();
+    private final ListProperty<String> compilerArgs;
+    private final IncrementalCompilerBuilder.IncrementalCompiler incrementalCompiler;
 
     public AbstractNativeCompileTask() {
         includes = getProject().files();
-        source = getProject().files();
-        preCompiledHeaderInclude = getProject().files();
-        getInputs().property("outputType", new Callable<String>() {
-            @Override
-            public String call() throws Exception {
-                return NativeToolChainInternal.Identifier.identify(toolChain, targetPlatform);
-            }
-        });
+        source = getTaskFileVarFactory().newInputFileCollection(this);
+        objectFileDir = newOutputDirectory();
+        compilerArgs = getProject().getObjects().listProperty(String.class);
+        incrementalCompiler = getIncrementalCompilerBuilder().newCompiler(this, source, includes);
+        dependsOn(includes);
     }
 
     @Inject
-    public IncrementalCompilerBuilder getIncrementalCompilerBuilder() {
+    protected TaskFileVarFactory getTaskFileVarFactory() {
         throw new UnsupportedOperationException();
     }
 
     @Inject
-    public BuildOperationLoggerFactory getOperationLoggerFactory() {
+    protected IncrementalCompilerBuilder getIncrementalCompilerBuilder() {
+        throw new UnsupportedOperationException();
+    }
+
+    @Inject
+    protected BuildOperationLoggerFactory getOperationLoggerFactory() {
+        throw new UnsupportedOperationException();
+    }
+
+    @Inject
+    protected FileCollectionFactory getFileCollectionFactory() {
         throw new UnsupportedOperationException();
     }
 
@@ -87,30 +102,30 @@ public abstract class AbstractNativeCompileTask extends DefaultTask {
         NativeCompileSpec spec = createCompileSpec();
         spec.setTargetPlatform(targetPlatform);
         spec.setTempDir(getTemporaryDir());
-        spec.setObjectFileDir(getObjectFileDir());
-        spec.include(getIncludes());
+        spec.setObjectFileDir(objectFileDir.get().getAsFile());
+        spec.include(includes);
         spec.source(getSource());
         spec.setMacros(getMacros());
-        spec.args(getCompilerArgs());
+        spec.args(getCompilerArgs().get());
         spec.setPositionIndependentCode(isPositionIndependentCode());
+        spec.setDebuggable(isDebuggable());
+        spec.setOptimized(isOptimized());
         spec.setIncrementalCompile(inputs.isIncremental());
         spec.setOperationLogger(operationLogger);
 
-        if (!preCompiledHeaderInclude.isEmpty()) {
-            File pchDir = PCHObjectDirectoryGeneratorUtil.generatePCHObjectDirectory(spec.getTempDir(), getPrefixHeaderFile(), preCompiledHeaderInclude.getSingleFile());
-            spec.setPrefixHeaderFile(new File(pchDir, prefixHeaderFile.getName()));
-            spec.setPreCompiledHeaderObjectFile(new File(pchDir, preCompiledHeaderInclude.getSingleFile().getName()));
-            spec.setPreCompiledHeaders(getPreCompiledHeaders());
-        }
+        configureSpec(spec);
 
         PlatformToolProvider platformToolProvider = toolChain.select(targetPlatform);
         setDidWork(doCompile(spec, platformToolProvider).getDidWork());
     }
 
+    protected void configureSpec(NativeCompileSpec spec) {
+    }
+
     private <T extends NativeCompileSpec> WorkResult doCompile(T spec, PlatformToolProvider platformToolProvider) {
         Class<T> specType = Cast.uncheckedCast(spec.getClass());
         Compiler<T> baseCompiler = platformToolProvider.newCompiler(specType);
-        Compiler<T> incrementalCompiler = getIncrementalCompilerBuilder().createIncrementalCompiler(this, baseCompiler, toolChain);
+        Compiler<T> incrementalCompiler = this.incrementalCompiler.createCompiler(baseCompiler);
         Compiler<T> loggingCompiler = BuildOperationLoggingCompilerDecorator.wrap(incrementalCompiler);
         return loggingCompiler.execute(spec);
     }
@@ -120,17 +135,20 @@ public abstract class AbstractNativeCompileTask extends DefaultTask {
     /**
      * The tool chain used for compilation.
      */
+    @Internal
     public NativeToolChain getToolChain() {
         return toolChain;
     }
 
     public void setToolChain(NativeToolChain toolChain) {
         this.toolChain = (NativeToolChainInternal) toolChain;
+        incrementalCompiler.setToolChain(this.toolChain);
     }
 
     /**
      * The platform being targeted.
      */
+    @Nested
     public NativePlatform getTargetPlatform() {
         return targetPlatform;
     }
@@ -152,22 +170,58 @@ public abstract class AbstractNativeCompileTask extends DefaultTask {
     }
 
     /**
-     * The directory where object files will be generated.
+     * Should the compiler generate debuggable code?
+     *
+     * @since 4.3
      */
-    @OutputDirectory
-    public File getObjectFileDir() {
-        return objectFileDir;
+    @Input
+    public boolean isDebuggable() {
+        return debug;
     }
 
-    public void setObjectFileDir(File objectFileDir) {
-        this.objectFileDir = objectFileDir;
+    /**
+     * Should the compiler generate debuggable code?
+     *
+     * @since 4.3
+     */
+    public void setDebuggable(boolean debug) {
+        this.debug = debug;
+    }
+
+    /**
+     * Should the compiler generate optimized code?
+     *
+     * @since 4.3
+     */
+    @Input
+    public boolean isOptimized() {
+        return optimize;
+    }
+
+    /**
+     * Should the compiler generate optimized code?
+     *
+     * @since 4.3
+     */
+    public void setOptimized(boolean optimize) {
+        this.optimize = optimize;
+    }
+
+    /**
+     * The directory where object files will be generated.
+     *
+     * @since 4.3
+     */
+    @OutputDirectory
+    public DirectoryProperty getObjectFileDir() {
+        return objectFileDir;
     }
 
     /**
      * Returns the header directories to be used for compilation.
      */
-    @InputFiles
-    public FileCollection getIncludes() {
+    @Internal("The paths for include directories are tracked via the includePaths property, the contents are tracked via discovered inputs")
+    public ConfigurableFileCollection getIncludes() {
         return includes;
     }
 
@@ -182,7 +236,8 @@ public abstract class AbstractNativeCompileTask extends DefaultTask {
      * Returns the source files to be compiled.
      */
     @InputFiles
-    public FileCollection getSource() {
+    @PathSensitive(PathSensitivity.RELATIVE)
+    public ConfigurableFileCollection getSource() {
         return source;
     }
 
@@ -202,52 +257,28 @@ public abstract class AbstractNativeCompileTask extends DefaultTask {
     }
 
     public void setMacros(Map<String, String> macros) {
-        this.macros = macros;
+        this.macros.clear();
+        this.macros.putAll(macros);
     }
 
     /**
-     * Additional arguments to provide to the compiler.
+     * <em>Additional</em> arguments to provide to the compiler.
+     *
+     * @since 4.3
      */
     @Input
-    public List<String> getCompilerArgs() {
+    public ListProperty<String> getCompilerArgs() {
         return compilerArgs;
     }
 
-    public void setCompilerArgs(List<String> compilerArgs) {
-        this.compilerArgs = compilerArgs;
-    }
-
     /**
-     * Returns the pre-compiled header file to be used during compilation
-     */
-    public File getPrefixHeaderFile() {
-        return prefixHeaderFile;
-    }
-
-    public void setPrefixHeaderFile(File prefixHeaderFile) {
-        this.prefixHeaderFile = prefixHeaderFile;
-    }
-
-    /**
-     * Returns the pre-compiled header object file to be used during compilation
+     * The set of dependent headers. This is used for up-to-date checks only.
+     *
+     * @since 4.3
      */
     @InputFiles
-    public FileCollection getPreCompiledHeaderInclude() {
-        return preCompiledHeaderInclude;
-    }
-
-    /**
-     * Set the pre-compiled header the compiler should use.
-     */
-    public void preCompiledHeaderInclude(Object preCompiledHeader) {
-        preCompiledHeaderInclude.from(preCompiledHeader);
-    }
-
-    public Set<String> getPreCompiledHeaders() {
-        return preCompiledHeaders;
-    }
-
-    public void setPreCompiledHeaders(Set<String> preCompiledHeaders) {
-        this.preCompiledHeaders = preCompiledHeaders;
+    @PathSensitive(PathSensitivity.NAME_ONLY)
+    protected FileCollection getHeaderDependencies() {
+        return incrementalCompiler.getHeaderFiles();
     }
 }

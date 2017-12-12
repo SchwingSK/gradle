@@ -17,22 +17,32 @@
 package org.gradle.language.nativeplatform.internal.registry;
 
 import org.gradle.internal.service.ServiceRegistration;
-import org.gradle.internal.service.scopes.PluginServiceRegistry;
+import org.gradle.internal.service.scopes.AbstractPluginServiceRegistry;
+import org.gradle.language.cpp.internal.NativeDependencyCache;
 import org.gradle.language.nativeplatform.internal.incremental.DefaultCompilationStateCacheFactory;
-import org.gradle.language.nativeplatform.internal.incremental.IncrementalCompilerBuilder;
+import org.gradle.language.nativeplatform.internal.incremental.DefaultIncrementalCompilerBuilder;
+import org.gradle.language.nativeplatform.internal.incremental.sourceparser.CachingCSourceParser;
+import org.gradle.language.swift.internal.SwiftStdlibToolLocator;
 
-public class NativeLanguageServices implements PluginServiceRegistry {
-    public void registerGlobalServices(ServiceRegistration registration) {
-    }
-
-    public void registerBuildServices(ServiceRegistration registration) {
-    }
-
+public class NativeLanguageServices extends AbstractPluginServiceRegistry {
+    @Override
     public void registerGradleServices(ServiceRegistration registration) {
         registration.add(DefaultCompilationStateCacheFactory.class);
+        registration.add(CachingCSourceParser.class);
     }
 
+    @Override
+    public void registerBuildSessionServices(ServiceRegistration registration) {
+        registration.add(SwiftStdlibToolLocator.class);
+    }
+
+    @Override
+    public void registerBuildServices(ServiceRegistration registration) {
+        registration.add(NativeDependencyCache.class);
+    }
+
+    @Override
     public void registerProjectServices(ServiceRegistration registration) {
-        registration.add(IncrementalCompilerBuilder.class);
+        registration.add(DefaultIncrementalCompilerBuilder.class);
     }
 }

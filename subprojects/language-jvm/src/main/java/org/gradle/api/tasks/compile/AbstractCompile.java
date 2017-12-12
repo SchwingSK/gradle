@@ -16,7 +16,12 @@
 package org.gradle.api.tasks.compile;
 
 import org.gradle.api.file.FileCollection;
-import org.gradle.api.tasks.*;
+import org.gradle.api.provider.Property;
+import org.gradle.api.provider.Provider;
+import org.gradle.api.tasks.Classpath;
+import org.gradle.api.tasks.Input;
+import org.gradle.api.tasks.OutputDirectory;
+import org.gradle.api.tasks.SourceTask;
 
 import java.io.File;
 
@@ -24,10 +29,14 @@ import java.io.File;
  * The base class for all JVM-based language compilation tasks.
  */
 public abstract class AbstractCompile extends SourceTask {
-    private File destinationDir;
+    private final Property<File> destinationDir;
+    private FileCollection classpath;
     private String sourceCompatibility;
     private String targetCompatibility;
-    private FileCollection classpath;
+
+    public AbstractCompile() {
+        this.destinationDir = getProject().getObjects().property(File.class);
+    }
 
     protected abstract void compile();
 
@@ -36,7 +45,7 @@ public abstract class AbstractCompile extends SourceTask {
      *
      * @return The classpath.
      */
-    @InputFiles
+    @Classpath
     public FileCollection getClasspath() {
         return classpath;
     }
@@ -57,7 +66,7 @@ public abstract class AbstractCompile extends SourceTask {
      */
     @OutputDirectory
     public File getDestinationDir() {
-        return destinationDir;
+        return destinationDir.getOrNull();
     }
 
     /**
@@ -66,7 +75,18 @@ public abstract class AbstractCompile extends SourceTask {
      * @param destinationDir The destination directory. Must not be null.
      */
     public void setDestinationDir(File destinationDir) {
-        this.destinationDir = destinationDir;
+        this.destinationDir.set(destinationDir);
+    }
+
+    /**
+     * Sets the directory to generate the {@code .class} files into.
+     *
+     * @param destinationDir The destination directory. Must not be null.
+     *
+     * @since 4.0
+     */
+    public void setDestinationDir(Provider<File> destinationDir) {
+        this.destinationDir.set(destinationDir);
     }
 
     /**

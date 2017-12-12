@@ -20,11 +20,23 @@ import org.gradle.api.Action;
 import org.gradle.api.GradleException;
 import org.gradle.api.UnknownDomainObjectException;
 
-import java.io.*;
-import java.util.*;
+import java.io.BufferedInputStream;
+import java.io.BufferedOutputStream;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.ObjectInputStream;
+import java.io.ObjectOutputStream;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.TreeMap;
+
+import static org.apache.commons.lang.StringUtils.getLevenshteinDistance;
 
 public class SimpleClassMetaDataRepository<T extends Attachable<T>> implements ClassMetaDataRepository<T> {
-    private final Map<String, T> classes = new HashMap<String, T>();
+    private final Map<String, T> classes = new TreeMap<>();
 
     @SuppressWarnings("unchecked")
     public void load(File repoFile) {
@@ -60,7 +72,7 @@ public class SimpleClassMetaDataRepository<T extends Attachable<T>> implements C
     public T get(String fullyQualifiedClassName) {
         T t = find(fullyQualifiedClassName);
         if (t == null) {
-            throw new UnknownDomainObjectException(String.format("No meta-data is available for class '%s'.", fullyQualifiedClassName));
+            throw new UnknownDomainObjectException(String.format("No meta-data is available for class '%s'. Did you mean? %s", fullyQualifiedClassName, findPossibleMatches(fullyQualifiedClassName)));
         }
         return t;
     }
@@ -71,6 +83,16 @@ public class SimpleClassMetaDataRepository<T extends Attachable<T>> implements C
             t.attach(this);
         }
         return t;
+    }
+
+    private List<String> findPossibleMatches(String fullyQualifiedClassName) {
+        List<String> candidates = new ArrayList<String>();
+        for (String className : classes.keySet()) {
+            if (getLevenshteinDistance(fullyQualifiedClassName, className) < 8) {
+                candidates.add(className);
+            }
+        }
+        return candidates;
     }
 
     public void put(String fullyQualifiedClassName, T metaData) {

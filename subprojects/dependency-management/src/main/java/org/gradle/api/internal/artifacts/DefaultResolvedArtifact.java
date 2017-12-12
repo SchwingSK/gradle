@@ -15,38 +15,62 @@
  */
 package org.gradle.api.internal.artifacts;
 
+import org.gradle.api.Buildable;
+import org.gradle.api.artifacts.ModuleVersionIdentifier;
 import org.gradle.api.artifacts.ResolvedArtifact;
 import org.gradle.api.artifacts.ResolvedModuleVersion;
-import org.gradle.internal.component.model.IvyArtifactName;
+import org.gradle.api.artifacts.component.ComponentArtifactIdentifier;
+import org.gradle.api.internal.artifacts.ivyservice.dynamicversions.DefaultResolvedModuleVersion;
+import org.gradle.api.internal.artifacts.ivyservice.resolveengine.artifact.ResolvableArtifact;
+import org.gradle.api.tasks.TaskDependency;
 import org.gradle.internal.Factory;
+import org.gradle.internal.UncheckedException;
+import org.gradle.internal.component.model.IvyArtifactName;
 
 import java.io.File;
 
-public class DefaultResolvedArtifact implements ResolvedArtifact {
-    private final ResolvedModuleVersion owner;
+public class DefaultResolvedArtifact implements ResolvedArtifact, Buildable, ResolvableArtifact {
+    private final ModuleVersionIdentifier owner;
     private final IvyArtifactName artifact;
-    private long id;
-    private Factory<File> artifactSource;
+    private final ComponentArtifactIdentifier artifactId;
+    private final TaskDependency buildDependencies;
+    private volatile Factory<File> artifactSource;
     private File file;
+    private Throwable failure;
 
-    public DefaultResolvedArtifact(ResolvedModuleVersion owner, IvyArtifactName artifact, Factory<File> artifactSource, long id) {
+    public DefaultResolvedArtifact(ModuleVersionIdentifier owner, IvyArtifactName artifact, ComponentArtifactIdentifier artifactId, TaskDependency buildDependencies, Factory<File> artifactSource) {
         this.owner = owner;
         this.artifact = artifact;
-        this.id = id;
+        this.artifactId = artifactId;
+        this.buildDependencies = buildDependencies;
         this.artifactSource = artifactSource;
     }
 
-    public long getId() {
-        return id;
+    public DefaultResolvedArtifact(ModuleVersionIdentifier owner, IvyArtifactName artifact, ComponentArtifactIdentifier artifactId, TaskDependency buildDependencies, File artifactFile) {
+        this.owner = owner;
+        this.artifact = artifact;
+        this.artifactId = artifactId;
+        this.buildDependencies = buildDependencies;
+        this.file = artifactFile;
+    }
+
+    @Override
+    public TaskDependency getBuildDependencies() {
+        return buildDependencies;
     }
 
     public ResolvedModuleVersion getModuleVersion() {
-        return owner;
+        return new DefaultResolvedModuleVersion(owner);
+    }
+
+    @Override
+    public ComponentArtifactIdentifier getId() {
+        return artifactId;
     }
 
     @Override
     public String toString() {
-        return String.format("[ResolvedArtifact dependency:%s name:%s classifier:%s extension:%s type:%s]", owner, getName(), getClassifier(), getExtension(), getType());
+        return artifactId.getDisplayName();
     }
 
     @Override
@@ -58,41 +82,64 @@ public class DefaultResolvedArtifact implements ResolvedArtifact {
             return false;
         }
         DefaultResolvedArtifact other = (DefaultResolvedArtifact) obj;
-        if (!other.owner.getId().equals(owner.getId())) {
-            return false;
-        }
-        if (!other.artifact.equals(artifact)) {
-            return false;
-        }
-        return true;
+        return other.owner.equals(owner) && other.artifactId.equals(artifactId);
     }
 
     @Override
     public int hashCode() {
-        return owner.getId().hashCode() ^ getName().hashCode() ^ getType().hashCode() ^ getExtension().hashCode() ^ artifact.hashCode();
+        return owner.hashCode() ^ artifactId.hashCode();
     }
 
+    @Override
     public String getName() {
         return artifact.getName();
     }
 
+    @Override
     public String getType() {
         return artifact.getType();
     }
 
+    @Override
     public String getExtension() {
         return artifact.getExtension();
     }
 
+    @Override
     public String getClassifier() {
         return artifact.getClassifier();
     }
-    
-    public File getFile() {
-        if (file == null) {
-            file = artifactSource.create();
-            artifactSource = null;
+
+    @Override
+    public ResolvedArtifact toPublicView() {
+        return this;
+    }
+
+    @Override
+    public boolean isResolved() {
+        synchronized (this) {
+            return file != null || failure != null;
         }
-        return file;
+    }
+
+    @Override
+    public File getFile() {
+        synchronized (this) {
+            if (file != null) {
+                return file;
+            }
+            if (failure != null) {
+                throw UncheckedException.throwAsUncheckedException(failure);
+            }
+            try {
+                file = artifactSource.create();
+                return file;
+            } catch (Throwable e) {
+                failure = e;
+                throw UncheckedException.throwAsUncheckedException(failure);
+            } finally {
+                artifactSource = null;
+            }
+        }
     }
 }

@@ -15,8 +15,6 @@
  */
 package org.gradle.api.plugins.antlr
 
-import org.gradle.util.TextUtil
-
 class Antlr2PluginIntegrationTest extends AbstractAntlrIntegrationTest {
 
     String antlrDependency = "antlr:antlr:2.7.7"
@@ -28,8 +26,9 @@ class Antlr2PluginIntegrationTest extends AbstractAntlrIntegrationTest {
         expect:
         succeeds("generateGrammarSource")
         assertAntlrVersion(2)
-        assertGrammarSourceGenerated("TestGrammar")
-        assertGrammarSourceGenerated("AnotherGrammar")
+        assertGrammarSourceGenerated("org/acme/TestGrammar")
+        assertGrammarSourceGenerated("org/acme/AnotherGrammar")
+        assertGrammarSourceGenerated("UnpackagedGrammar")
         succeeds("build")
     }
 
@@ -38,27 +37,18 @@ class Antlr2PluginIntegrationTest extends AbstractAntlrIntegrationTest {
         badGrammar()
         then:
         fails("generateGrammarSource")
-        output.contains("TestGrammar.g:7:24: unexpected token: extra")
-        output.contains("TestGrammar.g:9:13: unexpected token: mexpr")
-        output.contains("TestGrammar.g:7:24: rule classDef trapped:")
-        output.contains("TestGrammar.g:7:24: unexpected token: extra")
+        errorOutput.contains("TestGrammar.g:7:24: unexpected token: extra")
+        errorOutput.contains("TestGrammar.g:9:13: unexpected token: mexpr")
+        errorOutput.contains("TestGrammar.g:7:24: rule classDef trapped:")
+        errorOutput.contains("TestGrammar.g:7:24: unexpected token: extra")
         assertAntlrVersion(2)
-        errorOutput.contains(TextUtil.toPlatformLineSeparators("""
-* What went wrong:
-Execution failed for task ':generateGrammarSource'.
-> There was 1 error during grammar generation
-   > ANTLR Panic: Exiting due to errors.
-"""))
+        failure.assertHasDescription("Execution failed for task ':grammar-builder:generateGrammarSource'.")
+        failure.assertHasCause("There were errors during grammar generation")
+        failure.assertHasCause("ANTLR Panic: Exiting due to errors.")
     }
 
     def "uses antlr v2 if no explicit dependency is set"() {
-        buildFile.text = """
-            apply plugin: "java"
-            apply plugin: "antlr"
-
-            repositories() {
-                jcenter()
-            }"""
+        buildFile.text = buildFile.text.replace("antlr '$antlrDependency'", "")
 
         goodGrammar()
         goodProgram()
@@ -66,12 +56,19 @@ Execution failed for task ':generateGrammarSource'.
         expect:
         succeeds("generateGrammarSource")
         assertAntlrVersion(2)
-        assertGrammarSourceGenerated("TestGrammar")
-        succeeds("build")
+        assertGrammarSourceGenerated("org/acme/TestGrammar")
+        assertGrammarSourceGenerated("org/acme/AnotherGrammar")
+        assertGrammarSourceGenerated("UnpackagedGrammar")
     }
 
     private goodGrammar() {
-        file("src/main/antlr/TestGrammar.g") << """class TestGrammar extends Parser;
+        file("grammar-builder/src/main/antlr/TestGrammar.g") << """
+            header {
+                package org.acme;
+            }
+
+            class TestGrammar extends Parser;
+
             options {
                 buildAST = true;
             }
@@ -86,7 +83,11 @@ Execution failed for task ':generateGrammarSource'.
             atom:   INT
                 ;"""
 
-        file("src/main/antlr/AnotherGrammar.g") << """class AnotherGrammar extends Parser;
+        file("grammar-builder/src/main/antlr/AnotherGrammar.g") << """
+            header {
+                package org.acme;
+            }
+            class AnotherGrammar extends Parser;
             options {
                 buildAST = true;
                 importVocab = TestGrammar;
@@ -102,13 +103,29 @@ Execution failed for task ':generateGrammarSource'.
             atom:   INT
                 ;"""
 
+        file("grammar-builder/src/main/antlr/UnpackagedGrammar.g") << """class UnpackagedGrammar extends Parser;
+            options {
+                buildAST = true;
+            }
+
+            expr:   mexpr (PLUS^ mexpr)* SEMI!
+                ;
+
+            mexpr
+                :   atom (STAR^ atom)*
+                ;
+
+            atom:   INT
+                ;"""
+
     }
 
     private goodProgram() {
-        file("src/main/java/com/example/test/Test.java") << """
+        file("grammar-user/src/main/java/com/example/test/Test.java") << """
             import antlr.Token;
             import antlr.TokenStream;
             import antlr.TokenStreamException;
+            import org.acme.TestGrammar;
 
             public class Test {
                 public static void main(String[] args) {
@@ -125,7 +142,7 @@ Execution failed for task ':generateGrammarSource'.
     }
 
     private badGrammar() {
-        file("src/main/antlr/TestGrammar.g") << """class TestGrammar extends Parser;
+        file("grammar-builder/src/main/antlr/TestGrammar.g") << """class TestGrammar extends Parser;
             options {
                 buildAST = true;
             }
@@ -142,9 +159,9 @@ Execution failed for task ':generateGrammarSource'.
     }
 
     private void assertGrammarSourceGenerated(String grammarName) {
-        assert file("build/generated-src/antlr/main/${grammarName}.java").exists()
-        assert file("build/generated-src/antlr/main/${grammarName}.smap").exists()
-        assert file("build/generated-src/antlr/main/${grammarName}TokenTypes.java").exists()
-        assert file("build/generated-src/antlr/main/${grammarName}TokenTypes.txt").exists()
+        assert file("grammar-builder/build/generated-src/antlr/main/${grammarName}.java").exists()
+        assert file("grammar-builder/build/generated-src/antlr/main/${grammarName}.smap").exists()
+        assert file("grammar-builder/build/generated-src/antlr/main/${grammarName}TokenTypes.java").exists()
+        assert file("grammar-builder/build/generated-src/antlr/main/${grammarName}TokenTypes.txt").exists()
     }
 }

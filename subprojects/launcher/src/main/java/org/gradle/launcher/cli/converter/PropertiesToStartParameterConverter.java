@@ -17,38 +17,26 @@
 package org.gradle.launcher.cli.converter;
 
 import org.gradle.StartParameter;
-import org.gradle.launcher.daemon.configuration.GradleProperties;
+import org.gradle.api.internal.StartParameterInternal;
+import org.gradle.initialization.StartParameterBuildOptions;
+import org.gradle.internal.buildoption.BuildOption;
 
+import java.util.List;
 import java.util.Map;
 
-import static org.gradle.launcher.daemon.configuration.GradleProperties.isTrue;
-
 public class PropertiesToStartParameterConverter {
-    public StartParameter convert(Map<String, String> properties, StartParameter startParameter) {
-        startParameter.setConfigureOnDemand(isTrue(properties.get(GradleProperties.CONFIGURE_ON_DEMAND_PROPERTY)));
+    private final PropertiesToParallelismConfigurationConverter propertiesToParallelismConfigurationConverter = new PropertiesToParallelismConfigurationConverter();
+    private final PropertiesToLogLevelConfigurationConverter propertiesToLogLevelConfigurationConverter = new PropertiesToLogLevelConfigurationConverter();
+    private final List<BuildOption<StartParameterInternal>> buildOptions = StartParameterBuildOptions.get();
 
-        String parallel = properties.get(GradleProperties.PARALLEL_PROPERTY);
-        if (isTrue(parallel)) {
-            startParameter.setParallelProjectExecutionEnabled(true);
+    public StartParameter convert(Map<String, String> properties, StartParameterInternal startParameter) {
+        for (BuildOption<StartParameterInternal> option : buildOptions) {
+            option.applyFromProperty(properties, startParameter);
         }
 
-        String workers = properties.get(GradleProperties.WORKERS_PROPERTY);
-        if (workers != null) {
-            try {
-                int workerCount = Integer.parseInt(workers);
-                if (workerCount < 1) {
-                    invalidMaxWorkersPropValue(workers);
-                }
-                startParameter.setMaxWorkerCount(workerCount);
-            } catch (NumberFormatException e) {
-                invalidMaxWorkersPropValue(workers);
-            }
-        }
+        propertiesToParallelismConfigurationConverter.convert(properties, startParameter);
+        propertiesToLogLevelConfigurationConverter.convert(properties, startParameter);
 
         return startParameter;
-    }
-
-    private StartParameter invalidMaxWorkersPropValue(String value) {
-        throw new IllegalArgumentException(String.format("Value '%s' given for %s system property is invalid (must be a positive, non-zero, integer)", value, GradleProperties.WORKERS_PROPERTY));
     }
 }

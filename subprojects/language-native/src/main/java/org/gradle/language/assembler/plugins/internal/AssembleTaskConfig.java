@@ -15,44 +15,77 @@
  */
 package org.gradle.language.assembler.plugins.internal;
 
+import com.google.common.collect.ImmutableSet;
 import org.gradle.api.DefaultTask;
 import org.gradle.api.Project;
 import org.gradle.api.Task;
-import org.gradle.api.plugins.ExtensionAware;
+import org.gradle.api.internal.file.FileCollectionFactory;
+import org.gradle.api.internal.file.collections.MinimalFileSet;
+import org.gradle.api.internal.project.ProjectInternal;
 import org.gradle.api.tasks.util.PatternSet;
+import org.gradle.internal.service.ServiceRegistry;
+import org.gradle.language.assembler.tasks.Assemble;
 import org.gradle.language.base.LanguageSourceSet;
 import org.gradle.language.base.internal.LanguageSourceSetInternal;
 import org.gradle.language.base.internal.SourceTransformTaskConfig;
 import org.gradle.nativeplatform.Tool;
 import org.gradle.nativeplatform.internal.NativeBinarySpecInternal;
-import org.gradle.language.assembler.tasks.Assemble;
+import org.gradle.nativeplatform.platform.internal.NativePlatformInternal;
+import org.gradle.nativeplatform.toolchain.internal.NativeToolChainInternal;
+import org.gradle.nativeplatform.toolchain.internal.PlatformToolProvider;
+import org.gradle.nativeplatform.toolchain.internal.SystemIncludesAwarePlatformToolProvider;
+import org.gradle.nativeplatform.toolchain.internal.ToolType;
 import org.gradle.platform.base.BinarySpec;
 
+import java.io.File;
+import java.util.LinkedHashSet;
+import java.util.Set;
+
 public class AssembleTaskConfig implements SourceTransformTaskConfig {
+    @Override
     public String getTaskPrefix() {
         return "assemble";
     }
 
+    @Override
     public Class<? extends DefaultTask> getTaskType() {
         return Assemble.class;
     }
 
-    public void configureTask(Task task, BinarySpec binary, LanguageSourceSet sourceSet) {
+    @Override
+    public void configureTask(Task task, BinarySpec binary, LanguageSourceSet sourceSet, ServiceRegistry serviceRegistry) {
         configureAssembleTask((Assemble) task, (NativeBinarySpecInternal) binary, (LanguageSourceSetInternal) sourceSet);
     }
 
     private void configureAssembleTask(Assemble task, final NativeBinarySpecInternal binary, final LanguageSourceSetInternal sourceSet) {
-        task.setDescription(String.format("Assembles the %s of %s", sourceSet, binary));
+        task.setDescription("Assembles the " + sourceSet + " of " + binary);
 
         task.setToolChain(binary.getToolChain());
         task.setTargetPlatform(binary.getTargetPlatform());
 
         task.source(sourceSet.getSource());
 
-        final Project project = task.getProject();
-        task.setObjectFileDir(project.file(project.getBuildDir() + "/objs/" + binary.getNamingScheme().getOutputDirectoryBase() + "/" + sourceSet.getFullName()));
+        FileCollectionFactory fileCollectionFactory = ((ProjectInternal) task.getProject()).getServices().get(FileCollectionFactory.class);
+        task.includes(fileCollectionFactory.create(new MinimalFileSet() {
+            @Override
+            public Set<File> getFiles() {
+                PlatformToolProvider platformToolProvider = ((NativeToolChainInternal) binary.getToolChain()).select((NativePlatformInternal) binary.getTargetPlatform());
+                if (platformToolProvider instanceof SystemIncludesAwarePlatformToolProvider) {
+                    return new LinkedHashSet<File>(((SystemIncludesAwarePlatformToolProvider) platformToolProvider).getSystemIncludes(ToolType.ASSEMBLER));
+                }
+                return ImmutableSet.of();
+            }
 
-        Tool assemblerTool = (Tool) ((ExtensionAware) binary).getExtensions().getByName("assembler");
+            @Override
+            public String getDisplayName() {
+                return "System includes for " + binary.getToolChain().getDisplayName();
+            }
+        }));
+
+        final Project project = task.getProject();
+        task.setObjectFileDir(new File(binary.getNamingScheme().getOutputDirectory(project.getBuildDir(), "objs"), sourceSet.getProjectScopedName()));
+
+        Tool assemblerTool = binary.getToolByName("assembler");
         task.setAssemblerArgs(assemblerTool.getArgs());
 
         binary.binaryInputs(task.getOutputs().getFiles().getAsFileTree().matching(new PatternSet().include("**/*.obj", "**/*.o")));

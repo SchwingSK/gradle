@@ -17,8 +17,10 @@ package org.gradle.language.cpp.plugins;
 
 import com.google.common.collect.Maps;
 import org.gradle.api.Incubating;
+import org.gradle.api.NonNullApi;
 import org.gradle.api.Plugin;
 import org.gradle.api.Project;
+import org.gradle.api.plugins.PluginManager;
 import org.gradle.internal.service.ServiceRegistry;
 import org.gradle.language.base.internal.SourceTransformTaskConfig;
 import org.gradle.language.base.internal.registry.LanguageTransformContainer;
@@ -26,13 +28,17 @@ import org.gradle.language.base.plugins.ComponentModelBasePlugin;
 import org.gradle.language.cpp.CppSourceSet;
 import org.gradle.language.cpp.internal.DefaultCppSourceSet;
 import org.gradle.language.cpp.tasks.CppCompile;
-import org.gradle.language.nativeplatform.internal.CompileTaskConfig;
-import org.gradle.language.nativeplatform.internal.DefaultPreprocessingTool;
+import org.gradle.language.cpp.tasks.CppPreCompiledHeaderCompile;
+import org.gradle.language.nativeplatform.internal.DependentSourceSetInternal;
 import org.gradle.language.nativeplatform.internal.NativeLanguageTransform;
+import org.gradle.language.nativeplatform.internal.PCHCompileTaskConfig;
+import org.gradle.language.nativeplatform.internal.SourceCompileTaskConfig;
 import org.gradle.model.Mutate;
 import org.gradle.model.RuleSource;
-import org.gradle.platform.base.LanguageType;
-import org.gradle.platform.base.LanguageTypeBuilder;
+import org.gradle.nativeplatform.internal.DefaultPreprocessingTool;
+import org.gradle.nativeplatform.internal.pch.PchEnabledLanguageTransform;
+import org.gradle.platform.base.ComponentType;
+import org.gradle.platform.base.TypeBuilder;
 
 import java.util.Map;
 
@@ -40,17 +46,20 @@ import java.util.Map;
  * Adds core C++ language support.
  */
 @Incubating
+@NonNullApi
 public class CppLangPlugin implements Plugin<Project> {
+    @Override
     public void apply(final Project project) {
-        project.getPluginManager().apply(ComponentModelBasePlugin.class);
+        PluginManager pluginManager = project.getPluginManager();
+        pluginManager.apply(ComponentModelBasePlugin.class);
     }
 
     @SuppressWarnings("UnusedDeclaration")
     static class Rules extends RuleSource {
-        @LanguageType
-        void registerLanguage(LanguageTypeBuilder<CppSourceSet> builder) {
-            builder.setLanguageName("cpp");
+        @ComponentType
+        void registerLanguage(TypeBuilder<CppSourceSet> builder) {
             builder.defaultImplementation(DefaultCppSourceSet.class);
+            builder.internalView(DependentSourceSetInternal.class);
         }
 
         @Mutate
@@ -59,19 +68,32 @@ public class CppLangPlugin implements Plugin<Project> {
         }
     }
 
-    private static class Cpp extends NativeLanguageTransform<CppSourceSet> {
+    private static class Cpp extends NativeLanguageTransform<CppSourceSet> implements PchEnabledLanguageTransform<CppSourceSet> {
+        @Override
         public Class<CppSourceSet> getSourceSetType() {
             return CppSourceSet.class;
         }
 
+        @Override
         public Map<String, Class<?>> getBinaryTools() {
             Map<String, Class<?>> tools = Maps.newLinkedHashMap();
             tools.put("cppCompiler", DefaultPreprocessingTool.class);
             return tools;
         }
 
+        @Override
+        public String getLanguageName() {
+            return "cpp";
+        }
+
+        @Override
         public SourceTransformTaskConfig getTransformTask() {
-            return new CompileTaskConfig(this, CppCompile.class);
+            return new SourceCompileTaskConfig(this, CppCompile.class);
+        }
+
+        @Override
+        public SourceTransformTaskConfig getPchTransformTask() {
+            return new PCHCompileTaskConfig(this, CppPreCompiledHeaderCompile.class);
         }
     }
 }

@@ -19,17 +19,16 @@ package org.gradle.api.internal.tasks.scala;
 import com.google.common.base.Joiner;
 import com.google.common.collect.Lists;
 import org.gradle.api.internal.file.collections.SimpleFileCollection;
-import org.gradle.api.internal.tasks.SimpleWorkResult;
 import org.gradle.api.internal.tasks.compile.CompilationFailedException;
 import org.gradle.api.internal.tasks.compile.JavaCompilerArgumentsBuilder;
 import org.gradle.api.logging.Logger;
 import org.gradle.api.logging.Logging;
 import org.gradle.api.tasks.WorkResult;
+import org.gradle.api.tasks.WorkResults;
 import org.gradle.language.base.internal.compile.Compiler;
 import org.gradle.util.CollectionUtils;
 
 import java.io.File;
-import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -43,6 +42,7 @@ public class NormalizingScalaCompiler implements Compiler<ScalaJavaJointCompileS
         this.delegate = delegate;
     }
 
+    @Override
     public WorkResult execute(ScalaJavaJointCompileSpec spec) {
         resolveAndFilterSourceFiles(spec);
         resolveClasspath(spec);
@@ -57,12 +57,12 @@ public class NormalizingScalaCompiler implements Compiler<ScalaJavaJointCompileS
     }
 
     private void resolveClasspath(ScalaJavaJointCompileSpec spec) {
-        ArrayList<File> classPath = Lists.newArrayList(spec.getClasspath());
+        List<File> classPath = Lists.newArrayList(spec.getCompileClasspath());
         classPath.add(spec.getDestinationDir());
-        spec.setClasspath(classPath);
+        spec.setCompileClasspath(classPath);
 
         if (LOGGER.isDebugEnabled()) {
-            LOGGER.debug("Class path: {}", spec.getClasspath());
+            LOGGER.debug("Class path: {}", spec.getCompileClasspath());
         }
     }
 
@@ -100,11 +100,11 @@ public class NormalizingScalaCompiler implements Compiler<ScalaJavaJointCompileS
         try {
             return delegate.execute(spec);
         } catch (CompilationFailedException e) {
-            if (spec.getScalaCompileOptions().isFailOnError()) {
+            if (spec.getCompileOptions().isFailOnError() && spec.getScalaCompileOptions().isFailOnError()) {
                 throw e;
             }
             LOGGER.debug("Ignoring compilation failure.");
-            return new SimpleWorkResult(false);
+            return WorkResults.didWork(false);
         }
     }
 }

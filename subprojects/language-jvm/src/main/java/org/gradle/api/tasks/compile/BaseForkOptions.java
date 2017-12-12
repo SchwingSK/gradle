@@ -17,6 +17,7 @@ package org.gradle.api.tasks.compile;
 
 import com.google.common.collect.Lists;
 import org.gradle.api.tasks.Input;
+import org.gradle.api.tasks.Internal;
 import org.gradle.api.tasks.Optional;
 
 import java.util.List;
@@ -38,6 +39,7 @@ public class BaseForkOptions extends AbstractOptions {
      * Returns the initial heap size for the compiler process.
      * Defaults to {@code null}, in which case the JVM's default will be used.
      */
+    @Internal
     public String getMemoryInitialSize() {
         return memoryInitialSize;
     }
@@ -54,6 +56,7 @@ public class BaseForkOptions extends AbstractOptions {
      * Returns the maximum heap size for the compiler process.
      * Defaults to {@code null}, in which case the JVM's default will be used.
      */
+    @Internal
     public String getMemoryMaximumSize() {
         return memoryMaximumSize;
     }

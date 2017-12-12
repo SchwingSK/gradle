@@ -1,6 +1,7 @@
 // START SNIPPET complete-example
+// START SNIPPET terse-example
 apply plugin: "c"
-apply plugin: "cunit"
+apply plugin: 'cunit-test-suite'
 
 model {
     flavors {
@@ -12,6 +13,7 @@ model {
             architecture "x86"
         }
     }
+// END SNIPPET terse-example
     repositories {
         libs(PrebuiltLibraries) {
             cunit {
@@ -24,18 +26,29 @@ model {
             }
         }
     }
+// START SNIPPET terse-example
     components {
         operators(NativeLibrarySpec) {
             targetPlatform "x86"
         }
     }
+    testSuites {
+        operatorsTest(CUnitTestSuiteSpec) {
+            testing $.components.operators
+        }
+    }
 }
+// END SNIPPET terse-example
 // START SNIPPET configure-test-binary
-binaries.withType(CUnitTestSuiteBinarySpec) {
-    lib library: "cunit", linkage: "static"
+model {
+    binaries {
+        withType(CUnitTestSuiteBinarySpec) {
+            lib library: "cunit", linkage: "static"
 
-    if (flavor == flavors.failing) {
-        cCompiler.define "PLUS_BROKEN"
+            if (flavor == flavors.failing) {
+                cCompiler.define "PLUS_BROKEN"
+            }
+        }
     }
 }
 // END SNIPPET configure-test-binary
@@ -43,8 +56,9 @@ binaries.withType(CUnitTestSuiteBinarySpec) {
 
 def findCUnitLibForPlatform(Platform platform) {
     if (platform.operatingSystem.windows) {
-        return "vs2010/cunit.lib"
+//        return "vs2010/cunit.lib"
 //        return "vs2013/cunit.lib"
+        return "vs2015/cunit.lib"
 //        return "cygwin/cunit.lib"
 //        return "mingw/cunit.lib"
     } else if (platform.operatingSystem.macOsX) {

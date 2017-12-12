@@ -15,28 +15,28 @@
  */
 package org.gradle.api.internal.artifacts.ivyservice.ivyresolve.memcache;
 
-public class InMemoryModuleComponentRepositoryCaches {
+import com.google.common.collect.Maps;
+import org.gradle.api.artifacts.component.ComponentArtifactIdentifier;
+import org.gradle.api.internal.artifacts.ivyservice.resolveengine.artifact.ResolvableArtifact;
+
+import java.util.Map;
+
+class InMemoryModuleComponentRepositoryCaches {
     public final InMemoryMetaDataCache localMetaDataCache;
     public final InMemoryMetaDataCache remoteMetaDataCache;
     public final InMemoryArtifactsCache localArtifactsCache;
     public final InMemoryArtifactsCache remoteArtifactsCache;
-    public final InMemoryCacheStats stats;
+    public final Map<ComponentArtifactIdentifier, ResolvableArtifact> resolvedArtifactsCache = Maps.newConcurrentMap();
 
-    public InMemoryModuleComponentRepositoryCaches(InMemoryCacheStats stats) {
-        this(new InMemoryArtifactsCache(stats),
-                new InMemoryArtifactsCache(stats),
-                new InMemoryMetaDataCache(stats),
-                new InMemoryMetaDataCache(stats),
-                stats);
+    public InMemoryModuleComponentRepositoryCaches() {
+        this(new InMemoryArtifactsCache(), new InMemoryArtifactsCache(), new InMemoryMetaDataCache(), new InMemoryMetaDataCache());
     }
 
     protected InMemoryModuleComponentRepositoryCaches(InMemoryArtifactsCache localArtifactsCache, InMemoryArtifactsCache remoteArtifactsCache,
-                                                      InMemoryMetaDataCache localMetaDataCache, InMemoryMetaDataCache remoteMetaDataCache,
-                                                      InMemoryCacheStats stats) {
+                                                      InMemoryMetaDataCache localMetaDataCache, InMemoryMetaDataCache remoteMetaDataCache) {
         this.localArtifactsCache = localArtifactsCache;
         this.remoteArtifactsCache = remoteArtifactsCache;
         this.localMetaDataCache = localMetaDataCache;
         this.remoteMetaDataCache = remoteMetaDataCache;
-        this.stats = stats;
     }
 }

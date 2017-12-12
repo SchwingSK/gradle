@@ -16,7 +16,9 @@
 package org.gradle.integtests.resolve
 
 import org.gradle.integtests.fixtures.AbstractHttpDependencyResolutionTest
+import org.gradle.test.fixtures.file.LeaksFileHandles
 
+@LeaksFileHandles
 public class ClientModuleDependenciesResolveIntegrationTest extends AbstractHttpDependencyResolutionTest {
     public void "uses metadata from Client Module and looks up artifact in declared repositories"() {
         given:
@@ -38,8 +40,10 @@ dependencies {
        dependency("group:projectB:1.3")
     }
 }
-task listJars << {
-    assert configurations.compile.collect { it.name } == ['projectA-1.2.jar', 'projectB-1.3.jar']
+task listJars {
+    doLast {
+        assert configurations.compile.collect { it.name } == ['projectA-1.2.jar', 'projectB-1.3.jar']
+    }
 }
 """
 
@@ -50,6 +54,50 @@ task listJars << {
         projectAInRepo1.jar.expectHeadMissing()
         projectAInRepo2.pom.expectGet()
         projectAInRepo2.artifact.expectGet()
+
+        then:
+        succeeds('listJars')
+
+        when:
+        server.resetExpectations()
+
+        then:
+        succeeds('listJars')
+    }
+    public void "can resolve nested Client Module"() {
+        given:
+        def repo = mavenHttpRepo("repo")
+        def projectA = repo.module('test', 'projectA', '1.2').publish()
+        def projectB = repo.module('test', 'projectB', '1.5').publish()
+        def projectC = repo.module('test', 'projectC', '2.0').publish()
+
+        and:
+        buildFile << """
+repositories {
+    maven { url "${repo.uri}" }
+}
+configurations { compile }
+dependencies {
+    compile module('test:projectA:1.2') {
+        module('test:projectB:1.5') {
+            dependencies('test:projectC:2.0')
+        }
+    }
+}
+task listJars {
+    doLast {
+        assert configurations.compile.collect { it.name } == ['projectA-1.2.jar', 'projectB-1.5.jar', 'projectC-2.0.jar']
+    }
+}
+"""
+
+        when:
+        projectA.pom.expectGet()
+        projectA.artifact.expectGet()
+        projectB.pom.expectGet()
+        projectB.artifact.expectGet()
+        projectC.pom.expectGet()
+        projectC.artifact.expectGet()
 
         then:
         succeeds('listJars')
@@ -79,11 +127,15 @@ dependencies {
     regular "group:projectA:1.2"
     clientModule module("group:projectA:1.2")
 }
-task listJars << {
-    assert configurations.regular.collect { it.name } == ['projectA-1.2.jar', 'projectA-1.2-extra.jar']
+task listJars {
+    doLast {
+        assert configurations.regular.collect { it.name } == ['projectA-1.2.jar', 'projectA-1.2-extra.jar']
+    }
 }
-task listClientModuleJars << {
-    assert configurations.clientModule.collect { it.name } == ['projectA-1.2.jar']
+task listClientModuleJars {
+    doLast {
+        assert configurations.clientModule.collect { it.name } == ['projectA-1.2.jar']
+    }
 }
 """
 

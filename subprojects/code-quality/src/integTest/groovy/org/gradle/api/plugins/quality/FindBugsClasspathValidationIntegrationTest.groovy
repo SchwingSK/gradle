@@ -29,9 +29,7 @@ class FindBugsClasspathValidationIntegrationTest extends AbstractIntegrationSpec
             apply plugin: "java"
             apply plugin: "findbugs"
 
-            repositories {
-                mavenCentral()
-            }
+            ${mavenCentralRepository()}
         """
         file('src/main/java/org/gradle/BadClass.java') << 'package org.gradle; public class BadClass { public boolean isFoo(Object arg) { System.exit(1); return true; } }'
     }
@@ -47,12 +45,5 @@ class FindBugsClasspathValidationIntegrationTest extends AbstractIntegrationSpec
         expect:
         fails("findbugsMain")
         failure.assertThatCause(CoreMatchers.containsString("too low to work with currently used Java"))
-    }
-
-    @Requires(TestPrecondition.JDK6)
-    def "informs that FindBugs version is too high"() {
-        expect:
-        fails("findbugsMain")
-        failure.assertThatCause(CoreMatchers.containsString("too high to work with currently used Java"))
     }
 }

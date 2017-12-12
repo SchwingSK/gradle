@@ -16,9 +16,10 @@
 
 package org.gradle.api.internal.artifacts.repositories.resolver;
 
+import com.google.common.collect.ImmutableMap;
 import org.gradle.api.artifacts.ModuleIdentifier;
 import org.gradle.api.artifacts.component.ModuleComponentIdentifier;
-import org.gradle.internal.component.external.model.ModuleComponentArtifactMetaData;
+import org.gradle.internal.component.external.model.ModuleComponentArtifactMetadata;
 import org.gradle.internal.component.model.IvyArtifactName;
 import org.gradle.internal.resource.ExternalResourceName;
 
@@ -37,10 +38,10 @@ public class IvyResourcePattern extends AbstractResourcePattern implements Resou
 
     @Override
     public String toString() {
-        return String.format("Ivy pattern '%s'", getPattern());
+        return "Ivy pattern '" + getPattern() + "'";
     }
 
-    public ExternalResourceName getLocation(ModuleComponentArtifactMetaData artifact) {
+    public ExternalResourceName getLocation(ModuleComponentArtifactMetadata artifact) {
         Map<String, String> attributes = toAttributes(artifact);
         return getBase().getRoot().resolve(substituteTokens(getBase().getPath(), attributes));
     }
@@ -51,10 +52,29 @@ public class IvyResourcePattern extends AbstractResourcePattern implements Resou
     }
 
     public ExternalResourceName toModulePath(ModuleIdentifier module) {
-        throw new UnsupportedOperationException("not implemented yet.");
+        throw new UnsupportedOperationException();
     }
 
     public ExternalResourceName toModuleVersionPath(ModuleComponentIdentifier componentIdentifier) {
-        throw new UnsupportedOperationException("not implemented yet.");
+        ImmutableMap<String, String> attributes = ImmutableMap.of(
+            "organisation", componentIdentifier.getGroup(),
+            "module", componentIdentifier.getModule(),
+            "artifact", componentIdentifier.getModule(),
+            "revision", componentIdentifier.getVersion()
+        );
+        ExternalResourceName resolve = getBase().getRoot().resolve(substituteTokens(getPathWithoutArtifactPart(), attributes));
+        return resolve;
+    }
+
+    protected String getPathWithoutArtifactPart() {
+        String path = getBase().getPath();
+        int i = path.lastIndexOf('/');
+        if (i>0) {
+            i = path.indexOf("/[artifact]", i);
+        }
+        if (i<0) {
+            throw new UnsupportedOperationException("Cannot locate module version for non standard Ivy layout.");
+        }
+        return path.substring(0, i);
     }
 }

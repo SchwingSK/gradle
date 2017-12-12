@@ -26,13 +26,19 @@ import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.net.URI;
 import java.net.URISyntaxException;
-import java.nio.channels.*;
+import java.nio.channels.AsynchronousCloseException;
+import java.nio.channels.Channels;
+import java.nio.channels.ClosedChannelException;
+import java.nio.channels.ServerSocketChannel;
+import java.nio.channels.SocketChannel;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
 /**
  * Allows the test process and a single build process to synchronize.
+ *
+ * TODO - merge into {@link BlockingHttpServer} as they now have overlapping APIs.
  */
 public class CyclicBarrierHttpServer extends ExternalResource {
     private ExecutorService executor;
@@ -106,9 +112,9 @@ public class CyclicBarrierHttpServer extends ExternalResource {
                     connected = true;
                     lock.notifyAll();
 
-                    long expiry = System.currentTimeMillis() + 30000;
+                    long expiry = monotonicClockMillis() + 30000;
                     while (!released && !stopped) {
-                        long delay = expiry - System.currentTimeMillis();
+                        long delay = expiry - monotonicClockMillis();
                         if (delay <= 0) {
                             System.out.println("Timeout waiting for client to be released.");
                             outputStream.write("HTTP/1.1 500 Timeout waiting for client to be released.\r\nConnection: close\r\nContent-length: 0\r\n\r\n".getBytes());
@@ -128,6 +134,7 @@ public class CyclicBarrierHttpServer extends ExternalResource {
 
                     connected = false;
                     released = false;
+                    lock.notifyAll();
                 }
 
                 System.out.println("Sending response to client");
@@ -163,17 +170,40 @@ public class CyclicBarrierHttpServer extends ExternalResource {
         }
     }
 
+    public boolean waitFor() {
+        return waitFor(true, 20);
+    }
+
+    public boolean waitFor(boolean failAtTimeout) {
+        return waitFor(failAtTimeout, 20);
+    }
+
+    public boolean waitFor(int timeoutSeconds) {
+        return waitFor(true, timeoutSeconds);
+    }
+
     /**
      * Blocks until a connection to the URI has been received. No response is returned to the client until
      * {@link #release()} is called.
+     *
+     * @param failAtTimeout if client connection timeout occurs: should the build fail directly or return with 'false'? (if it fails, it might hide the original error)
+     * @param timeoutSeconds timeout in seconds
+     *
+     * @return false on timeout
      */
-    public void waitFor() {
-        long expiry = System.currentTimeMillis() + 20000;
+    public boolean waitFor(boolean failAtTimeout, int timeoutSeconds) {
+        long expiry = monotonicClockMillis() + timeoutSeconds * 1000;
         synchronized (lock) {
             while (!connected && !stopped) {
-                long delay = expiry - System.currentTimeMillis();
+                long delay = expiry - monotonicClockMillis();
                 if (delay <= 0) {
-                    throw new AssertionFailedError(String.format("Timeout waiting for client to connect to %s.", getUri()));
+                    String message = String.format("Timeout waiting for client to connect to %s.", getUri());
+                    if (failAtTimeout) {
+                        throw new AssertionFailedError(message);
+                    } else {
+                        System.out.println(message);
+                        return false;
+                    }
                 }
                 System.out.println("waiting for client to connect");
                 try {
@@ -186,7 +216,12 @@ public class CyclicBarrierHttpServer extends ExternalResource {
                 throw new AssertionFailedError(String.format("Server was stopped while waiting for client to connect to %s.", getUri()));
             }
             System.out.println("client connected - unblocking");
+            return true;
         }
+    }
+
+    private long monotonicClockMillis() {
+        return System.nanoTime() / 1000000L;
     }
 
     /**
@@ -214,8 +249,12 @@ public class CyclicBarrierHttpServer extends ExternalResource {
      * <p>Note that this method will generally return before the client has received the response.
      */
     public void sync() {
+        sync(20);
+    }
+
+    public void sync(final int timeoutSeconds) {
         synchronized (lock) {
-            waitFor();
+            waitFor(timeoutSeconds);
             release();
         }
     }

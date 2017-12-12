@@ -17,6 +17,7 @@
 
 
 package org.gradle.api.publish.ivy
+
 import org.gradle.test.fixtures.keystore.TestKeyStore
 import org.gradle.test.fixtures.server.http.HttpServer
 import org.gradle.test.fixtures.server.http.IvyHttpModule
@@ -78,10 +79,10 @@ class IvyPublishHttpsIntegTest extends AbstractIvyPublishIntegTest {
 
         then:
         failure.assertHasCause("Failed to publish publication 'ivy' to repository 'ivy'")
-        failure.assertHasCause("javax.net.ssl.SSLPeerUnverifiedException: peer not authenticated")
+        failure.assertHasCause("Could not write to resource '${module.jar.uri}'")
     }
 
-    def "decent error message when server can't authenticate client"() {
+    def "build fails when server can't authenticate client"() {
         keyStore.enableSslWithServerAndBadClientCert(server)
         initBuild()
 
@@ -93,7 +94,7 @@ class IvyPublishHttpsIntegTest extends AbstractIvyPublishIntegTest {
 
         then:
         failure.assertHasCause("Failed to publish publication 'ivy' to repository 'ivy'")
-        failure.assertHasCause("javax.net.ssl.SSLPeerUnverifiedException: peer not authenticated")
+        failure.assertHasCause("Could not write to resource '${module.jar.uri}'")
     }
 
     def expectPublication() {
@@ -101,6 +102,8 @@ class IvyPublishHttpsIntegTest extends AbstractIvyPublishIntegTest {
         module.jar.sha1.expectPut()
         module.ivy.expectPut()
         module.ivy.sha1.expectPut()
+        module.moduleMetadata.expectPut()
+        module.moduleMetadata.sha1.expectPut()
     }
 
     def verifyPublications() {

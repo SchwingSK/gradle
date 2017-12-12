@@ -25,10 +25,17 @@ import spock.lang.Unroll
 class IvyPublishSftpIntegrationTest extends AbstractIvyPublishIntegTest {
 
     @Rule
-    final SFTPServer server = new SFTPServer(this)
+    final SFTPServer server = new SFTPServer(temporaryFolder)
 
     IvySftpRepository getIvySftpRepo(boolean m2Compatible = false, String dirPattern = null) {
         new IvySftpRepository(server, '/repo', m2Compatible, dirPattern)
+    }
+
+    def setup() {
+        // SFTP test fixture does not handle parallel resolution requests
+        executer.beforeExecute {
+            it.withArgument("--max-workers=1")
+        }
     }
 
     private void buildAndSettingsFilesForPublishing() {
@@ -101,11 +108,15 @@ class IvyPublishSftpIntegrationTest extends AbstractIvyPublishIntegTest {
         module.ivy.expectFileUpload()
         module.ivy.sha1.expectParentCheckdir()
         module.ivy.sha1.expectFileUpload()
+        module.moduleMetadata.expectParentCheckdir()
+        module.moduleMetadata.expectFileUpload()
+        module.moduleMetadata.sha1.expectParentCheckdir()
+        module.moduleMetadata.sha1.expectFileUpload()
 
         then:
         succeeds 'publish'
 
-        module.assertIvyAndJarFilePublished()
+        module.assertMetadataAndJarFilePublished()
         module.jarFile.assertIsCopyOf(file('build/libs/publish-2.jar'))
 
         where:
@@ -160,11 +171,15 @@ class IvyPublishSftpIntegrationTest extends AbstractIvyPublishIntegTest {
         module.ivy.expectFileUpload()
         module.ivy.sha1.expectParentCheckdir()
         module.ivy.sha1.expectFileUpload()
+        module.moduleMetadata.expectParentCheckdir()
+        module.moduleMetadata.expectFileUpload()
+        module.moduleMetadata.sha1.expectParentCheckdir()
+        module.moduleMetadata.sha1.expectFileUpload()
 
         then:
         succeeds 'publish'
 
-        module.assertIvyAndJarFilePublished()
+        module.assertMetadataAndJarFilePublished()
         module.jarFile.assertIsCopyOf(file('build/libs/publish-2.jar'))
 
         where:
@@ -187,8 +202,8 @@ class IvyPublishSftpIntegrationTest extends AbstractIvyPublishIntegTest {
         then:
         fails 'publish'
         failure.assertHasDescription("Execution failed for task ':publishIvyPublicationToIvyRepository'.")
-                .assertHasCause("Failed to publish publication 'ivy' to repository 'ivy'")
-                .assertHasCause("Could not create resource '${ivySftpRepo.uri}'.")
+            .assertHasCause("Failed to publish publication 'ivy' to repository 'ivy'")
+            .assertHasCause("Could not create resource '${ivySftpRepo.uri}'.")
     }
 
     def "publishing to a SFTP repo when file uploading fails"() {
@@ -203,7 +218,10 @@ class IvyPublishSftpIntegrationTest extends AbstractIvyPublishIntegTest {
         then:
         fails 'publish'
         failure.assertHasDescription("Execution failed for task ':publishIvyPublicationToIvyRepository'.")
-                .assertHasCause("Failed to publish publication 'ivy' to repository 'ivy'")
-                .assertHasCause("Could not write to resource '${module.jar.uri}'.")
+            .assertHasCause("Failed to publish publication 'ivy' to repository 'ivy'")
+            .assertHasCause("Could not write to resource '${module.jar.uri}'.")
+
+        cleanup:
+        server.clearSessions()
     }
 }

@@ -16,7 +16,9 @@
 
 package org.gradle.api.internal.tasks.compile.incremental.analyzer;
 
-import org.gradle.api.internal.cache.Cache;
+import org.gradle.api.internal.tasks.compile.incremental.deps.ClassAnalysis;
+import org.gradle.cache.internal.Cache;
+import org.gradle.internal.hash.HashCode;
 
-public interface ClassAnalysisCache extends Cache<byte[], ClassAnalysis> {
+public interface ClassAnalysisCache extends Cache<HashCode, ClassAnalysis> {
 }

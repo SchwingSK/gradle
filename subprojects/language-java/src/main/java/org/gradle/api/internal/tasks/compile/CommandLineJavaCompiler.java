@@ -16,12 +16,15 @@
 
 package org.gradle.api.internal.tasks.compile;
 
-import org.gradle.api.internal.tasks.SimpleWorkResult;
 import org.gradle.api.tasks.WorkResult;
+import org.gradle.api.tasks.WorkResults;
+import org.gradle.api.tasks.compile.ForkOptions;
+import org.gradle.internal.jvm.Jvm;
 import org.gradle.language.base.internal.compile.Compiler;
 import org.gradle.process.ExecResult;
 import org.gradle.process.internal.ExecHandle;
 import org.gradle.process.internal.ExecHandleBuilder;
+import org.gradle.process.internal.ExecHandleFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -34,19 +37,26 @@ public class CommandLineJavaCompiler implements Compiler<JavaCompileSpec>, Seria
     private static final Logger LOGGER = LoggerFactory.getLogger(CommandLineJavaCompiler.class);
 
     private final CompileSpecToArguments<JavaCompileSpec> argumentsGenerator = new CommandLineJavaCompilerArgumentsGenerator();
+    private final ExecHandleFactory execHandleFactory;
 
+    public CommandLineJavaCompiler(ExecHandleFactory execHandleFactory) {
+        this.execHandleFactory = execHandleFactory;
+    }
+
+    @Override
     public WorkResult execute(JavaCompileSpec spec) {
-        String executable = spec.getCompileOptions().getForkOptions().getExecutable();
+        final ForkOptions forkOptions = spec.getCompileOptions().getForkOptions();
+        String executable = forkOptions.getJavaHome() != null ? Jvm.forHome(forkOptions.getJavaHome()).getJavacExecutable().getAbsolutePath() : forkOptions.getExecutable();
         LOGGER.info("Compiling with Java command line compiler '{}'.", executable);
 
         ExecHandle handle = createCompilerHandle(executable, spec);
         executeCompiler(handle);
 
-        return new SimpleWorkResult(true);
+        return WorkResults.didWork(true);
     }
 
     private ExecHandle createCompilerHandle(String executable, JavaCompileSpec spec) {
-        ExecHandleBuilder builder = new ExecHandleBuilder();
+        ExecHandleBuilder builder = execHandleFactory.newExec();
         builder.setWorkingDir(spec.getWorkingDir());
         builder.setExecutable(executable);
         argumentsGenerator.collectArguments(spec, new ExecSpecBackedArgCollector(builder));

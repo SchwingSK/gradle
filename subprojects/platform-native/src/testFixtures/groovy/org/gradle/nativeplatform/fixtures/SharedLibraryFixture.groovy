@@ -23,12 +23,26 @@ class SharedLibraryFixture extends NativeBinaryFixture {
         super(file, toolChain)
     }
 
+    TestFile getLinkFile() {
+        if (toolChain.visualCpp) {
+            return file.withExtension(".lib")
+        }
+        return file
+    }
+
+    TestFile getStrippedLinkFile() {
+        if (toolChain.visualCpp) {
+            return file.withExtension(".lib")
+        }
+        return strippedRuntimeFile
+    }
+
     @Override
     void assertExists() {
         super.assertExists()
         if (toolChain.visualCpp) {
-            file.withExtension("lib").assertIsFile()
-            file.withExtension("exp").assertIsFile()
+            file.withExtension(".lib").assertIsFile()
+            file.withExtension(".exp").assertIsFile()
         }
     }
 
@@ -36,8 +50,8 @@ class SharedLibraryFixture extends NativeBinaryFixture {
     void assertDoesNotExist() {
         super.assertDoesNotExist()
         if (toolChain.visualCpp) {
-            file.withExtension("lib").assertDoesNotExist()
-            file.withExtension("exp").assertDoesNotExist()
+            file.withExtension(".lib").assertDoesNotExist()
+            file.withExtension(".exp").assertDoesNotExist()
         }
     }
 

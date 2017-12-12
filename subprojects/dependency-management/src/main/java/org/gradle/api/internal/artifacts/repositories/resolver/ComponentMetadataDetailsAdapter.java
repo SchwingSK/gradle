@@ -15,23 +15,40 @@
  */
 package org.gradle.api.internal.artifacts.repositories.resolver;
 
+import org.gradle.api.Action;
+import org.gradle.api.GradleException;
 import org.gradle.api.artifacts.ComponentMetadataDetails;
+import org.gradle.api.artifacts.DependencyConstraintMetadata;
+import org.gradle.api.artifacts.DirectDependencyMetadata;
 import org.gradle.api.artifacts.ModuleVersionIdentifier;
-import org.gradle.internal.component.external.model.MutableModuleComponentResolveMetaData;
+import org.gradle.api.artifacts.VariantMetadata;
+import org.gradle.internal.component.external.model.MutableModuleComponentResolveMetadata;
+import org.gradle.internal.reflect.Instantiator;
+import org.gradle.internal.typeconversion.NotationParser;
 
 import java.util.List;
 
 public class ComponentMetadataDetailsAdapter implements ComponentMetadataDetails {
-    private final MutableModuleComponentResolveMetaData metadata;
+    private final MutableModuleComponentResolveMetadata metadata;
+    private final Instantiator instantiator;
+    private final NotationParser<Object, DirectDependencyMetadata> dependencyMetadataNotationParser;
+    private final NotationParser<Object, DependencyConstraintMetadata> dependencyConstraintMetadataNotationParser;
 
-    public ComponentMetadataDetailsAdapter(MutableModuleComponentResolveMetaData metadata) {
+    public ComponentMetadataDetailsAdapter(MutableModuleComponentResolveMetadata metadata, Instantiator instantiator,
+                                           NotationParser<Object, DirectDependencyMetadata> dependencyMetadataNotationParser,
+                                           NotationParser<Object, DependencyConstraintMetadata> dependencyConstraintMetadataNotationParser) {
         this.metadata = metadata;
+        this.instantiator = instantiator;
+        this.dependencyMetadataNotationParser = dependencyMetadataNotationParser;
+        this.dependencyConstraintMetadataNotationParser = dependencyConstraintMetadataNotationParser;
     }
 
+    @Override
     public ModuleVersionIdentifier getId() {
         return metadata.getId();
     }
 
+    @Override
     public boolean isChanging() {
         return metadata.isChanging();
     }
@@ -40,19 +57,40 @@ public class ComponentMetadataDetailsAdapter implements ComponentMetadataDetails
         return metadata.getStatus();
     }
 
+    @Override
     public List<String> getStatusScheme() {
         return metadata.getStatusScheme();
     }
 
+    @Override
     public void setChanging(boolean changing) {
         metadata.setChanging(changing);
     }
 
+    @Override
     public void setStatus(String status) {
         metadata.setStatus(status);
     }
 
+    @Override
     public void setStatusScheme(List<String> statusScheme) {
         metadata.setStatusScheme(statusScheme);
+    }
+
+    @Override
+    public void withVariant(String name, Action<VariantMetadata> action) {
+        assertVariantExists(name);
+        action.execute(instantiator.newInstance(VariantMetadataAdapter.class, name, metadata, instantiator, dependencyMetadataNotationParser, dependencyConstraintMetadataNotationParser));
+    }
+
+    @Override
+    public String toString() {
+        return metadata.getId().toString();
+    }
+
+    private void assertVariantExists(String name) {
+        if (!metadata.definesVariant(name)) {
+            throw new GradleException("Variant " + name + " is not declared for " + metadata.getId());
+        }
     }
 }

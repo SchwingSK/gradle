@@ -18,30 +18,24 @@ package org.gradle.language.scala.internal.toolchain;
 
 import org.gradle.api.artifacts.ConfigurationContainer;
 import org.gradle.api.artifacts.dsl.DependencyHandler;
-import org.gradle.api.internal.artifacts.dsl.dependencies.ProjectFinder;
-import org.gradle.api.internal.tasks.compile.daemon.CompilerDaemonManager;
+import org.gradle.api.internal.GradleInternal;
+import org.gradle.api.internal.file.FileResolver;
 import org.gradle.internal.service.ServiceRegistration;
-import org.gradle.internal.service.scopes.PluginServiceRegistry;
+import org.gradle.internal.service.scopes.AbstractPluginServiceRegistry;
+import org.gradle.process.internal.worker.child.WorkerDirectoryProvider;
+import org.gradle.workers.internal.WorkerDaemonFactory;
 
-public class ScalaToolChainServiceRegistry implements PluginServiceRegistry {
+public class ScalaToolChainServiceRegistry extends AbstractPluginServiceRegistry {
 
-    public void registerGlobalServices(ServiceRegistration registration) {
-    }
-
-    public void registerBuildServices(ServiceRegistration registration) {
-    }
-
-    public void registerGradleServices(ServiceRegistration registration) {
-    }
-
+    @Override
     public void registerProjectServices(ServiceRegistration registration) {
         registration.addProvider(new ProjectScopeCompileServices());
     }
 
 
     private static class ProjectScopeCompileServices {
-        ScalaToolChainInternal createScalaToolChain(ProjectFinder projectFinder, CompilerDaemonManager compilerDaemonManager, ConfigurationContainer configurationContainer, DependencyHandler dependencyHandler) {
-            return new DownloadingScalaToolChain(projectFinder, compilerDaemonManager, configurationContainer, dependencyHandler);
+        ScalaToolChainInternal createScalaToolChain(GradleInternal gradle, WorkerDaemonFactory workerDaemonFactory, ConfigurationContainer configurationContainer, DependencyHandler dependencyHandler, FileResolver fileResolver, WorkerDirectoryProvider workerDirectoryProvider) {
+            return new DownloadingScalaToolChain(gradle.getGradleUserHomeDir(), workerDirectoryProvider.getIdleWorkingDirectory(), workerDaemonFactory, configurationContainer, dependencyHandler, fileResolver);
         }
     }
 }

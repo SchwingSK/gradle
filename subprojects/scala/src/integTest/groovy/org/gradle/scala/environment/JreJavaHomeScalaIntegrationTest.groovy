@@ -17,26 +17,18 @@
 package org.gradle.scala.environment
 
 import org.gradle.integtests.fixtures.*
-import org.gradle.integtests.fixtures.executer.GradleContextualExecuter
 import org.gradle.util.Requires
 import org.gradle.util.TestPrecondition
 import org.junit.Rule
 import spock.lang.IgnoreIf
-import spock.lang.Unroll
 
 @TargetCoverage({ScalaCoverage.DEFAULT})
 class JreJavaHomeScalaIntegrationTest extends AbstractIntegrationSpec {
 
-    @Rule public final ForkScalaCompileInDaemonModeFixture forkScalaCompileInDaemonModeFixture = new ForkScalaCompileInDaemonModeFixture(executer, temporaryFolder)
+    @Rule public final ZincScalaCompileFixture zincScalaCompileFixture = new ZincScalaCompileFixture(executer, temporaryFolder)
 
     @IgnoreIf({ AvailableJavaHomes.bestJre == null})
-    @Unroll
-    def "scala java cross compilation works in forking mode = #forkMode when JAVA_HOME is set to JRE"() {
-        if (GradleContextualExecuter.daemon && !(forkMode && !useAnt)) {
-            // don't load up scala in process when testing with the daemon as it blows out permgen
-            return
-        }
-
+    def "scala java cross compilation works when JAVA_HOME is set to JRE"() {
         given:
         def jreJavaHome = AvailableJavaHomes.bestJre
         file("src/main/scala/org/test/JavaClazz.java") << """
@@ -52,31 +44,18 @@ class JreJavaHomeScalaIntegrationTest extends AbstractIntegrationSpec {
                     println "Used JRE: ${jreJavaHome.absolutePath.replace(File.separator, '/')}"
                     apply plugin:'scala'
 
-                    repositories {
-                        mavenCentral()
-                    }
+                    ${mavenCentralRepository()}
 
                     dependencies {
                         compile 'org.scala-lang:scala-library:2.11.1'
                     }
-
-                    compileScala {
-                        scalaCompileOptions.useAnt = ${useAnt}
-                        scalaCompileOptions.fork = ${forkMode}
-                    }
                     """
         when:
-        executer.withEnvironmentVars("JAVA_HOME": jreJavaHome.absolutePath).withTasks("compileScala").run().output
-        then:
-        file("build/classes/main/org/test/JavaClazz.class").exists()
-        file("build/classes/main/org/test/ScalaClazz.class").exists()
+        executer.withEnvironmentVars("JAVA_HOME": jreJavaHome.absolutePath).withTasks("compileScala").run()
 
-        where:
-        forkMode | useAnt
-//        false    | false
-        false    | true
-        true     | false
-        true     | true
+        then:
+        scalaClassFile("org/test/JavaClazz.class").exists()
+        scalaClassFile("org/test/ScalaClazz.class").exists()
     }
 
     @Requires(TestPrecondition.WINDOWS)
@@ -86,9 +65,7 @@ class JreJavaHomeScalaIntegrationTest extends AbstractIntegrationSpec {
         file('build.gradle') << """
                     apply plugin:'scala'
 
-                    repositories {
-                        mavenCentral()
-                    }
+                    ${mavenCentralRepository()}
 
                     dependencies {
                         compile 'org.scala-lang:scala-library:2.11.1'
@@ -99,7 +76,7 @@ class JreJavaHomeScalaIntegrationTest extends AbstractIntegrationSpec {
         when:
         executer.withEnvironmentVars(envVars).withTasks("compileScala").run()
         then:
-        file("build/classes/main/org/test/ScalaClazz.class").exists()
+        scalaClassFile("org/test/ScalaClazz.class").exists()
     }
 
     private writeScalaTestSource(String srcDir) {

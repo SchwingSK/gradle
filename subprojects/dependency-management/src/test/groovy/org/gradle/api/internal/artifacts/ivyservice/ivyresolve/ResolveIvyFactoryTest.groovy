@@ -19,46 +19,48 @@ package org.gradle.api.internal.artifacts.ivyservice.ivyresolve
 import com.google.common.collect.Lists
 import org.gradle.api.internal.artifacts.ComponentMetadataProcessor
 import org.gradle.api.internal.artifacts.ComponentSelectionRulesInternal
-import org.gradle.api.internal.artifacts.configurations.ConfigurationInternal
+import org.gradle.api.internal.artifacts.ImmutableModuleIdentifierFactory
 import org.gradle.api.internal.artifacts.configurations.ResolutionStrategyInternal
-import org.gradle.api.internal.artifacts.ivyservice.CacheLockingManager
 import org.gradle.api.internal.artifacts.ivyservice.dynamicversions.ModuleVersionsCache
 import org.gradle.api.internal.artifacts.ivyservice.ivyresolve.memcache.InMemoryCachedRepositoryFactory
 import org.gradle.api.internal.artifacts.ivyservice.ivyresolve.strategy.VersionComparator
 import org.gradle.api.internal.artifacts.ivyservice.ivyresolve.strategy.VersionSelectorScheme
 import org.gradle.api.internal.artifacts.ivyservice.modulecache.ModuleArtifactsCache
 import org.gradle.api.internal.artifacts.ivyservice.modulecache.ModuleMetaDataCache
+import org.gradle.api.internal.artifacts.repositories.metadata.ImmutableMetadataSources
+import org.gradle.api.internal.artifacts.repositories.metadata.MetadataArtifactProvider
 import org.gradle.api.internal.artifacts.repositories.ResolutionAwareRepository
 import org.gradle.api.internal.artifacts.repositories.resolver.ExternalResourceResolver
 import org.gradle.api.internal.artifacts.repositories.resolver.VersionLister
-import org.gradle.internal.component.external.model.ModuleComponentArtifactMetaData
+import org.gradle.internal.component.external.model.ModuleComponentArtifactMetadata
+import org.gradle.internal.resource.ExternalResourceRepository
 import org.gradle.internal.resource.cached.CachedArtifactIndex
 import org.gradle.internal.resource.local.FileStore
 import org.gradle.internal.resource.local.LocallyAvailableResourceFinder
 import org.gradle.internal.resource.transfer.CacheAwareExternalResourceAccessor
-import org.gradle.internal.resource.transport.ExternalResourceRepository
 import org.gradle.util.BuildCommencedTimeProvider
 import spock.lang.Specification
+import spock.lang.Subject
 
 class ResolveIvyFactoryTest extends Specification {
-    ResolveIvyFactory resolveIvyFactory
+    @Subject ResolveIvyFactory resolveIvyFactory
     ModuleVersionsCache moduleVersionsCache
     ModuleMetaDataCache moduleMetaDataCache
     ModuleArtifactsCache moduleArtifactsCache
     CachedArtifactIndex cachedArtifactIndex
-    CacheLockingManager cacheLockingManager
     StartParameterResolutionOverride startParameterResolutionOverride
     BuildCommencedTimeProvider buildCommencedTimeProvider
     InMemoryCachedRepositoryFactory inMemoryCachedRepositoryFactory
     VersionSelectorScheme versionSelectorScheme
     VersionComparator versionComparator
+    ImmutableModuleIdentifierFactory moduleIdentifierFactory
+    RepositoryBlacklister repositoryBlacklister
 
     def setup() {
         moduleVersionsCache = Mock(ModuleVersionsCache)
         moduleMetaDataCache = Mock(ModuleMetaDataCache)
         moduleArtifactsCache = Mock(ModuleArtifactsCache)
         cachedArtifactIndex = Mock(CachedArtifactIndex)
-        cacheLockingManager = Mock(CacheLockingManager)
         startParameterResolutionOverride = Mock(StartParameterResolutionOverride) {
             _ * overrideModuleVersionRepository(_) >> { ModuleComponentRepository repository -> repository }
         }
@@ -66,17 +68,19 @@ class ResolveIvyFactoryTest extends Specification {
         inMemoryCachedRepositoryFactory = Mock(InMemoryCachedRepositoryFactory) {
             _ * cached(_) >> { ModuleComponentRepository repository -> repository }
         }
+        moduleIdentifierFactory = Mock(ImmutableModuleIdentifierFactory)
         versionSelectorScheme = Mock(VersionSelectorScheme)
         versionComparator = Mock(VersionComparator)
+        repositoryBlacklister = Mock(RepositoryBlacklister)
 
         resolveIvyFactory = new ResolveIvyFactory(moduleVersionsCache, moduleMetaDataCache, moduleArtifactsCache,
-              cachedArtifactIndex, cacheLockingManager, startParameterResolutionOverride, buildCommencedTimeProvider,
-              inMemoryCachedRepositoryFactory, versionSelectorScheme, versionComparator)
+            cachedArtifactIndex, startParameterResolutionOverride, buildCommencedTimeProvider,
+            inMemoryCachedRepositoryFactory, versionSelectorScheme, versionComparator, moduleIdentifierFactory, repositoryBlacklister)
     }
 
     def "returns an empty resolver when no repositories are configured" () {
         when:
-        def resolver = resolveIvyFactory.create(Stub(ConfigurationInternal), Collections.emptyList(), Stub(ComponentMetadataProcessor))
+        def resolver = resolveIvyFactory.create(Stub(ResolutionStrategyInternal), Collections.emptyList(), Stub(ComponentMetadataProcessor))
 
         then:
         resolver instanceof NoRepositoriesResolver
@@ -85,10 +89,8 @@ class ResolveIvyFactoryTest extends Specification {
     def "sets parent resolver with different selection rules when repository is external" () {
         def componentSelectionRules = Stub(ComponentSelectionRulesInternal)
 
-        def configuration = Stub(ConfigurationInternal) {
-            getResolutionStrategy() >> Stub(ResolutionStrategyInternal) {
-                getComponentSelection() >> componentSelectionRules
-            }
+        def resolutionStrategy = Stub(ResolutionStrategyInternal) {
+            getComponentSelection() >> componentSelectionRules
         }
 
         def spyResolver = externalResourceResolverSpy()
@@ -97,13 +99,13 @@ class ResolveIvyFactoryTest extends Specification {
         })
 
         when:
-        def resolver = resolveIvyFactory.create(configuration, repositories, Stub(ComponentMetadataProcessor))
+        def resolver = resolveIvyFactory.create(resolutionStrategy, repositories, Stub(ComponentMetadataProcessor))
 
         then:
         assert resolver instanceof UserResolverChain
         resolver.componentSelectionRules == componentSelectionRules
 
-        1 * spyResolver.setRepositoryChain(_) >> { RepositoryChain parentResolver ->
+        1 * spyResolver.setComponentResolvers(_) >> { ComponentResolvers parentResolver ->
             assert parentResolver instanceof ResolveIvyFactory.ParentModuleLookupResolver
             // Validate that the parent repository chain selection rules are different and empty
             def parentComponentSelectionRules = parentResolver.delegate.componentSelectionRules
@@ -117,20 +119,25 @@ class ResolveIvyFactoryTest extends Specification {
         ExternalResourceRepository externalResourceRepository = Stub()
         CacheAwareExternalResourceAccessor cacheAwareExternalResourceAccessor = Stub()
         VersionLister versionLister = Stub()
-        LocallyAvailableResourceFinder<ModuleComponentArtifactMetaData> locallyAvailableResourceFinder = Stub()
-        FileStore<ModuleComponentArtifactMetaData> fileStore = Stub()
+        LocallyAvailableResourceFinder<ModuleComponentArtifactMetadata> locallyAvailableResourceFinder = Stub()
+        FileStore<ModuleComponentArtifactMetadata> artifactFileStore = Stub()
+        ImmutableMetadataSources metadataSources = Stub()
 
         return Spy(ExternalResourceResolver,
             constructorArgs: [
-                    "Spy Resolver",
-                    false,
-                    externalResourceRepository,
-                    cacheAwareExternalResourceAccessor,
-                    versionLister,
-                    locallyAvailableResourceFinder,
-                    fileStore
+                "Spy Resolver",
+                false,
+                externalResourceRepository,
+                cacheAwareExternalResourceAccessor,
+                versionLister,
+                locallyAvailableResourceFinder,
+                artifactFileStore,
+                moduleIdentifierFactory,
+                metadataSources,
+                Stub(MetadataArtifactProvider)
             ]
         ) {
+            appendId(_) >> { }
             getLocalAccess() >> Stub(ModuleComponentRepositoryAccess)
             getRemoteAccess() >> Stub(ModuleComponentRepositoryAccess)
             isM2compatible() >> true

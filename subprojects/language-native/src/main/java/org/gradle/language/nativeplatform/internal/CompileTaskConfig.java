@@ -15,16 +15,15 @@
  */
 package org.gradle.language.nativeplatform.internal;
 
+import com.google.common.collect.ImmutableSet;
 import org.gradle.api.DefaultTask;
-import org.gradle.api.Project;
 import org.gradle.api.Task;
 import org.gradle.api.Transformer;
 import org.gradle.api.file.FileCollection;
-import org.gradle.api.internal.file.collections.SimpleFileCollection;
-import org.gradle.api.plugins.ExtensionAware;
-import org.gradle.api.specs.Spec;
-import org.gradle.api.tasks.util.PatternSet;
-import org.gradle.language.PreprocessingTool;
+import org.gradle.api.internal.file.FileCollectionFactory;
+import org.gradle.api.internal.file.collections.MinimalFileSet;
+import org.gradle.api.internal.project.ProjectInternal;
+import org.gradle.internal.service.ServiceRegistry;
 import org.gradle.language.base.LanguageSourceSet;
 import org.gradle.language.base.internal.LanguageSourceSetInternal;
 import org.gradle.language.base.internal.SourceTransformTaskConfig;
@@ -32,22 +31,28 @@ import org.gradle.language.base.internal.registry.LanguageTransform;
 import org.gradle.language.nativeplatform.DependentSourceSet;
 import org.gradle.language.nativeplatform.HeaderExportingSourceSet;
 import org.gradle.language.nativeplatform.tasks.AbstractNativeCompileTask;
-import org.gradle.language.nativeplatform.tasks.AbstractNativePCHCompileTask;
 import org.gradle.nativeplatform.NativeDependencySet;
 import org.gradle.nativeplatform.ObjectFile;
+import org.gradle.nativeplatform.PreprocessingTool;
 import org.gradle.nativeplatform.SharedLibraryBinarySpec;
 import org.gradle.nativeplatform.Tool;
 import org.gradle.nativeplatform.internal.NativeBinarySpecInternal;
+import org.gradle.nativeplatform.platform.internal.NativePlatformInternal;
+import org.gradle.nativeplatform.toolchain.internal.NativeToolChainInternal;
+import org.gradle.nativeplatform.toolchain.internal.PlatformToolProvider;
+import org.gradle.nativeplatform.toolchain.internal.SystemIncludesAwarePlatformToolProvider;
+import org.gradle.nativeplatform.toolchain.internal.ToolType;
 import org.gradle.platform.base.BinarySpec;
 import org.gradle.util.CollectionUtils;
 
 import java.io.File;
 import java.util.Collection;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.Callable;
 
-public class CompileTaskConfig implements SourceTransformTaskConfig {
+public abstract class CompileTaskConfig implements SourceTransformTaskConfig {
 
     private final LanguageTransform<? extends LanguageSourceSet, ObjectFile> languageTransform;
     private final Class<? extends DefaultTask> taskType;
@@ -57,15 +62,18 @@ public class CompileTaskConfig implements SourceTransformTaskConfig {
         this.taskType = taskType;
     }
 
+    @Override
     public String getTaskPrefix() {
         return "compile";
     }
 
+    @Override
     public Class<? extends DefaultTask> getTaskType() {
         return taskType;
     }
 
-    public void configureTask(Task task, BinarySpec binary, LanguageSourceSet sourceSet) {
+    @Override
+    public void configureTask(Task task, BinarySpec binary, LanguageSourceSet sourceSet, ServiceRegistry serviceRegistry) {
         configureCompileTaskCommon((AbstractNativeCompileTask) task, (NativeBinarySpecInternal) binary, (LanguageSourceSetInternal) sourceSet);
         configureCompileTask((AbstractNativeCompileTask) task, (NativeBinarySpecInternal) binary, (LanguageSourceSetInternal) sourceSet);
     }
@@ -75,12 +83,7 @@ public class CompileTaskConfig implements SourceTransformTaskConfig {
         task.setTargetPlatform(binary.getTargetPlatform());
         task.setPositionIndependentCode(binary instanceof SharedLibraryBinarySpec);
 
-        // TODO:DAZ Not sure if these both need to be lazy
-        task.includes(new Callable<Set<File>>() {
-            public Set<File> call() throws Exception {
-                return ((HeaderExportingSourceSet) sourceSet).getExportedHeaders().getSrcDirs();
-            }
-        });
+        task.includes(((HeaderExportingSourceSet) sourceSet).getExportedHeaders().getSourceDirectories());
         task.includes(new Callable<List<FileCollection>>() {
             public List<FileCollection> call() {
                 Collection<NativeDependencySet> libs = binary.getLibs((DependentSourceSet) sourceSet);
@@ -91,46 +94,40 @@ public class CompileTaskConfig implements SourceTransformTaskConfig {
                 });
             }
         });
+        FileCollectionFactory fileCollectionFactory = ((ProjectInternal) task.getProject()).getServices().get(FileCollectionFactory.class);
+        task.includes(fileCollectionFactory.create(new MinimalFileSet() {
+            @Override
+            public Set<File> getFiles() {
+                PlatformToolProvider platformToolProvider = ((NativeToolChainInternal) binary.getToolChain()).select((NativePlatformInternal) binary.getTargetPlatform());
+                if (platformToolProvider instanceof SystemIncludesAwarePlatformToolProvider) {
+                    ToolType toolType = determineToolType(languageTransform.getLanguageName());
+                    return new LinkedHashSet<File>(((SystemIncludesAwarePlatformToolProvider) platformToolProvider).getSystemIncludes(toolType));
+                }
+                return ImmutableSet.of();
+            }
+
+            @Override
+            public String getDisplayName() {
+                return "System includes for " + binary.getToolChain().getDisplayName();
+            }
+        }));
 
         for (String toolName : languageTransform.getBinaryTools().keySet()) {
-            Tool tool = (Tool) ((ExtensionAware) binary).getExtensions().getByName(toolName);
+            Tool tool = binary.getToolByName(toolName);
             if (tool instanceof PreprocessingTool) {
                 task.setMacros(((PreprocessingTool) tool).getMacros());
             }
 
-            task.setCompilerArgs(tool.getArgs());
+            task.getCompilerArgs().set(tool.getArgs());
         }
     }
 
-    protected void configureCompileTask(AbstractNativeCompileTask task, final NativeBinarySpecInternal binary, final LanguageSourceSetInternal sourceSet) {
-        task.setDescription(String.format("Compiles the %s of %s", sourceSet, binary));
-
-        task.source(sourceSet.getSource());
-
-        final Project project = task.getProject();
-        task.setObjectFileDir(project.file(String.valueOf(project.getBuildDir()) + "/objs/" + binary.getNamingScheme().getOutputDirectoryBase() + "/" + sourceSet.getFullName()));
-
-        // If this task uses a pre-compiled header
-        if (sourceSet instanceof DependentSourceSet && !((DependentSourceSet) sourceSet).getPreCompiledHeaders().isEmpty()) {
-            task.setPrefixHeaderFile(((DependentSourceSet)sourceSet).getPrefixHeaderFile());
-            task.setPreCompiledHeaders(((DependentSourceSet) sourceSet).getPreCompiledHeaders());
-            task.preCompiledHeaderInclude(new Callable<FileCollection>() {
-                public FileCollection call() {
-                    Set<AbstractNativePCHCompileTask> pchTasks = binary.getTasks().withType(AbstractNativePCHCompileTask.class).matching(new Spec<AbstractNativePCHCompileTask>() {
-                        @Override
-                        public boolean isSatisfiedBy(AbstractNativePCHCompileTask pchCompileTask) {
-                            return ((DependentSourceSet) sourceSet).getPrefixHeaderFile().equals(pchCompileTask.getPrefixHeaderFile());
-                        }
-                    });
-                    if (!pchTasks.isEmpty()) {
-                        return pchTasks.iterator().next().getOutputs().getFiles().getAsFileTree().matching(new PatternSet().include("**/*.pch", "**/*.gch"));
-                    } else {
-                        return new SimpleFileCollection();
-                    }
-                }
-            });
+    private ToolType determineToolType(String languageName) {
+        if (languageName.equals("cpp")) {
+            return ToolType.CPP_COMPILER;
         }
-
-        binary.binaryInputs(task.getOutputs().getFiles().getAsFileTree().matching(new PatternSet().include("**/*.obj", "**/*.o")));
+        return ToolType.C_COMPILER;
     }
+
+    abstract void configureCompileTask(AbstractNativeCompileTask task, final NativeBinarySpecInternal binary, final LanguageSourceSetInternal sourceSet);
 }

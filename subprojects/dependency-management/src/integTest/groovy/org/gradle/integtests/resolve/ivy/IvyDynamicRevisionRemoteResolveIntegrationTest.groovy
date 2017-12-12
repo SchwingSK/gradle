@@ -16,7 +16,7 @@
 package org.gradle.integtests.resolve.ivy
 
 import org.gradle.integtests.fixtures.AbstractHttpDependencyResolutionTest
-import org.gradle.integtests.resolve.ResolveTestFixture
+import org.gradle.integtests.fixtures.resolve.ResolveTestFixture
 import org.gradle.test.fixtures.Repository
 import org.gradle.test.fixtures.encoding.Identifier
 import org.gradle.test.fixtures.server.http.IvyHttpModule
@@ -248,7 +248,7 @@ dependencies {
     staticVersions group: "group", name: "projectA", version: "1.1"
     compile group: "group", name: "projectA", version: "latest.milestone"
 }
-task cache << { configurations.staticVersions.files }
+task cache { doLast { configurations.staticVersions.files } }
 """
 
         and:
@@ -361,7 +361,7 @@ dependencies {
         checkResolve "group:projectA:1.+": "group:projectA:1.2"
     }
 
-    def "recovers from broken directory listing in subsequent resolution"() {
+    def "fails on broken directory listing in subsequent resolution"() {
         def repo1 = ivyHttpRepo("repo1")
         def repo2 = ivyHttpRepo("repo2")
 
@@ -380,14 +380,17 @@ dependencies {
 
         and: "projectA is broken in repo1"
         repo1.directoryList("group", "projectA").expectGetBroken()
-        expectGetDynamicRevision(projectA11)
 
         then:
-        checkResolve "group:projectA:1.+": "group:projectA:1.1"
+        fails "checkDeps"
+        failure.assertHasCause "Could not resolve group:projectA:1.+."
+        failure.assertHasCause "Could not list versions"
+        failure.assertHasCause "Could not GET '$repo1.uri/group/projectA/'"
 
         when:
         server.resetExpectations()
         expectGetDynamicRevision(projectA12)
+        expectGetDynamicRevisionMetadata(projectA11)
 
         then:
         checkResolve "group:projectA:1.+": "group:projectA:1.2"
@@ -440,7 +443,7 @@ dependencies {
 """
 
         when:
-        ivyHttpRepo.module("org.test", "projectA", "1.1").publish()
+        def projectA11 = ivyHttpRepo.module("org.test", "projectA", "1.1").publish()
         def projectA12 = ivyHttpRepo.module("org.test", "projectA", "1.2").publish()
 
         and:
@@ -672,7 +675,7 @@ if (project.hasProperty('noDynamicRevisionCache')) {
         }
     }
 
-    public void "resolves dynamic version with 2 repositories where first repo results in 404 for directory listing"() {
+    def "resolves dynamic version with 2 repositories where first repo results in 404 for directory listing"() {
         given:
         def repo1 = ivyHttpRepo("repo1")
         def repo2 = ivyHttpRepo("repo2")
@@ -1197,6 +1200,7 @@ dependencies {
         then:
         fails "checkDeps"
         failure.assertHasCause "Could not resolve all dependencies for configuration ':compile'."
+        failure.assertHasCause "Could not resolve group:projectA:1.+."
         failure.assertHasCause "No cached version listing for group:projectA:1.+ available for offline mode."
     }
 
@@ -1213,9 +1217,24 @@ dependencies {
     }
 
     def expectGetDynamicRevision(IvyHttpModule module) {
-        module.repository.directoryList(module.organisation, module.module).expectGet()
+        expectListVersions(module)
         module.ivy.expectGet()
         module.jar.expectGet()
+    }
+
+    def expectGetDynamicRevisionMetadata(IvyHttpModule module) {
+        expectListVersions(module)
+        module.ivy.expectGet()
+    }
+
+    private expectListVersions(IvyHttpModule module) {
+        module.repository.directoryList(module.organisation, module.module).expectGet()
+    }
+
+    def expectGetStatusOf(IvyHttpModule module, String status = 'release') {
+        def file = temporaryFolder.createFile("cheap-${module.version}.status")
+        file << status
+        server.expectGet("/repo/${module.organisation}/${module.module}/${module.version}/status.txt", file)
     }
 
     def useRepository(Repository... repo) {

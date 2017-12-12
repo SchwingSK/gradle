@@ -37,13 +37,22 @@ class WindowsResourceHelloWorldApp extends HelloWorldApp {
     @Override
     String getExtraConfiguration() {
         return """
-            binaries.all {
-                linker.args "user32.lib"
-            }
-            binaries.withType(SharedLibraryBinarySpec) {
-                cppCompiler.define "DLL_EXPORT"
+            model {
+                binaries {
+                    all {
+                        linker.args "user32.lib"
+                    }
+                    withType(SharedLibraryBinarySpec) {
+                        cppCompiler.define "DLL_EXPORT"
+                    }
+                }
             }
 """
+    }
+
+    @Override
+    String getExtraConfiguration(String binaryName) {
+        return getExtraConfiguration()
     }
 
     @Override
@@ -70,7 +79,7 @@ int main () {
     hello();
     return 0;
 }
-""");
+""")
     }
 
     @Override
@@ -87,7 +96,7 @@ int main () {
 #endif
 
 void DLL_FUNC hello();
-""");
+""")
     }
 
     List<SourceFile> librarySources = [
@@ -113,6 +122,10 @@ void DLL_FUNC hello() {
 """),
         sourceFile("rc", "resources.rc", """
 #include "hello.h"
+
+// HACK: Ensure include root are correctly setup
+// See: https://github.com/gradle/gradle/issues/3662
+#include "winres.h"
 
 STRINGTABLE
 {

@@ -16,29 +16,24 @@
 
 package org.gradle.internal.component.external.model;
 
-import org.apache.ivy.core.module.descriptor.Artifact;
-import org.gradle.api.Nullable;
 import org.gradle.api.artifacts.component.ModuleComponentIdentifier;
+import org.gradle.internal.DisplayName;
 import org.gradle.internal.component.model.DefaultIvyArtifactName;
 import org.gradle.internal.component.model.IvyArtifactName;
+import org.gradle.util.GUtil;
 
-import java.util.Collections;
-import java.util.Map;
+import javax.annotation.Nullable;
 
-public class DefaultModuleComponentArtifactIdentifier implements ModuleComponentArtifactIdentifier {
+public class DefaultModuleComponentArtifactIdentifier implements ModuleComponentArtifactIdentifier, DisplayName {
     private final ModuleComponentIdentifier componentIdentifier;
     private final IvyArtifactName name;
 
-    public DefaultModuleComponentArtifactIdentifier(ModuleComponentIdentifier componentIdentifier, Artifact artifact) {
-        this(componentIdentifier, artifact.getName(), artifact.getType(), artifact.getExt(), artifact.getExtraAttributes());
-    }
-
     public DefaultModuleComponentArtifactIdentifier(ModuleComponentIdentifier componentIdentifier, String name, String type, @Nullable String extension) {
-        this(componentIdentifier, name, type, extension, Collections.<String, String>emptyMap());
+        this(componentIdentifier, new DefaultIvyArtifactName(name, type, extension));
     }
 
-    public DefaultModuleComponentArtifactIdentifier(ModuleComponentIdentifier componentIdentifier, String name, String type, @Nullable String extension, Map<String, String> attributes) {
-        this(componentIdentifier, new DefaultIvyArtifactName(name, type, extension, attributes));
+    public DefaultModuleComponentArtifactIdentifier(ModuleComponentIdentifier componentIdentifier, String name, String type, @Nullable String extension, @Nullable String classifier) {
+        this(componentIdentifier, new DefaultIvyArtifactName(name, type, extension, classifier));
     }
 
     public DefaultModuleComponentArtifactIdentifier(ModuleComponentIdentifier componentIdentifier, IvyArtifactName artifact) {
@@ -46,13 +41,32 @@ public class DefaultModuleComponentArtifactIdentifier implements ModuleComponent
         this.name = artifact;
     }
 
-    public String getDisplayName() {
+    @Override
+    public String getFileName() {
         StringBuilder builder = new StringBuilder();
-        builder.append(name.toString());
-        builder.append(" (");
-        builder.append(componentIdentifier.toString());
-        builder.append(")");
+        builder.append(name.getName());
+        builder.append('-');
+        builder.append(componentIdentifier.getVersion());
+        if (GUtil.isTrue(name.getClassifier())) {
+            builder.append('-');
+            builder.append(name.getClassifier());
+        }
+        if (GUtil.isTrue(name.getExtension())) {
+            builder.append('.');
+            builder.append(name.getExtension());
+        }
         return builder.toString();
+    }
+
+    public String getDisplayName() {
+        String name = this.name.toString();
+        String componentIdentifier = this.componentIdentifier.toString();
+        return name + " (" + componentIdentifier + ")";
+    }
+
+    @Override
+    public String getCapitalizedDisplayName() {
+        return getDisplayName();
     }
 
     public IvyArtifactName getName() {

@@ -18,13 +18,14 @@ package org.gradle.api.internal.file.collections;
 import groovy.lang.Closure;
 import org.gradle.api.Task;
 import org.gradle.api.file.FileCollection;
+import org.gradle.api.internal.file.FileCollectionInternal;
 import org.gradle.api.internal.file.FileResolver;
 import org.gradle.api.internal.tasks.TaskResolver;
 import org.gradle.api.tasks.TaskDependency;
 import org.gradle.test.fixtures.file.TestNameTestDirectoryProvider;
 import org.gradle.testfixtures.internal.NativeServicesTestFixture;
-import org.gradle.util.TestUtil;
 import org.gradle.util.JUnit4GroovyMockery;
+import org.gradle.util.TestUtil;
 import org.jmock.Expectations;
 import org.jmock.integration.junit4.JMock;
 import org.jmock.integration.junit4.JUnit4Mockery;
@@ -34,6 +35,7 @@ import org.junit.Test;
 import org.junit.runner.RunWith;
 
 import java.io.File;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.Callable;
@@ -41,8 +43,8 @@ import java.util.concurrent.Callable;
 import static org.gradle.util.Matchers.isEmpty;
 import static org.gradle.util.WrapUtil.*;
 import static org.hamcrest.Matchers.equalTo;
-import static org.hamcrest.Matchers.notNullValue;
 import static org.junit.Assert.assertThat;
+import static org.junit.Assert.assertTrue;
 
 @RunWith(JMock.class)
 public class DefaultConfigurableFileCollectionTest {
@@ -60,16 +62,23 @@ public class DefaultConfigurableFileCollectionTest {
     }
 
     @Test
+    public void canCreateEmptyCollection() {
+        DefaultConfigurableFileCollection collection = new DefaultConfigurableFileCollection(resolverMock, taskResolverStub);
+        assertTrue(collection.getFrom().isEmpty());
+        assertTrue(collection.getFiles().isEmpty());
+    }
+
+    @Test
     public void resolvesSpecifiedFilesUseFileResolver() {
         final File file1 = new File("1");
         final File file2 = new File("2");
 
-        DefaultConfigurableFileCollection collection = new DefaultConfigurableFileCollection(resolverMock, taskResolverStub, "a", "b");
+        DefaultConfigurableFileCollection collection = new DefaultConfigurableFileCollection(resolverMock, taskResolverStub, Arrays.asList("a", "b"));
 
         context.checking(new Expectations() {{
-            one(resolverMock).resolve("a");
+            oneOf(resolverMock).resolve("a");
             will(returnValue(file1));
-            one(resolverMock).resolve("b");
+            oneOf(resolverMock).resolve("b");
             will(returnValue(file2));
         }});
 
@@ -99,13 +108,12 @@ public class DefaultConfigurableFileCollectionTest {
         final File file1 = new File("1");
         final File file2 = new File("2");
 
-        DefaultConfigurableFileCollection collection = new DefaultConfigurableFileCollection(resolverMock, taskResolverStub, "src1",
-                "src2");
+        DefaultConfigurableFileCollection collection = new DefaultConfigurableFileCollection(resolverMock, taskResolverStub, Arrays.asList("src1", "src2"));
 
         context.checking(new Expectations() {{
-            one(resolverMock).resolve("src1");
+            oneOf(resolverMock).resolve("src1");
             will(returnValue(file1));
-            one(resolverMock).resolve("src2");
+            oneOf(resolverMock).resolve("src2");
             will(returnValue(file2));
         }});
 
@@ -143,7 +151,7 @@ public class DefaultConfigurableFileCollectionTest {
         collection.from(closure);
 
         context.checking(new Expectations() {{
-            one(resolverMock).resolve('a');
+            oneOf(resolverMock).resolve('a');
             will(returnValue(file));
         }});
 
@@ -218,19 +226,19 @@ public class DefaultConfigurableFileCollectionTest {
         final File file1 = new File("1");
         final File file2 = new File("2");
 
-        final FileCollection src = context.mock(FileCollection.class);
+        final FileCollectionInternal src = context.mock(FileCollectionInternal.class);
 
         collection.from(src);
 
         context.checking(new Expectations() {{
-            one(src).getFiles();
+            oneOf(src).getFiles();
             will(returnValue(toLinkedSet(file1)));
         }});
 
         assertThat(collection.getFiles(), equalTo(toLinkedSet(file1)));
 
         context.checking(new Expectations() {{
-            one(src).getFiles();
+            oneOf(src).getFiles();
             will(returnValue(toLinkedSet(file1, file2)));
         }});
 
@@ -244,7 +252,7 @@ public class DefaultConfigurableFileCollectionTest {
         final Callable callable = context.mock(Callable.class);
 
         context.checking(new Expectations() {{
-            one(callable).call();
+            oneOf(callable).call();
             will(returnValue(toList("src1", "src2")));
             allowing(resolverMock).resolve("src1");
             will(returnValue(file1));
@@ -261,7 +269,7 @@ public class DefaultConfigurableFileCollectionTest {
         final Callable callable = context.mock(Callable.class);
 
         context.checking(new Expectations() {{
-            one(callable).call();
+            oneOf(callable).call();
             will(returnValue(null));
         }});
 
@@ -279,32 +287,12 @@ public class DefaultConfigurableFileCollectionTest {
         collection.from(fileCollectionMock);
 
         context.checking(new Expectations() {{
-            one(resolveContext).push(resolverMock);
+            oneOf(resolveContext).push(resolverMock);
             will(returnValue(nestedContext));
-            one(nestedContext).add(collection.getFrom());
+            oneOf(nestedContext).add(collection.getFrom());
         }});
 
-        collection.resolve(resolveContext);
-    }
-
-    @Test
-    public void resolveBuildDependenciesWhenNoEmpty() {
-        final FileCollectionResolveContext resolveContext = context.mock(FileCollectionResolveContext.class);
-        final FileCollectionResolveContext nestedContext = context.mock(FileCollectionResolveContext.class);
-        final FileCollection fileCollectionMock = context.mock(FileCollection.class);
-
-        collection.from("file");
-        collection.builtBy("classes");
-        collection.from(fileCollectionMock);
-
-        context.checking(new Expectations() {{
-            one(resolveContext).push(resolverMock);
-            will(returnValue(nestedContext));
-            one(nestedContext).add(with(notNullValue(TaskDependency.class)));
-            one(nestedContext).add(collection.getFrom());
-        }});
-
-        collection.resolve(resolveContext);
+        collection.visitContents(resolveContext);
     }
 
     @Test
@@ -334,7 +322,7 @@ public class DefaultConfigurableFileCollectionTest {
 
     @Test
     public void taskDependenciesContainsUnionOfDependenciesOfNestedFileCollectionsPlusOwnDependencies() {
-        final FileCollection fileCollectionMock = context.mock(FileCollection.class);
+        final FileCollectionInternal fileCollectionMock = context.mock(FileCollectionInternal.class);
 
         collection.from(fileCollectionMock);
         collection.from("f");
@@ -371,5 +359,5 @@ public class DefaultConfigurableFileCollectionTest {
         assertThat(collection.getAsFileTree().getBuildDependencies().getDependencies(null), equalTo((Set) toSet(task)));
         assertThat(collection.getAsFileTree().matching(TestUtil.TEST_CLOSURE).getBuildDependencies().getDependencies(null), equalTo((Set) toSet(task)));
     }
-    
+
 }

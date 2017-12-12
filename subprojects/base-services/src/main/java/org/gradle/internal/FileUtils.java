@@ -16,16 +16,22 @@
 
 package org.gradle.internal;
 
+import org.apache.commons.io.FilenameUtils;
 import org.gradle.api.GradleException;
+import org.gradle.api.UncheckedIOException;
 
 import java.io.File;
+import java.io.IOException;
+import java.util.Collection;
+import java.util.Iterator;
+import java.util.LinkedList;
+import java.util.List;
 
 public class FileUtils {
     public static final int WINDOWS_PATH_LIMIT = 260;
 
     /**
-     * Converts a string into a string that is safe to use as a file name. The result will only include ascii
-     * characters and numbers, and the "-","_", #, $ and "." characters.
+     * Converts a string into a string that is safe to use as a file name. The result will only include ascii characters and numbers, and the "-","_", #, $ and "." characters.
      */
     public static String toSafeFileName(String name) {
         int size = name.length();
@@ -47,11 +53,139 @@ public class FileUtils {
         return rc.toString();
     }
 
-    public static File assertInWindowsPathLengthLimitation(File file){
-        if(file.getAbsolutePath().length() > WINDOWS_PATH_LIMIT){
+    public static File assertInWindowsPathLengthLimitation(File file) {
+        if (file.getAbsolutePath().length() > WINDOWS_PATH_LIMIT) {
             throw new GradleException(String.format("Cannot create file. '%s' exceeds windows path limitation of %d character.", file.getAbsolutePath(), WINDOWS_PATH_LIMIT));
 
         }
         return file;
     }
+
+    /**
+     * Returns the outer most files that encompass the given files inclusively.
+     * <p>
+     * This method does not access the file system.
+     * It is agnostic to whether a given file object represents a regular file, directory or does not exist.
+     * That is, the term “file” is used in the java.io.File sense, not the regular file sense.
+     *
+     * @param files the site of files to find the encompassing roots of
+     * @return the encompassing roots
+     */
+    public static Collection<? extends File> calculateRoots(Iterable<? extends File> files) {
+        List<File> roots = new LinkedList<File>();
+
+        files:
+        for (File file : files) {
+            File absoluteFile = file.getAbsoluteFile();
+            String path = absoluteFile + File.separator;
+            Iterator<File> rootsIterator = roots.iterator();
+
+            while (rootsIterator.hasNext()) {
+                File root = rootsIterator.next();
+                String rootPath = root.getPath() + File.separator;
+                if (path.startsWith(rootPath)) { // is lower than root
+                    continue files;
+                }
+
+                if (rootPath.startsWith(path)) { // is higher than root
+                    rootsIterator.remove();
+                }
+            }
+
+            roots.add(absoluteFile);
+        }
+
+        return roots;
+    }
+
+    /**
+     * Checks if the given file path ends with the given extension.
+     * @param file the file
+     * @param extension candidate extension including leading dot
+     * @return true if {@code file.getPath().endsWith(extension)}
+     */
+    public static boolean hasExtension(File file, String extension) {
+        return file.getPath().endsWith(extension);
+    }
+
+    /**
+     * Checks if the given file path ends with the given extension (ignoring case).
+     * @param fileName the file name
+     * @param extension candidate extension including leading dot
+     * @return true if the file name ends with extension, ignoring case
+     */
+    public static boolean hasExtensionIgnoresCase(String fileName, String extension) {
+        return endsWithIgnoreCase(fileName, extension);
+    }
+
+    private static boolean endsWithIgnoreCase(String subject, String suffix) {
+        return subject.regionMatches(true, subject.length() - suffix.length(), suffix, 0, suffix.length());
+    }
+
+    /**
+     * Returns a representation of the file path with an alternate extension.  If the file path has no extension,
+     * then the provided extension is simply concatenated.  If the file path has an extension, the extension is
+     * stripped and replaced with the provided extension.
+     *
+     * e.g. with a provided extension of ".bar"
+     * foo -> foo.bar
+     * foo.baz -> foo.bar
+     *
+     * @param filePath the file path to transform
+     * @param extension the extension to use in the transformed path
+     * @return the transformed path
+     */
+    public static String withExtension(String filePath, String extension) {
+        if (filePath.toLowerCase().endsWith(extension)) {
+            return filePath;
+        }
+        return removeExtension(filePath) + extension;
+    }
+
+    /**
+     * Removes the extension (if any) from the file path.  If the file path has no extension, then it returns the same string.
+     *
+     * @param filePath
+     * @return the file path without an extension
+     */
+    public static String removeExtension(String filePath) {
+        int fileNameStart = Math.max(filePath.lastIndexOf('/'), filePath.lastIndexOf('\\'));
+        int extensionPos = filePath.lastIndexOf('.');
+
+        if (extensionPos > fileNameStart) {
+            return filePath.substring(0, extensionPos);
+        }
+        return filePath;
+    }
+
+    /**
+     * Canonicalizes the given file.
+     */
+    public static File canonicalize(File src) {
+        try {
+            return src.getCanonicalFile();
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+    }
+
+    /**
+     * Normalizes the given file, removing redundant segments like /../. If normalization
+     * tries to step beyond the file system root, the root is returned.
+     */
+    public static File normalize(File src) {
+        String path = src.getAbsolutePath();
+        String normalizedPath = FilenameUtils.normalize(path);
+        if (normalizedPath != null) {
+            return new File(normalizedPath);
+        }
+        File root = src;
+        File parent = root.getParentFile();
+        while (parent != null) {
+            root = root.getParentFile();
+            parent = root.getParentFile();
+        }
+        return root;
+    }
+
 }

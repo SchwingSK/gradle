@@ -16,22 +16,23 @@
 
 package org.gradle.process.internal
 
+import org.gradle.api.internal.file.TestFiles
 import org.gradle.internal.jvm.Jvm
 import org.gradle.process.ExecResult
-import org.gradle.process.internal.streams.StreamsHandler
+import org.gradle.test.fixtures.concurrent.ConcurrentSpec
 import org.gradle.test.fixtures.file.TestNameTestDirectoryProvider
 import org.gradle.util.GUtil
 import org.gradle.util.UsesNativeServices
 import org.junit.Rule
 import spock.lang.Ignore
-import spock.lang.Specification
 import spock.lang.Timeout
 
 import java.util.concurrent.Callable
+import java.util.concurrent.Executor
 
 @UsesNativeServices
 @Timeout(60)
-class DefaultExecHandleSpec extends Specification {
+class DefaultExecHandleSpec extends ConcurrentSpec {
     @Rule final TestNameTestDirectoryProvider tmpDir = new TestNameTestDirectoryProvider();
 
     void "forks process"() {
@@ -108,11 +109,56 @@ class DefaultExecHandleSpec extends Specification {
         when:
         execHandle.start();
         execHandle.abort();
-        def result = execHandle.waitForFinish();
+        then:
+        execHandle.state == ExecHandleState.ABORTED
+        and:
+        execHandle.waitForFinish().exitValue != 0
+    }
+
+    void "can abort after process has completed"() {
+        given:
+        def execHandle = handle().args(args(TestApp.class)).build();
+        execHandle.start().waitForFinish();
+
+        when:
+        execHandle.abort();
+
+        then:
+        execHandle.state == ExecHandleState.SUCCEEDED
+
+        and:
+        execHandle.waitForFinish().exitValue == 0
+    }
+
+    void "can abort after process has failed"() {
+        given:
+        def execHandle = handle().args(args(BrokenApp.class)).build();
+        execHandle.start().waitForFinish();
+
+        when:
+        execHandle.abort();
+
+        then:
+        execHandle.state == ExecHandleState.FAILED
+
+        and:
+        execHandle.waitForFinish().exitValue == 72
+    }
+
+    void "can abort after process has been aborted"() {
+        given:
+        def execHandle = handle().args(args(SlowApp.class)).build();
+        execHandle.start();
+        execHandle.abort();
+
+        when:
+        execHandle.abort();
 
         then:
         execHandle.state == ExecHandleState.ABORTED
-        result.exitValue != 0
+
+        and:
+        execHandle.waitForFinish().exitValue != 0
     }
 
     void "clients can listen to notifications"() {
@@ -127,6 +173,79 @@ class DefaultExecHandleSpec extends Specification {
         1 * listener.executionStarted(execHandle)
         1 * listener.executionFinished(execHandle, _ as ExecResult)
         0 * listener._
+    }
+
+    void "clients can listen to notifications when execution fails"() {
+        ExecHandleListener listener = Mock()
+        def execHandle = handle().listener(listener).args(args(BrokenApp.class)).build();
+
+        when:
+        execHandle.start();
+        execHandle.waitForFinish()
+
+        then:
+        1 * listener.executionStarted(execHandle)
+        1 * listener.executionFinished(execHandle, _ as ExecResult)
+        0 * listener._
+    }
+
+    void "propagates listener start notification failure"() {
+        def failure = new RuntimeException()
+        ExecHandleListener listener = Mock()
+        def execHandle = handle().listener(listener).args(args(TestApp.class)).build();
+
+        when:
+        execHandle.start();
+        execHandle.waitForFinish()
+
+        then:
+        1 * listener.executionStarted(execHandle) >> { throw failure }
+        1 * listener.executionFinished(execHandle, _ as ExecResult) >> { ExecHandle h, ExecResult r ->
+            assert r.failure.cause == failure
+        }
+        0 * listener._
+
+        and:
+        def e = thrown(ExecException)
+        e.cause == failure
+    }
+
+    void "propagates listener finish notification failure"() {
+        def failure = new RuntimeException()
+        ExecHandleListener listener = Mock()
+        def execHandle = handle().listener(listener).args(args(TestApp.class)).build();
+
+        when:
+        execHandle.start();
+        execHandle.waitForFinish()
+
+        then:
+        1 * listener.executionStarted(execHandle)
+        1 * listener.executionFinished(execHandle, _ as ExecResult) >> { throw failure }
+        0 * listener._
+
+        and:
+        def e = thrown(ExecException)
+        e.cause == failure
+    }
+
+    void "propagates listener finish notification failure after execution fails"() {
+        def failure = new RuntimeException()
+        ExecHandleListener listener = Mock()
+        def execHandle = handle().listener(listener).args(args(BrokenApp.class)).build();
+
+        when:
+        execHandle.start();
+        execHandle.waitForFinish()
+
+        then:
+        1 * listener.executionStarted(execHandle)
+        1 * listener.executionFinished(execHandle, _ as ExecResult) >> { throw failure }
+        0 * listener._
+
+        and:
+        def e = thrown(ExecException)
+        e.cause == failure
     }
 
     void "forks daemon and aborts it"() {
@@ -255,7 +374,7 @@ class DefaultExecHandleSpec extends Specification {
 
         then:
         result.rethrowFailure()
-        1 * streamsHandler.connectStreams(_ as Process, "foo proc")
+        1 * streamsHandler.connectStreams(_ as Process, "foo proc", _ as Executor)
         1 * streamsHandler.start()
         1 * streamsHandler.stop()
         0 * streamsHandler._
@@ -299,8 +418,8 @@ class DefaultExecHandleSpec extends Specification {
         }
     }
 
-    private ExecHandleBuilder handle() {
-        new ExecHandleBuilder()
+    private DefaultExecHandleBuilder handle() {
+        new DefaultExecHandleBuilder(TestFiles.resolver(), executor)
                 .executable(Jvm.current().getJavaExecutable().getAbsolutePath())
                 .setTimeout(20000) //sanity timeout
                 .workingDir(tmpDir.getTestDirectory());

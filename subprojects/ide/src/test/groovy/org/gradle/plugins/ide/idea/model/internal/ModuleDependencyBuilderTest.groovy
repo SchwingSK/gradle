@@ -16,33 +16,57 @@
 
 package org.gradle.plugins.ide.idea.model.internal
 
-import org.gradle.util.TestUtil
+import org.gradle.api.internal.artifacts.ivyservice.projectmodule.LocalComponentRegistry
+import org.gradle.internal.component.local.model.LocalComponentArtifactMetadata
+import org.gradle.internal.component.model.DefaultIvyArtifactName
 import spock.lang.Specification
+
+import static org.gradle.internal.component.local.model.TestComponentIdentifiers.newProjectId
 
 class ModuleDependencyBuilderTest extends Specification {
 
-    def project = TestUtil.createRootProject()
-    def builder = new ModuleDependencyBuilder()
+    def projectId = newProjectId(":nested:project-name")
+    def localComponentRegistry = Mock(LocalComponentRegistry)
+    def builder = new ModuleDependencyBuilder(localComponentRegistry)
 
     def "builds dependency for nonIdea project"() {
         when:
-        def dependency = builder.create(project, 'compile')
+        def dependency = builder.create(projectId, 'compile')
 
         then:
         dependency.scope == 'compile'
-        dependency.name == project.name
+        dependency.name == "project-name"
+
+        and:
+        localComponentRegistry.getAdditionalArtifacts(_) >> []
+    }
+
+    def "builds dependency for nonIdea root project"() {
+        when:
+        def dependency = builder.create(newProjectId("build-1",":"), 'compile')
+
+        then:
+        dependency.scope == 'compile'
+        dependency.name == "build-1"
+
+        and:
+        localComponentRegistry.getAdditionalArtifacts(_) >> []
     }
 
     def "builds dependency for project"() {
         given:
-        project.apply(plugin: 'idea')
-        project.idea.module.name = 'foo'
+        def imlArtifact = Stub(LocalComponentArtifactMetadata) {
+            getName() >> new DefaultIvyArtifactName("foo", "iml", "iml", null)
+        }
 
         when:
-        def dependency = builder.create(project, 'compile')
+        def dependency = builder.create(projectId, 'compile')
 
         then:
         dependency.scope == 'compile'
         dependency.name == 'foo'
+
+        and:
+        localComponentRegistry.findAdditionalArtifact(projectId, "iml") >> imlArtifact
     }
 }

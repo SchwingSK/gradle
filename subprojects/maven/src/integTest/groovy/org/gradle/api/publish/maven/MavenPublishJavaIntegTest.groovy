@@ -17,12 +17,13 @@
 package org.gradle.api.publish.maven
 
 import org.gradle.integtests.fixtures.publish.maven.AbstractMavenPublishIntegTest
+import org.gradle.test.fixtures.maven.MavenDependencyExclusion
+import spock.lang.Unroll
 
 class MavenPublishJavaIntegTest extends AbstractMavenPublishIntegTest {
-    def mavenModule = mavenRepo.module("org.gradle.test", "publishTest", "1.9")
+    def javaLibrary = javaLibrary(mavenRepo.module("org.gradle.test", "publishTest", "1.9"))
 
-    public void "can publish jar and meta-data to maven repository"() {
-        given:
+    def "can publish java-library with no dependencies"() {
         createBuildScripts("""
             publishing {
                 publications {
@@ -37,16 +38,407 @@ class MavenPublishJavaIntegTest extends AbstractMavenPublishIntegTest {
         run "publish"
 
         then:
-        mavenModule.assertPublishedAsJavaModule()
-
-        mavenModule.parsedPom.scopes.keySet() == ["runtime"] as Set
-        mavenModule.parsedPom.scopes.runtime.assertDependsOn("commons-collections:commons-collections:3.2.1", "commons-io:commons-io:1.4")
+        javaLibrary.assertPublished()
+        javaLibrary.assertNoDependencies()
 
         and:
-        resolveArtifacts(mavenModule) == ["commons-collections-3.2.1.jar", "commons-io-1.4.jar", "publishTest-1.9.jar"]
+        resolveArtifacts(javaLibrary) { expectFiles "publishTest-1.9.jar" }
+        resolveApiArtifacts(javaLibrary) { expectFiles "publishTest-1.9.jar" }
+        resolveRuntimeArtifacts(javaLibrary) { expectFiles "publishTest-1.9.jar" }
     }
 
-    public void "can publish attached artifacts to maven repository"() {
+    def "can publish java-library with dependencies"() {
+        given:
+        javaLibrary(mavenRepo.module("org.test", "foo", "1.0")).withModuleMetadata().publish()
+        javaLibrary(mavenRepo.module("org.test", "bar", "1.0")).withModuleMetadata().publish()
+
+        createBuildScripts("""
+            dependencies {
+                api "org.test:foo:1.0"
+                implementation "org.test:bar:1.0"
+            }
+            publishing {
+                publications {
+                    maven(MavenPublication) {
+                        from components.java
+                    }
+                }
+            }
+""")
+
+        when:
+        run "publish"
+
+        then:
+        javaLibrary.assertPublished()
+        javaLibrary.assertApiDependencies("org.test:foo:1.0")
+        javaLibrary.assertRuntimeDependencies("org.test:bar:1.0")
+
+        and:
+        resolveArtifacts(javaLibrary) {
+            expectFiles "bar-1.0.jar", "foo-1.0.jar", "publishTest-1.9.jar"
+        }
+
+        and:
+        resolveApiArtifacts(javaLibrary) {
+            withModuleMetadata {
+                expectFiles "foo-1.0.jar", "publishTest-1.9.jar"
+            }
+            withoutModuleMetadata {
+                expectFiles "bar-1.0.jar", "foo-1.0.jar", "publishTest-1.9.jar"
+            }
+        }
+
+        and:
+        resolveRuntimeArtifacts(javaLibrary) {
+            expectFiles "bar-1.0.jar", "foo-1.0.jar", "publishTest-1.9.jar"
+        }
+    }
+
+    def "can publish java-library with dependencies and excludes"() {
+        requiresExternalDependencies = true
+
+        given:
+        createBuildScripts("""
+
+            ${mavenCentralRepository()}
+
+            dependencies {
+                compile "commons-collections:commons-collections:3.2.2"
+                compileOnly "javax.servlet:servlet-api:2.5"
+                runtime "commons-io:commons-io:1.4"
+                testCompile "junit:junit:4.12"
+                compile ("org.springframework:spring-core:2.5.6") {
+                    exclude group: 'commons-logging', module: 'commons-logging'
+                }
+                compile ("commons-beanutils:commons-beanutils:1.8.3") {
+                   exclude group : 'commons-logging'
+                }
+                compile ("commons-dbcp:commons-dbcp:1.4") {
+                   transitive = false
+                }
+                compile ("org.apache.camel:camel-jackson:2.15.3") {
+                   exclude module : 'camel-core'
+                }
+            }
+
+            publishing {
+                publications {
+                    maven(MavenPublication) {
+                        from components.java
+                    }
+                }
+            }
+""")
+
+        when:
+        run "publish"
+
+        then:
+        javaLibrary.assertPublished()
+
+        javaLibrary.parsedPom.scopes.keySet() == ["compile"] as Set
+        javaLibrary.parsedPom.scopes.compile.assertDependsOn("commons-collections:commons-collections:3.2.2", "commons-io:commons-io:1.4", "org.springframework:spring-core:2.5.6", "commons-beanutils:commons-beanutils:1.8.3", "commons-dbcp:commons-dbcp:1.4", "org.apache.camel:camel-jackson:2.15.3")
+        javaLibrary.parsedPom.scopes.compile.hasDependencyExclusion("org.springframework:spring-core:2.5.6", new MavenDependencyExclusion("commons-logging", "commons-logging"))
+        javaLibrary.parsedPom.scopes.compile.hasDependencyExclusion("commons-beanutils:commons-beanutils:1.8.3", new MavenDependencyExclusion("commons-logging", "*"))
+        javaLibrary.parsedPom.scopes.compile.hasDependencyExclusion("commons-dbcp:commons-dbcp:1.4", new MavenDependencyExclusion("*", "*"))
+        javaLibrary.parsedPom.scopes.compile.hasDependencyExclusion("org.apache.camel:camel-jackson:2.15.3", new MavenDependencyExclusion("*", "camel-core"))
+
+        and:
+        javaLibrary.assertApiDependencies("commons-collections:commons-collections:3.2.2", "commons-io:commons-io:1.4", "org.springframework:spring-core:2.5.6", "commons-beanutils:commons-beanutils:1.8.3", "commons-dbcp:commons-dbcp:1.4", "org.apache.camel:camel-jackson:2.15.3")
+        def apiVariant = javaLibrary.parsedModuleMetadata.variant('api')
+        apiVariant.dependencies.find { it.coords == 'org.springframework:spring-core:2.5.6' }.excludes == ['commons-logging:commons-logging']
+        apiVariant.dependencies.find { it.coords == 'commons-beanutils:commons-beanutils:1.8.3' }.excludes == ['commons-logging:*']
+        apiVariant.dependencies.find { it.coords == 'commons-dbcp:commons-dbcp:1.4' }.excludes == ['*:*']
+        apiVariant.dependencies.find { it.coords == 'org.apache.camel:camel-jackson:2.15.3' }.excludes == ['*:camel-core']
+
+        and:
+        resolveArtifacts(javaLibrary) {
+            expectFiles "camel-jackson-2.15.3.jar", "commons-beanutils-1.8.3.jar", "commons-collections-3.2.2.jar", "commons-dbcp-1.4.jar", "commons-io-1.4.jar",
+                "jackson-annotations-2.4.0.jar", "jackson-core-2.4.3.jar", "jackson-databind-2.4.3.jar", "jackson-module-jaxb-annotations-2.4.3.jar",
+                "publishTest-1.9.jar", "spring-core-2.5.6.jar"
+        }
+    }
+
+    def "can publish java-library with strict dependencies"() {
+        requiresExternalDependencies = true
+
+        given:
+        createBuildScripts("""
+
+            ${jcenterRepository()}
+
+            dependencies {
+                api "org.springframework:spring-core:2.5.6"
+                implementation("commons-collections:commons-collections") {
+                    version { strictly '3.2.2' }
+                }
+            }
+
+            publishing {
+                publications {
+                    maven(MavenPublication) {
+                        from components.java
+                    }
+                }
+            }
+""")
+
+        when:
+        run "publish"
+
+        then:
+        javaLibrary.assertPublished()
+
+        javaLibrary.parsedPom.scopes.keySet() == ["compile", "runtime"] as Set
+        javaLibrary.parsedPom.scopes.compile.assertDependsOn("org.springframework:spring-core:2.5.6")
+        javaLibrary.parsedPom.scopes.runtime.assertDependsOn("commons-collections:commons-collections:3.2.2")
+
+        and:
+        javaLibrary.parsedModuleMetadata.variant('api') {
+            dependency('org.springframework:spring-core:2.5.6') {
+                noMoreExcludes()
+                rejects()
+            }
+            noMoreDependencies()
+        }
+
+        javaLibrary.parsedModuleMetadata.variant('runtime') {
+            dependency('commons-collections:commons-collections:3.2.2') {
+                noMoreExcludes()
+                rejects ']3.2.2,)'
+            }
+            dependency('org.springframework:spring-core:2.5.6') {
+                noMoreExcludes()
+                rejects()
+            }
+            noMoreDependencies()
+        }
+
+        and:
+        resolveArtifacts(javaLibrary) {
+            expectFiles 'commons-collections-3.2.2.jar', 'commons-logging-1.1.1.jar', 'publishTest-1.9.jar', 'spring-core-2.5.6.jar'
+        }
+    }
+
+    def "can publish java-library with dependency constraints"() {
+        requiresExternalDependencies = true
+
+        given:
+        createBuildScripts("""
+
+            ${jcenterRepository()}
+
+            dependencies {
+                api "org.springframework:spring-core:1.2.9"
+                implementation "org.apache.commons:commons-compress:1.5"
+                constraints {
+                    api "commons-logging:commons-logging:1.1"
+                    implementation "commons-logging:commons-logging:1.2"
+                    implementation("org.tukaani:xz") {
+                        version { strictly "1.6" }
+                    }
+                }
+            }
+
+            publishing {
+                publications {
+                    maven(MavenPublication) {
+                        from components.java
+                    }
+                }
+            }
+""")
+
+        when:
+        run "publish"
+
+        then:
+        javaLibrary.assertPublished()
+
+        javaLibrary.parsedPom.scopes.keySet() == ["compile", "runtime"] as Set
+        javaLibrary.parsedPom.scopes.compile.assertDependsOn("org.springframework:spring-core:1.2.9")
+        javaLibrary.parsedPom.scopes.compile.dependencies.size() == 1 //we do not publish constraints in POMs yet
+        javaLibrary.parsedPom.scopes.runtime.assertDependsOn("org.apache.commons:commons-compress:1.5")
+        javaLibrary.parsedPom.scopes.runtime.dependencies.size() == 1 //we do not publish constraints in POMs yet
+
+        and:
+        javaLibrary.parsedModuleMetadata.variant('api') {
+            dependency('org.springframework:spring-core:1.2.9') {
+                rejects()
+                noMoreExcludes()
+            }
+            constraint('commons-logging:commons-logging:1.1') { rejects() }
+
+            noMoreDependencies()
+        }
+
+        javaLibrary.parsedModuleMetadata.variant('runtime') {
+            dependency('org.springframework:spring-core:1.2.9') {
+                rejects()
+                noMoreExcludes()
+            }
+            constraint('commons-logging:commons-logging:1.1') { rejects() }
+            constraint('commons-logging:commons-logging:1.2') { rejects() }
+
+            dependency('org.apache.commons:commons-compress:1.5') {
+                rejects()
+                noMoreExcludes()
+            }
+            constraint('org.tukaani:xz:1.6') { rejects(']1.6,)') }
+
+            noMoreDependencies()
+        }
+
+        and:
+        resolveArtifacts(javaLibrary) {
+            withModuleMetadata {
+                expectFiles 'commons-compress-1.5.jar', 'commons-logging-1.2.jar', 'publishTest-1.9.jar', 'spring-core-1.2.9.jar', 'xz-1.6.jar'
+            }
+            withoutModuleMetadata {
+                // Dependency constraints not published to Maven POM
+                expectFiles 'commons-compress-1.5.jar', 'commons-logging-1.0.4.jar', 'publishTest-1.9.jar', 'spring-core-1.2.9.jar', 'xz-1.2.jar'
+            }
+        }
+    }
+
+    def "can publish java-library with rejected versions"() {
+        requiresExternalDependencies = true
+
+        given:
+        createBuildScripts("""
+
+            ${jcenterRepository()}
+
+            dependencies {
+                constraints {
+                    api("commons-logging:commons-logging") {
+                        version {
+                            rejectAll()
+                        }
+                    }
+                }
+                implementation("commons-collections:commons-collections") {
+                    version { 
+                        prefer '[3.2, 4)'
+                        reject '3.2.1', '[3.2.2,)'
+                    }
+                }
+            }
+
+            publishing {
+                publications {
+                    maven(MavenPublication) {
+                        from components.java
+                    }
+                }
+            }
+""")
+
+        when:
+        run "publish"
+
+        then:
+        javaLibrary.assertPublished()
+
+        javaLibrary.parsedPom.scopes.keySet() == ["runtime"] as Set
+        javaLibrary.parsedPom.scopes.runtime.assertDependsOn("commons-collections:commons-collections:[3.2, 4)")
+
+        and:
+        javaLibrary.parsedModuleMetadata.variant('api') {
+            constraint('commons-logging:commons-logging:') {
+                rejects '+'
+            }
+            noMoreDependencies()
+        }
+
+        javaLibrary.parsedModuleMetadata.variant('runtime') {
+            dependency('commons-collections:commons-collections:[3.2, 4)') {
+                noMoreExcludes()
+                rejects '3.2.1', '[3.2.2,)'
+            }
+            constraint('commons-logging:commons-logging:') {
+                rejects '+'
+            }
+            noMoreDependencies()
+        }
+
+        then:
+        resolveArtifacts(javaLibrary) {
+            withModuleMetadata {
+                expectFiles 'commons-collections-3.2.jar', 'publishTest-1.9.jar'
+            }
+            withoutModuleMetadata {
+                expectFiles 'commons-collections-3.2.2.jar', 'publishTest-1.9.jar'
+            }
+        }
+
+    }
+
+    def "can publish java-library with dependencies without version"() {
+        requiresExternalDependencies = true
+
+        given:
+        createBuildScripts("""
+
+            ${jcenterRepository()}
+
+            dependencies {
+                implementation "commons-collections:commons-collections"
+                constraints {
+                    implementation "commons-collections:commons-collections:3.2.2"
+                }
+            }
+
+            publishing {
+                publications {
+                    maven(MavenPublication) {
+                        from components.java
+                    }
+                }
+            }
+""")
+
+        when:
+        run "publish"
+
+        then:
+        javaLibrary.assertPublished()
+
+        javaLibrary.parsedPom.scopes.keySet() == ["runtime"] as Set
+        javaLibrary.parsedPom.scopes.runtime.assertDependsOn("commons-collections:commons-collections:")
+        javaLibrary.parsedPom.scopes.runtime.dependencies.size() == 1 //we do not publish constraints in POMs yet
+
+        and:
+        javaLibrary.parsedModuleMetadata.variant('api') {
+            noMoreDependencies()
+        }
+
+        javaLibrary.parsedModuleMetadata.variant('runtime') {
+            dependency('commons-collections:commons-collections') {
+                rejects()
+                noMoreExcludes()
+            }
+            constraint('commons-collections:commons-collections:3.2.2') { rejects() }
+            noMoreDependencies()
+        }
+
+        and:
+        resolveArtifacts(javaLibrary) {
+            withModuleMetadata {
+                expectFiles 'commons-collections-3.2.2.jar', 'publishTest-1.9.jar'
+            }
+            withoutModuleMetadata {
+                shouldFail {
+                    // This currently fails, because the POM does not provide a version, and we don't yet publish constraints to POM files.
+                    assertHasDescription("Could not resolve all files for configuration ':resolve'")
+                    assertHasCause("Could not find commons-collections:commons-collections:")
+                }
+            }
+        }
+    }
+
+    def "can publish java-library with attached artifacts"() {
         given:
         createBuildScripts("""
             task sourceJar(type: Jar) {
@@ -68,12 +460,157 @@ class MavenPublishJavaIntegTest extends AbstractMavenPublishIntegTest {
         run "publish"
 
         then:
-        mavenModule.assertPublished()
-        mavenModule.assertArtifactsPublished("publishTest-1.9.jar", "publishTest-1.9.pom", "publishTest-1.9-source.jar")
+        javaLibrary.withClassifiedArtifact("source", "jar").assertPublished()
 
         and:
-        resolveArtifacts(mavenModule) == ["commons-collections-3.2.1.jar", "commons-io-1.4.jar", "publishTest-1.9.jar"]
-        resolveArtifacts(mavenModule, [classifier: 'source']) == ["commons-collections-3.2.1.jar", "commons-io-1.4.jar", "publishTest-1.9-source.jar", "publishTest-1.9.jar"]
+        resolveArtifacts(javaLibrary) {
+            expectFiles "publishTest-1.9.jar"
+        }
+
+        and:
+        resolveArtifacts(javaLibrary) {
+            classifier = 'source'
+            expectFiles "publishTest-1.9-source.jar"
+        }
+    }
+
+    def "can publish java-library-platform with dependencies and constraints"() {
+        given:
+        javaLibrary(mavenRepo.module("org.test", "foo", "1.0")).withModuleMetadata().publish()
+        javaLibrary(mavenRepo.module("org.test", "bar", "1.0")).withModuleMetadata().publish()
+        javaLibrary(mavenRepo.module("org.test", "bar", "1.1")).withModuleMetadata().publish()
+
+        createBuildScripts("""
+            dependencies {
+                api "org.test:bar:1.0"
+                implementation "org.test:foo:1.0"
+                
+                constraints {
+                    implementation "org.test:bar:1.1"
+                }
+            }
+            publishing {
+                publications {
+                    maven(MavenPublication) {
+                        from components.javaLibraryPlatform
+                    }
+                }
+            }
+""")
+
+        when:
+        run "publish"
+
+        then:
+        def mavenModule = javaLibrary.mavenModule
+
+        mavenModule.assertPublished()
+        mavenModule.assertArtifactsPublished("publishTest-1.9.module", "publishTest-1.9.pom")
+
+        // No files are published for either variant
+        with(javaLibrary.parsedModuleMetadata) {
+            variants*.name as Set == ['api', 'runtime'] as Set
+            variant('api').files.empty
+            variant('runtime').files.empty
+        }
+
+        // Published with pom packaging
+        assert javaLibrary.parsedPom.packaging == 'pom'
+
+        javaLibrary.assertApiDependencies("org.test:bar:1.0")
+        javaLibrary.assertRuntimeDependencies("org.test:foo:1.0")
+
+        and:
+        resolveArtifacts(javaLibrary) {
+            // Platform constraints are not published to Maven POM
+            withModuleMetadata {
+                expectFiles "bar-1.1.jar", "foo-1.0.jar"
+            }
+            withoutModuleMetadata {
+                expectFiles "bar-1.0.jar", "foo-1.0.jar"
+            }
+        }
+        // Maven POM compile scope contains 'implementation' dependencies
+        resolveApiArtifacts(javaLibrary) {
+            withModuleMetadata {
+                expectFiles "bar-1.0.jar"
+            }
+            withoutModuleMetadata {
+                expectFiles "bar-1.0.jar", "foo-1.0.jar"
+            }
+        }
+        resolveRuntimeArtifacts(javaLibrary) {
+            withModuleMetadata {
+                expectFiles "bar-1.1.jar", "foo-1.0.jar"
+            }
+            withoutModuleMetadata {
+                expectFiles "bar-1.0.jar", "foo-1.0.jar"
+            }
+        }
+    }
+
+    @Unroll("'#gradleConfiguration' dependencies end up in '#mavenScope' scope with '#plugin' plugin")
+    void "maps dependencies in the correct Maven scope"() {
+        given:
+        file("settings.gradle") << '''
+            rootProject.name = 'publishTest' 
+            include "b"
+        '''
+        buildFile << """
+            apply plugin: "$plugin"
+            apply plugin: "maven-publish"
+
+            group = 'org.gradle.test'
+            version = '1.9'
+
+            publishing {
+                repositories {
+                    maven { url "${mavenRepo.uri}" }
+                }
+                publications {
+                    maven(MavenPublication) {
+                        from components.java
+                    }
+                }
+            }
+            
+            dependencies {
+                $gradleConfiguration project(':b')
+            }
+        """
+
+        file('b/build.gradle') << """
+            apply plugin: 'java'
+            
+            group = 'org.gradle.test'
+            version = '1.2'
+            
+        """
+
+        when:
+        succeeds "publish"
+
+        then:
+        javaLibrary.assertPublished()
+        if (mavenScope == 'compile') {
+            javaLibrary.assertApiDependencies('org.gradle.test:b:1.2')
+        } else {
+            javaLibrary.assertRuntimeDependencies('org.gradle.test:b:1.2')
+        }
+
+        where:
+        plugin         | gradleConfiguration | mavenScope
+        'java'         | 'compile'           | 'compile'
+        'java'         | 'runtime'           | 'compile'
+        'java'         | 'implementation'    | 'runtime'
+        'java'         | 'runtimeOnly'       | 'runtime'
+
+        'java-library' | 'api'               | 'compile'
+        'java-library' | 'compile'           | 'compile'
+        'java-library' | 'runtime'           | 'compile'
+        'java-library' | 'runtimeOnly'       | 'runtime'
+        'java-library' | 'implementation'    | 'runtime'
+
     }
 
     def createBuildScripts(def append) {
@@ -81,7 +618,7 @@ class MavenPublishJavaIntegTest extends AbstractMavenPublishIntegTest {
 
         buildFile << """
             apply plugin: 'maven-publish'
-            apply plugin: 'java'
+            apply plugin: 'java-library'
 
             publishing {
                 repositories {
@@ -89,20 +626,10 @@ class MavenPublishJavaIntegTest extends AbstractMavenPublishIntegTest {
                 }
             }
 
-$append
-
             group = 'org.gradle.test'
             version = '1.9'
 
-            repositories {
-                mavenCentral()
-            }
-
-            dependencies {
-                compile "commons-collections:commons-collections:3.2.1"
-                runtime "commons-io:commons-io:1.4"
-                testCompile "junit:junit:4.12"
-            }
+$append
 """
 
     }

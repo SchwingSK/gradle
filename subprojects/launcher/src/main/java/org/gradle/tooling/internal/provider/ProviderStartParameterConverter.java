@@ -17,6 +17,7 @@ package org.gradle.tooling.internal.provider;
 
 import org.gradle.StartParameter;
 import org.gradle.TaskExecutionRequest;
+import org.gradle.api.internal.StartParameterInternal;
 import org.gradle.cli.CommandLineArgumentException;
 import org.gradle.initialization.DefaultCommandLineConverter;
 import org.gradle.internal.DefaultTaskExecutionRequest;
@@ -25,21 +26,22 @@ import org.gradle.tooling.internal.protocol.InternalLaunchable;
 import org.gradle.tooling.internal.protocol.exceptions.InternalUnsupportedBuildArgumentException;
 import org.gradle.tooling.internal.provider.connection.ProviderOperationParameters;
 
+import java.io.File;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 
 class ProviderStartParameterConverter {
 
-    private List<TaskExecutionRequest> unpack(final List<InternalLaunchable> launchables) {
+    private List<TaskExecutionRequest> unpack(final List<InternalLaunchable> launchables, File projectDir) {
         // Important that the launchables are unpacked on the client side, to avoid sending back any additional internal state that
         // the launchable may hold onto. For example, GradleTask implementations hold onto every task for every project in the build
         List<TaskExecutionRequest> requests = new ArrayList<TaskExecutionRequest>(launchables.size());
         for (InternalLaunchable launchable : launchables) {
             if (launchable instanceof TaskExecutionRequest) {
+
                 TaskExecutionRequest originalLaunchable = (TaskExecutionRequest) launchable;
-                TaskExecutionRequest launchableImpl = new DefaultTaskExecutionRequest(originalLaunchable.getArgs(), originalLaunchable.getProjectPath());
+                TaskExecutionRequest launchableImpl = new DefaultTaskExecutionRequest(originalLaunchable.getArgs(), originalLaunchable.getProjectPath(), originalLaunchable.getRootDir());
                 requests.add(launchableImpl);
             } else {
                 throw new InternalUnsupportedBuildArgumentException(
@@ -53,7 +55,7 @@ class ProviderStartParameterConverter {
 
     public StartParameter toStartParameter(ProviderOperationParameters parameters, Map<String, String> properties) {
         // Important that this is constructed on the client so that it has the right gradleHomeDir and other state internally
-        StartParameter startParameter = new StartParameter();
+        StartParameterInternal startParameter = new StartParameterInternal();
 
         startParameter.setProjectDir(parameters.getProjectDir());
         if (parameters.getGradleUserHomeDir() != null) {
@@ -62,14 +64,14 @@ class ProviderStartParameterConverter {
 
         List<InternalLaunchable> launchables = parameters.getLaunchables(null);
         if (launchables != null) {
-            startParameter.setTaskRequests(unpack(launchables));
+            startParameter.setTaskRequests(unpack(launchables, parameters.getProjectDir()));
         } else if (parameters.getTasks() != null) {
             startParameter.setTaskNames(parameters.getTasks());
         }
 
         new PropertiesToStartParameterConverter().convert(properties, startParameter);
 
-        List<String> arguments = parameters.getArguments(Collections.<String>emptyList());
+        List<String> arguments = parameters.getArguments();
         if (arguments != null) {
             DefaultCommandLineConverter converter = new DefaultCommandLineConverter();
             try {
@@ -92,6 +94,10 @@ class ProviderStartParameterConverter {
 
         if (parameters.getBuildLogLevel() != null) {
             startParameter.setLogLevel(parameters.getBuildLogLevel());
+        }
+
+        if (parameters.getStandardInput() != null) {
+            startParameter.setInteractive(true);
         }
 
         return startParameter;

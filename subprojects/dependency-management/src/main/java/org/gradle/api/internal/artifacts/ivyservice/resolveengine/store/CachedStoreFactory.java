@@ -18,16 +18,17 @@ package org.gradle.api.internal.artifacts.ivyservice.resolveengine.store;
 
 import com.google.common.cache.Cache;
 import com.google.common.cache.CacheBuilder;
-import org.gradle.api.internal.cache.Store;
 import org.gradle.api.logging.Logger;
 import org.gradle.api.logging.Logging;
+import org.gradle.cache.internal.Store;
 import org.gradle.internal.Factory;
+import org.gradle.internal.time.Time;
+import org.gradle.internal.time.TimeFormatting;
+import org.gradle.internal.time.Timer;
 
 import java.io.Closeable;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
-
-import static org.gradle.util.Clock.prettyTime;
 
 public class CachedStoreFactory<T> implements Closeable {
 
@@ -50,7 +51,7 @@ public class CachedStoreFactory<T> implements Closeable {
     public void close() {
         LOG.debug(displayName + " cache closed. Cache reads: "
                 + stats.readsFromCache + ", disk reads: "
-                + stats.readsFromDisk + " (avg: " + prettyTime(stats.getDiskReadsAvgMs()) + ", total: " + prettyTime(stats.diskReadsTotalMs.get()) + ")");
+                + stats.readsFromDisk + " (avg: " + TimeFormatting.formatDurationVerbose(stats.getDiskReadsAvgMs()) + ", total: " + TimeFormatting.formatDurationVerbose(stats.diskReadsTotalMs.get()) + ")");
     }
 
     private static class Stats {
@@ -58,8 +59,7 @@ public class CachedStoreFactory<T> implements Closeable {
         private final AtomicLong readsFromCache = new AtomicLong();
         private final AtomicLong readsFromDisk = new AtomicLong();
 
-        public void readFromDisk(long start) {
-            long duration = System.currentTimeMillis() - start;
+        public void readFromDisk(long duration) {
             readsFromDisk.incrementAndGet();
             diskReadsTotalMs.addAndGet(duration);
         }
@@ -93,9 +93,9 @@ public class CachedStoreFactory<T> implements Closeable {
                 stats.readFromCache();
                 return out;
             }
-            long start = System.currentTimeMillis();
+            Timer timer = Time.startTimer();
             T value = createIfNotPresent.create();
-            stats.readFromDisk(start);
+            stats.readFromDisk(timer.getElapsedMillis());
             cache.put(id, value);
             return value;
         }

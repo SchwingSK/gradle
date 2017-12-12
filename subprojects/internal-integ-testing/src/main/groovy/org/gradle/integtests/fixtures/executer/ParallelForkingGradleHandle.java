@@ -21,7 +21,7 @@ import org.gradle.internal.Factory;
 import org.gradle.process.internal.AbstractExecHandleBuilder;
 import org.gradle.util.SingleMessageLogger;
 
-import java.util.Arrays;
+import java.io.PipedOutputStream;
 import java.util.HashSet;
 import java.util.Set;
 
@@ -31,8 +31,8 @@ import static org.junit.Assert.assertThat;
 
 public class ParallelForkingGradleHandle extends ForkingGradleHandle {
 
-    public ParallelForkingGradleHandle(Action<ExecutionResult> resultAssertion, String outputEncoding, Factory<? extends AbstractExecHandleBuilder> execHandleFactory) {
-        super(resultAssertion, outputEncoding, execHandleFactory);
+    public ParallelForkingGradleHandle(PipedOutputStream stdinPipe, boolean isDaemon, Action<ExecutionResult> resultAssertion, String outputEncoding, Factory<? extends AbstractExecHandleBuilder> execHandleFactory, DurationMeasurement durationMeasurement) {
+        super(stdinPipe, isDaemon, resultAssertion, outputEncoding, execHandleFactory, durationMeasurement);
     }
 
     @Override
@@ -54,15 +54,15 @@ public class ParallelForkingGradleHandle extends ForkingGradleHandle {
         }
 
         @Override
-        public ExecutionResult assertTasksExecuted(String... taskPaths) {
-            Set<String> expectedTasks = new HashSet<String>(Arrays.asList(taskPaths));
+        public ExecutionResult assertTasksExecuted(Object... taskPaths) {
+            Set<String> expectedTasks = new HashSet<String>(flattenTaskPaths(taskPaths));
             assertThat(String.format("Expected tasks %s not found in process output:%n%s", expectedTasks, getOutput()), new HashSet<String>(getExecutedTasks()), equalTo(expectedTasks));
             return this;
         }
 
         @Override
-        public String getOutput() {
-            String output = super.getOutput();
+        public String getNormalizedOutput() {
+            String output = super.getNormalizedOutput();
             String parallelWarningPrefix = String.format(SingleMessageLogger.INCUBATION_MESSAGE, ".*");
             return output.replaceFirst(format("(?m)%s.*$\n", parallelWarningPrefix), "");
         }
@@ -70,7 +70,7 @@ public class ParallelForkingGradleHandle extends ForkingGradleHandle {
         @Override
         public ExecutionResult assertOutputEquals(String expectedOutput, boolean ignoreExtraLines, boolean ignoreLineOrder) {
             // We always ignore line order for matching out of parallel builds
-            new AnyOrderOutputMatcher().assertOutputMatches(expectedOutput, getOutput(), ignoreExtraLines);
+            super.assertOutputEquals(expectedOutput, ignoreExtraLines, true);
             return this;
         }
     }

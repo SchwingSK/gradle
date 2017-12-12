@@ -16,33 +16,58 @@
 
 package org.gradle.launcher.cli.converter;
 
-import com.google.common.base.Predicate;
-import com.google.common.collect.Maps;
 import org.gradle.api.Project;
 import org.gradle.api.UncheckedIOException;
+import org.gradle.api.specs.Spec;
 import org.gradle.initialization.BuildLayoutParameters;
+import org.gradle.initialization.BuildLayoutParametersBuildOptions;
+import org.gradle.initialization.ParallelismBuildOptions;
+import org.gradle.initialization.StartParameterBuildOptions;
 import org.gradle.initialization.layout.BuildLayout;
 import org.gradle.initialization.layout.BuildLayoutFactory;
-import org.gradle.launcher.daemon.configuration.GradleProperties;
+import org.gradle.internal.buildoption.BuildOption;
+import org.gradle.internal.logging.LoggingConfigurationBuildOptions;
+import org.gradle.launcher.daemon.configuration.DaemonBuildOptions;
+import org.gradle.util.CollectionUtils;
 
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.Serializable;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 
 public class LayoutToPropertiesConverter {
+
+    private final List<BuildOption<?>> allBuildOptions = new ArrayList<BuildOption<?>>();
+    private final BuildLayoutFactory buildLayoutFactory;
+
+    public LayoutToPropertiesConverter(BuildLayoutFactory buildLayoutFactory) {
+        this.buildLayoutFactory = buildLayoutFactory;
+        allBuildOptions.addAll(BuildLayoutParametersBuildOptions.get());
+        allBuildOptions.addAll(StartParameterBuildOptions.get());
+        allBuildOptions.addAll(LoggingConfigurationBuildOptions.get());
+        allBuildOptions.addAll(DaemonBuildOptions.get());
+        allBuildOptions.addAll(ParallelismBuildOptions.get());
+    }
+
     public Map<String, String> convert(BuildLayoutParameters layout, Map<String, String> properties) {
         configureFromBuildDir(layout.getSearchDir(), layout.getSearchUpwards(), properties);
         configureFromGradleUserHome(layout.getGradleUserHomeDir(), properties);
-        properties.putAll(Maps.filterEntries((Map) System.getProperties(), new Predicate<Map.Entry<?, ?>>() {
-            public boolean apply(Map.Entry<?, ?> input) {
-                return input.getKey() instanceof Serializable
-                        && (input.getValue() instanceof Serializable || input.getValue() == null);
-            }
-        }));
+        configureFromSystemproperties(properties);
         return properties;
+    }
+
+    private void configureFromSystemproperties(Map properties) {
+        for (Map.Entry<Object, Object> entry : System.getProperties().entrySet()) {
+            Object key = entry.getKey();
+            Object value = entry.getValue();
+            if (key instanceof Serializable && (value instanceof Serializable || value == null)) {
+                properties.put(key, value);
+            }
+        }
     }
 
     private void configureFromGradleUserHome(File gradleUserHomeDir, Map<String, String> result) {
@@ -50,8 +75,7 @@ public class LayoutToPropertiesConverter {
     }
 
     private void configureFromBuildDir(File currentDir, boolean searchUpwards, Map<String, String> result) {
-        BuildLayoutFactory factory = new BuildLayoutFactory();
-        BuildLayout layout = factory.getLayoutFor(currentDir, searchUpwards);
+        BuildLayout layout = buildLayoutFactory.getLayoutFor(currentDir, searchUpwards);
         maybeConfigureFrom(new File(layout.getRootDirectory(), Project.GRADLE_PROPERTIES), result);
     }
 
@@ -72,8 +96,15 @@ public class LayoutToPropertiesConverter {
             throw new UncheckedIOException(e);
         }
 
-        for (Object key : properties.keySet()) {
-            if (GradleProperties.ALL.contains(key.toString())) {
+        for (final Object key : properties.keySet()) {
+            BuildOption<?> validOption = CollectionUtils.findFirst(allBuildOptions, new Spec<BuildOption<?>>() {
+                @Override
+                public boolean isSatisfiedBy(BuildOption<?> option) {
+                    return option.getGradleProperty() != null ? option.getGradleProperty().equals(key.toString()) : false;
+                }
+            });
+
+            if (validOption != null) {
                 result.put(key.toString(), properties.get(key).toString());
             }
         }

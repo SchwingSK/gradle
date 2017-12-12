@@ -17,13 +17,16 @@
 package org.gradle.plugin.use.internal;
 
 import org.gradle.api.internal.DocumentationRegistry;
+import org.gradle.api.internal.artifacts.DependencyResolutionServices;
+import org.gradle.api.internal.artifacts.ivyservice.ivyresolve.strategy.VersionSelectorScheme;
 import org.gradle.api.internal.plugins.PluginRegistry;
 import org.gradle.internal.Factory;
+import org.gradle.plugin.use.resolve.internal.ArtifactRepositoriesPluginResolver;
 import org.gradle.plugin.use.resolve.internal.CompositePluginResolver;
 import org.gradle.plugin.use.resolve.internal.CorePluginResolver;
 import org.gradle.plugin.use.resolve.internal.NoopPluginResolver;
 import org.gradle.plugin.use.resolve.internal.PluginResolver;
-import org.gradle.plugin.use.resolve.service.internal.PluginResolutionServiceResolver;
+import org.gradle.plugin.use.resolve.service.internal.InjectedClasspathPluginResolver;
 
 import java.util.LinkedList;
 import java.util.List;
@@ -32,28 +35,59 @@ public class PluginResolverFactory implements Factory<PluginResolver> {
 
     private final PluginRegistry pluginRegistry;
     private final DocumentationRegistry documentationRegistry;
-    private final PluginResolutionServiceResolver pluginResolutionServiceResolver;
+    private final InjectedClasspathPluginResolver injectedClasspathPluginResolver;
+    private final DependencyResolutionServices dependencyResolutionServices;
+    private final VersionSelectorScheme versionSelectorScheme;
 
     public PluginResolverFactory(
-            PluginRegistry pluginRegistry,
-            DocumentationRegistry documentationRegistry,
-            PluginResolutionServiceResolver pluginResolutionServiceResolver
-    ) {
+        PluginRegistry pluginRegistry,
+        DocumentationRegistry documentationRegistry,
+        InjectedClasspathPluginResolver injectedClasspathPluginResolver,
+        DependencyResolutionServices dependencyResolutionServices,
+        VersionSelectorScheme versionSelectorScheme) {
         this.pluginRegistry = pluginRegistry;
         this.documentationRegistry = documentationRegistry;
-        this.pluginResolutionServiceResolver = pluginResolutionServiceResolver;
+        this.injectedClasspathPluginResolver = injectedClasspathPluginResolver;
+        this.dependencyResolutionServices = dependencyResolutionServices;
+        this.versionSelectorScheme = versionSelectorScheme;
     }
 
+    @Override
     public PluginResolver create() {
+        return new CompositePluginResolver(createDefaultResolvers());
+    }
+
+    private List<PluginResolver> createDefaultResolvers() {
         List<PluginResolver> resolvers = new LinkedList<PluginResolver>();
         addDefaultResolvers(resolvers);
-        return new CompositePluginResolver(resolvers);
+        return resolvers;
     }
 
+    /**
+     * Returns the default PluginResolvers used by Gradle.
+     * <p>
+     * The plugins will be searched in a chain from the first to the last until a plugin is found.
+     * So, order matters.
+     * <p>
+     * <ol>
+     *     <li>{@link NoopPluginResolver} - Only used in tests.</li>
+     *     <li>{@link CorePluginResolver} - distributed with Gradle</li>
+     *     <li>{@link InjectedClasspathPluginResolver} - from a TestKit test's ClassPath</li>
+     *     <li>Resolvers based on the entries of the `pluginRepositories` block</li>
+     *     <li>{@link org.gradle.plugin.use.resolve.internal.ArtifactRepositoriesPluginResolver} - from Gradle Plugin Portal if no `pluginRepositories` were defined</li>
+     * </ol>
+     * <p>
+     * This order is optimized for both performance and to allow resolvers earlier in the order
+     * to mask plugins which would have been found later in the order.
+     */
     private void addDefaultResolvers(List<PluginResolver> resolvers) {
         resolvers.add(new NoopPluginResolver(pluginRegistry));
         resolvers.add(new CorePluginResolver(documentationRegistry, pluginRegistry));
-        resolvers.add(pluginResolutionServiceResolver);
-    }
 
+        if (!injectedClasspathPluginResolver.isClasspathEmpty()) {
+            resolvers.add(injectedClasspathPluginResolver);
+        }
+
+        resolvers.add(ArtifactRepositoriesPluginResolver.createWithDefaults(dependencyResolutionServices, versionSelectorScheme));
+    }
 }

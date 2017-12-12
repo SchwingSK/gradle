@@ -16,9 +16,9 @@
 
 package org.gradle.internal.resolve.result;
 
-import org.gradle.api.Nullable;
 import org.gradle.internal.resolve.ModuleVersionResolveException;
 
+import javax.annotation.Nullable;
 import java.util.Collection;
 import java.util.Set;
 
@@ -27,8 +27,19 @@ import java.util.Set;
  */
 public interface BuildableModuleVersionListingResolveResult extends ResourceAwareResolveResult, ResolveResult {
 
-    static enum State {
-        Listed, Failed, Unknown
+    enum State {
+        /**
+         * Listing has succeeded.
+         */
+        Listed,
+        /**
+         * Listing has failed.
+         */
+        Failed,
+        /**
+         * Listing hasn't been performed yet, or another attempt can be made.
+         */
+        Unknown
     }
 
     /**

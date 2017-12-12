@@ -18,13 +18,28 @@ package org.gradle.api.tasks.compile;
 
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Lists;
+import org.apache.commons.lang.StringUtils;
 import org.gradle.api.Incubating;
 import org.gradle.api.file.FileCollection;
+import org.gradle.api.internal.file.collections.SimpleFileCollection;
+import org.gradle.api.model.ObjectFactory;
+import org.gradle.api.provider.Property;
+import org.gradle.api.provider.Provider;
+import org.gradle.api.tasks.CompileClasspath;
+import org.gradle.api.tasks.Console;
 import org.gradle.api.tasks.Input;
+import org.gradle.api.tasks.InputFiles;
+import org.gradle.api.tasks.Internal;
 import org.gradle.api.tasks.Nested;
 import org.gradle.api.tasks.Optional;
-import org.gradle.util.SingleMessageLogger;
+import org.gradle.api.tasks.OutputDirectory;
+import org.gradle.api.tasks.PathSensitive;
+import org.gradle.api.tasks.PathSensitivity;
+import org.gradle.util.DeprecationLogger;
 
+import javax.annotation.Nullable;
+import javax.inject.Inject;
+import java.io.File;
 import java.util.List;
 import java.util.Map;
 
@@ -35,7 +50,7 @@ public class CompileOptions extends AbstractOptions {
     private static final long serialVersionUID = 0;
 
     private static final ImmutableSet<String> EXCLUDE_FROM_ANT_PROPERTIES =
-            ImmutableSet.of("debugOptions", "forkOptions", "compilerArgs", "dependOptions", "useDepend", "incremental");
+            ImmutableSet.of("debugOptions", "forkOptions", "compilerArgs", "incremental");
 
     private boolean failOnError = true;
 
@@ -57,11 +72,7 @@ public class CompileOptions extends AbstractOptions {
 
     private ForkOptions forkOptions = new ForkOptions();
 
-    private boolean useDepend;
-
-    private DependOptions dependOptions = new DependOptions();
-
-    private String bootClasspath;
+    private FileCollection bootstrapClasspath;
 
     private String extensionDirs;
 
@@ -70,6 +81,15 @@ public class CompileOptions extends AbstractOptions {
     private boolean incremental;
 
     private FileCollection sourcepath;
+
+    private FileCollection annotationProcessorPath;
+
+    private final Property<File> annotationProcessorGeneratedSourcesDirectory;
+
+    @Inject
+    public CompileOptions(ObjectFactory objectFactory) {
+        this.annotationProcessorGeneratedSourcesDirectory = objectFactory.property(File.class);
+    }
 
     /**
      * Tells whether to fail the build when compilation fails. Defaults to {@code true}.
@@ -89,6 +109,7 @@ public class CompileOptions extends AbstractOptions {
     /**
      * Tells whether to produce verbose output. Defaults to {@code false}.
      */
+    @Console
     public boolean isVerbose() {
         return verbose;
     }
@@ -103,6 +124,7 @@ public class CompileOptions extends AbstractOptions {
     /**
      * Tells whether to log the files to be compiled. Defaults to {@code false}.
      */
+    @Console
     public boolean isListFiles() {
         return listFiles;
     }
@@ -117,6 +139,7 @@ public class CompileOptions extends AbstractOptions {
     /**
      * Tells whether to log details of usage of deprecated members or classes. Defaults to {@code false}.
      */
+    @Console
     public boolean isDeprecation() {
         return deprecation;
     }
@@ -131,6 +154,7 @@ public class CompileOptions extends AbstractOptions {
     /**
      * Tells whether to log warning messages. The default is {@code true}.
      */
+    @Console
     public boolean isWarnings() {
         return warnings;
     }
@@ -197,6 +221,7 @@ public class CompileOptions extends AbstractOptions {
      * not necessarily mean that a new process will be created for each compile task.
      * Defaults to {@code false}.
      */
+    @Input
     public boolean isFork() {
         return fork;
     }
@@ -226,58 +251,60 @@ public class CompileOptions extends AbstractOptions {
     }
 
     /**
-     * Tells whether to use the Ant {@code <depend>} task.
-     * Only takes effect if {@code useAnt} is {@code true}. Defaults to
-     * {@code false}.
+     * Returns the bootstrap classpath to be used for the compiler process. Defaults to {@code null}.
+     *
+     * @deprecated Use {@link #getBootstrapClasspath()} instead.
      */
-    public boolean isUseDepend() {
-        return useDepend;
-    }
-
-    /**
-     * Sets whether to use the Ant {@code <depend>} task.
-     * Only takes effect if {@code useAnt} is {@code true}. Defaults to
-     * {@code false}.
-     */
-    public void setUseDepend(boolean useDepend) {
-        this.useDepend = useDepend;
-    }
-
-    /**
-     * Returns options for using the Ant {@code <depend>} task.
-     */
-    public DependOptions getDependOptions() {
-        return dependOptions;
-    }
-
-    /**
-     * Sets options for using the Ant {@code <depend>} task.
-     */
-    public void setDependOptions(DependOptions dependOptions) {
-        this.dependOptions = dependOptions;
-    }
-
-    /**
-     * Returns the bootstrap classpath to be used for the compiler process.
-     * Only takes effect if {@code fork} is {@code true}. Defaults to {@code null}.
-     */
-    @Input
-    @Optional
+    @Deprecated
+    @Internal
+    @SuppressWarnings("DeprecatedIsStillUsed")
     public String getBootClasspath() {
-        return bootClasspath;
+        DeprecationLogger.nagUserOfReplacedProperty("CompileOptions.bootClasspath", "CompileOptions.bootstrapClasspath");
+        return bootstrapClasspath == null ? null : bootstrapClasspath.getAsPath();
     }
 
     /**
-     * Sets the bootstrap classpath to be used for the compiler process.
-     * Only takes effect if {@code fork} is {@code true}. Defaults to {@code null}.
+     * Sets the bootstrap classpath to be used for the compiler process. Defaults to {@code null}.
+     *
+     * @deprecated Use {@link #setBootstrapClasspath(FileCollection)} instead.
      */
+    @Deprecated
     public void setBootClasspath(String bootClasspath) {
-        this.bootClasspath = bootClasspath;
+        DeprecationLogger.nagUserOfReplacedProperty("CompileOptions.bootClasspath", "CompileOptions.bootstrapClasspath");
+        if (bootClasspath == null) {
+            this.bootstrapClasspath = null;
+        } else {
+            String[] paths = StringUtils.split(bootClasspath, File.pathSeparatorChar);
+            List<File> files = Lists.newArrayListWithCapacity(paths.length);
+            for (String path : paths) {
+                files.add(new File(path));
+            }
+            this.bootstrapClasspath = new SimpleFileCollection(files);
+        }
     }
 
     /**
-     * Returns the extension dirs to be used for the compiler process.
-     * Only takes effect if {@code fork} is {@code true}. Defaults to {@code null}.
+     * Returns the bootstrap classpath to be used for the compiler process. Defaults to {@code null}.
+     *
+     * @since 4.3
+     */
+    @Optional
+    @CompileClasspath
+    public FileCollection getBootstrapClasspath() {
+        return bootstrapClasspath;
+    }
+
+    /**
+     * Sets the bootstrap classpath to be used for the compiler process. Defaults to {@code null}.
+     *
+     * @since 4.3
+     */
+    public void setBootstrapClasspath(FileCollection bootstrapClasspath) {
+        this.bootstrapClasspath = bootstrapClasspath;
+    }
+
+    /**
+     * Returns the extension dirs to be used for the compiler process. Defaults to {@code null}.
      */
     @Input
     @Optional
@@ -286,8 +313,7 @@ public class CompileOptions extends AbstractOptions {
     }
 
     /**
-     * Sets the extension dirs to be used for the compiler process.
-     * Only takes effect if {@code fork} is {@code true}. Defaults to {@code null}.
+     * Sets the extension dirs to be used for the compiler process. Defaults to {@code null}.
      */
     public void setExtensionDirs(String extensionDirs) {
         this.extensionDirs = extensionDirs;
@@ -296,6 +322,13 @@ public class CompileOptions extends AbstractOptions {
     /**
      * Returns any additional arguments to be passed to the compiler.
      * Defaults to the empty list.
+     *
+     * Compiler arguments not supported by the DSL can be added here. For example, it is possible
+     * to pass the {@code --release} option of JDK 9:
+     * <pre><code>compilerArgs.addAll(['--release', '7'])</code></pre>
+     *
+     * Note that if {@code --release} is added then {@code -target} and {@code -source}
+     * are ignored.
      */
     @Input
     public List<String> getCompilerArgs() {
@@ -331,22 +364,9 @@ public class CompileOptions extends AbstractOptions {
     }
 
     /**
-     * Convenience method to set {@link DependOptions} with named parameter syntax.
-     * Calling this method will set {@code useDepend} to {@code true}.
-     */
-    public CompileOptions depend(Map<String, Object> dependArgs) {
-        useDepend = true;
-        dependOptions.define(dependArgs);
-        return this;
-    }
-
-    @Incubating
-    /**
      * Configure the java compilation to be incremental (e.g. compiles only those java classes that were changed or that are dependencies to the changed classes).
-     * The feature is incubating and does not yet satisfies all compilation scenarios.
      */
     public CompileOptions setIncremental(boolean incremental) {
-        SingleMessageLogger.incubatingFeatureUsed("Incremental java compilation");
         this.incremental = incremental;
         return this;
     }
@@ -354,6 +374,7 @@ public class CompileOptions extends AbstractOptions {
     /**
      * Internal method.
      */
+    @Override
     public Map<String, Object> optionMap() {
         Map<String, Object> map = super.optionMap();
         map.putAll(debugOptions.optionMap());
@@ -386,9 +407,9 @@ public class CompileOptions extends AbstractOptions {
     }
 
     /**
-     * informs whether to use experimental incremental compilation feature. See {@link #setIncremental(boolean)}
+     * informs whether to use incremental compilation feature. See {@link #setIncremental(boolean)}
      */
-    @Incubating
+    @Input
     public boolean isIncremental() {
         return incremental;
     }
@@ -409,7 +430,8 @@ public class CompileOptions extends AbstractOptions {
      * @return the source path
      * @see #setSourcepath(FileCollection)
      */
-    @Input
+    @PathSensitive(PathSensitivity.RELATIVE)
+    @InputFiles
     @Optional
     @Incubating
     public FileCollection getSourcepath() {
@@ -425,5 +447,62 @@ public class CompileOptions extends AbstractOptions {
     public void setSourcepath(FileCollection sourcepath) {
         this.sourcepath = sourcepath;
     }
-}
 
+    /**
+     * Returns the classpath to use to load annotation processors. This path is also used for annotation processor discovery. The default value is {@code null}, which means use the compile classpath.
+     *
+     * @return The annotation processor path, or {@code null} to use the default.
+     * @since 3.4
+     */
+    @Optional
+    @Incubating
+    @Internal // Handled on the compile task
+    @Nullable
+    public FileCollection getAnnotationProcessorPath() {
+        return annotationProcessorPath;
+    }
+
+    /**
+     * Set the classpath to use to load annotation processors. This path is also used for annotation processor discovery. The value can be {@code null}, which means use the compile classpath.
+     *
+     * @param annotationProcessorPath The annotation processor path, or {@code null} to use the default.
+     * @since 3.4
+     */
+    @Incubating
+    public void setAnnotationProcessorPath(@Nullable FileCollection annotationProcessorPath) {
+        this.annotationProcessorPath = annotationProcessorPath;
+    }
+
+    /**
+     * Returns the directory to place source files generated by annotation compilers.
+     *
+     * @since 4.3
+     */
+    @Optional
+    @Nullable
+    @Incubating
+    @OutputDirectory
+    public File getAnnotationProcessorGeneratedSourcesDirectory() {
+        return annotationProcessorGeneratedSourcesDirectory.getOrNull();
+    }
+
+    /**
+     * Sets the directory to place source files generated by annotation compilers.
+     *
+     * @since 4.3
+     */
+    @Incubating
+    public void setAnnotationProcessorGeneratedSourcesDirectory(File file) {
+        this.annotationProcessorGeneratedSourcesDirectory.set(file);
+    }
+
+    /**
+     * Sets the directory to place source files generated by annotation compilers.
+     *
+     * @since 4.3
+     */
+    @Incubating
+    public void setAnnotationProcessorGeneratedSourcesDirectory(Provider<File> file) {
+        this.annotationProcessorGeneratedSourcesDirectory.set(file);
+    }
+}

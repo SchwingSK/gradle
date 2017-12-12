@@ -19,32 +19,28 @@ package org.gradle.play.internal.toolchain;
 import org.gradle.api.artifacts.ConfigurationContainer;
 import org.gradle.api.artifacts.dsl.DependencyHandler;
 import org.gradle.api.internal.file.FileResolver;
-import org.gradle.api.internal.tasks.compile.daemon.CompilerDaemonManager;
-import org.gradle.internal.Factory;
 import org.gradle.internal.service.ServiceRegistration;
-import org.gradle.internal.service.scopes.PluginServiceRegistry;
+import org.gradle.internal.service.scopes.AbstractPluginServiceRegistry;
 import org.gradle.play.internal.spec.PlayApplicationBinaryRenderer;
-import org.gradle.process.internal.WorkerProcessBuilder;
+import org.gradle.process.internal.worker.WorkerProcessFactory;
+import org.gradle.process.internal.worker.child.WorkerDirectoryProvider;
+import org.gradle.workers.internal.WorkerDaemonFactory;
 
-public class PlayToolChainServiceRegistry implements PluginServiceRegistry {
+public class PlayToolChainServiceRegistry extends AbstractPluginServiceRegistry {
 
+    @Override
     public void registerGlobalServices(ServiceRegistration registration) {
         registration.add(PlayApplicationBinaryRenderer.class);
     }
 
-    public void registerBuildServices(ServiceRegistration registration) {
-    }
-
-    public void registerGradleServices(ServiceRegistration registration) {
-    }
-
+    @Override
     public void registerProjectServices(ServiceRegistration registration) {
         registration.addProvider(new ProjectScopeCompileServices());
     }
 
     private static class ProjectScopeCompileServices {
-        PlayToolChainInternal createPlayToolChain(FileResolver fileResolver, CompilerDaemonManager compilerDaemonManager, ConfigurationContainer configurationContainer, DependencyHandler dependencyHandler, Factory<WorkerProcessBuilder> workerProcessBuilderFactory) {
-            return new DefaultPlayToolChain(fileResolver, compilerDaemonManager, configurationContainer, dependencyHandler, workerProcessBuilderFactory);
+        PlayToolChainInternal createPlayToolChain(FileResolver fileResolver, WorkerDaemonFactory workerDaemonFactory, ConfigurationContainer configurationContainer, DependencyHandler dependencyHandler, WorkerProcessFactory workerProcessBuilderFactory, WorkerDirectoryProvider workerDirectoryProvider) {
+            return new DefaultPlayToolChain(fileResolver, workerDaemonFactory, configurationContainer, dependencyHandler, workerProcessBuilderFactory, workerDirectoryProvider);
         }
     }
 }

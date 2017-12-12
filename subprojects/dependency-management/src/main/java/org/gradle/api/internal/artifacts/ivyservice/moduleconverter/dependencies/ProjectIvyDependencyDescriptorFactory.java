@@ -15,42 +15,50 @@
  */
 package org.gradle.api.internal.artifacts.ivyservice.moduleconverter.dependencies;
 
-import org.apache.ivy.core.module.descriptor.DefaultDependencyDescriptor;
-import org.apache.ivy.core.module.descriptor.ModuleDescriptor;
-import org.apache.ivy.core.module.id.ModuleRevisionId;
-import org.gradle.api.artifacts.Module;
 import org.gradle.api.artifacts.ModuleDependency;
 import org.gradle.api.artifacts.ProjectDependency;
+import org.gradle.api.artifacts.component.ComponentIdentifier;
+import org.gradle.api.artifacts.component.ComponentSelector;
+import org.gradle.api.attributes.AttributeContainer;
+import org.gradle.api.internal.artifacts.Module;
 import org.gradle.api.internal.artifacts.dependencies.ProjectDependencyInternal;
-import org.gradle.api.internal.artifacts.ivyservice.IvyUtil;
-import org.gradle.api.internal.artifacts.ivyservice.moduleconverter.ExcludeRuleConverter;
 import org.gradle.api.internal.project.ProjectInternal;
-import org.gradle.internal.component.local.model.DefaultProjectDependencyMetaData;
-import org.gradle.internal.component.local.model.DslOriginDependencyMetaData;
-import org.gradle.internal.component.local.model.DslOriginDependencyMetaDataWrapper;
+import org.gradle.internal.component.local.model.DefaultProjectComponentSelector;
+import org.gradle.internal.component.local.model.DslOriginDependencyMetadataWrapper;
+import org.gradle.internal.component.model.ExcludeMetadata;
+import org.gradle.internal.component.model.LocalComponentDependencyMetadata;
+import org.gradle.internal.component.model.LocalOriginDependencyMetadata;
+
+import java.util.List;
 
 public class ProjectIvyDependencyDescriptorFactory extends AbstractIvyDependencyDescriptorFactory {
+
     public ProjectIvyDependencyDescriptorFactory(ExcludeRuleConverter excludeRuleConverter) {
         super(excludeRuleConverter);
     }
 
-    public DslOriginDependencyMetaData createDependencyDescriptor(String configuration, ModuleDependency dependency, ModuleDescriptor parent) {
+    public LocalOriginDependencyMetadata createDependencyDescriptor(ComponentIdentifier componentId, String clientConfiguration, AttributeContainer clientAttributes, ModuleDependency dependency) {
         ProjectDependencyInternal projectDependency = (ProjectDependencyInternal) dependency;
         projectDependency.beforeResolved();
-        ModuleRevisionId moduleRevisionId = createModuleRevisionId(dependency);
-        DefaultDependencyDescriptor dependencyDescriptor = new DefaultDependencyDescriptor(parent, moduleRevisionId, false, false, dependency.isTransitive());
-        addExcludesArtifactsAndDependencies(configuration, dependency, dependencyDescriptor);
-        DefaultProjectDependencyMetaData projectDependencyMetaData = new DefaultProjectDependencyMetaData(dependencyDescriptor, projectDependency.getDependencyProject().getPath());
-        return new DslOriginDependencyMetaDataWrapper(projectDependencyMetaData, projectDependency);
+        ComponentSelector selector = DefaultProjectComponentSelector.newSelector(projectDependency.getDependencyProject());
+
+        List<ExcludeMetadata> excludes = convertExcludeRules(clientConfiguration, dependency.getExcludeRules());
+        LocalComponentDependencyMetadata dependencyMetaData = new LocalComponentDependencyMetadata(
+            componentId, selector, clientConfiguration,
+            clientAttributes,
+            projectDependency.getTargetConfiguration(),
+            convertArtifacts(dependency.getArtifacts()),
+            excludes,
+            false, false, dependency.isTransitive(), false);
+        return new DslOriginDependencyMetadataWrapper(dependencyMetaData, dependency);
     }
 
     public boolean canConvert(ModuleDependency dependency) {
         return dependency instanceof ProjectDependency;
     }
 
-    private ModuleRevisionId createModuleRevisionId(ModuleDependency dependency) {
+    private Module getProjectModule(ModuleDependency dependency) {
         ProjectDependency projectDependency = (ProjectDependency) dependency;
-        Module module = ((ProjectInternal) projectDependency.getDependencyProject()).getModule();
-        return IvyUtil.createModuleRevisionId(module);
+        return ((ProjectInternal) projectDependency.getDependencyProject()).getModule();
     }
 }

@@ -15,56 +15,82 @@
  */
 package org.gradle.language.rc.plugins.internal;
 
+import com.google.common.collect.ImmutableSet;
 import org.gradle.api.DefaultTask;
 import org.gradle.api.Project;
 import org.gradle.api.Task;
 import org.gradle.api.file.FileTree;
-import org.gradle.api.plugins.ExtensionAware;
+import org.gradle.api.internal.file.FileCollectionFactory;
+import org.gradle.api.internal.file.collections.MinimalFileSet;
+import org.gradle.api.internal.project.ProjectInternal;
 import org.gradle.api.tasks.util.PatternSet;
+import org.gradle.internal.service.ServiceRegistry;
 import org.gradle.language.base.LanguageSourceSet;
 import org.gradle.language.base.internal.LanguageSourceSetInternal;
 import org.gradle.language.base.internal.SourceTransformTaskConfig;
 import org.gradle.language.rc.WindowsResourceSet;
+import org.gradle.language.rc.tasks.WindowsResourceCompile;
+import org.gradle.nativeplatform.PreprocessingTool;
 import org.gradle.nativeplatform.internal.NativeBinarySpecInternal;
 import org.gradle.nativeplatform.internal.StaticLibraryBinarySpecInternal;
-import org.gradle.language.PreprocessingTool;
-import org.gradle.language.rc.tasks.WindowsResourceCompile;
+import org.gradle.nativeplatform.platform.internal.NativePlatformInternal;
+import org.gradle.nativeplatform.toolchain.internal.NativeToolChainInternal;
+import org.gradle.nativeplatform.toolchain.internal.PlatformToolProvider;
+import org.gradle.nativeplatform.toolchain.internal.SystemIncludesAwarePlatformToolProvider;
+import org.gradle.nativeplatform.toolchain.internal.ToolType;
 import org.gradle.platform.base.BinarySpec;
 
 import java.io.File;
+import java.util.LinkedHashSet;
 import java.util.Set;
-import java.util.concurrent.Callable;
 
 public class WindowsResourcesCompileTaskConfig implements SourceTransformTaskConfig {
+    @Override
     public String getTaskPrefix() {
         return "compile";
     }
 
+    @Override
     public Class<? extends DefaultTask> getTaskType() {
         return WindowsResourceCompile.class;
     }
 
-    public void configureTask(Task task, BinarySpec binary, LanguageSourceSet sourceSet) {
+    @Override
+    public void configureTask(Task task, BinarySpec binary, LanguageSourceSet sourceSet, ServiceRegistry serviceRegistry) {
         configureResourceCompileTask((WindowsResourceCompile) task, (NativeBinarySpecInternal) binary, (WindowsResourceSet) sourceSet);
     }
 
     private void configureResourceCompileTask(WindowsResourceCompile task, final NativeBinarySpecInternal binary, final WindowsResourceSet sourceSet) {
-        task.setDescription(String.format("Compiles resources of the %s of %s", sourceSet, binary));
+        task.setDescription("Compiles resources of the " + sourceSet + " of " + binary);
 
         task.setToolChain(binary.getToolChain());
         task.setTargetPlatform(binary.getTargetPlatform());
 
-        task.includes(new Callable<Set<File>>() {
-            public Set<File> call() {
-                return sourceSet.getExportedHeaders().getSrcDirs();
+        task.includes(sourceSet.getExportedHeaders().getSourceDirectories());
+
+        FileCollectionFactory fileCollectionFactory = ((ProjectInternal) task.getProject()).getServices().get(FileCollectionFactory.class);
+        task.includes(fileCollectionFactory.create(new MinimalFileSet() {
+            @Override
+            public Set<File> getFiles() {
+                PlatformToolProvider platformToolProvider = ((NativeToolChainInternal) binary.getToolChain()).select((NativePlatformInternal) binary.getTargetPlatform());
+                if (platformToolProvider instanceof SystemIncludesAwarePlatformToolProvider) {
+                    return new LinkedHashSet<File>(((SystemIncludesAwarePlatformToolProvider) platformToolProvider).getSystemIncludes(ToolType.WINDOW_RESOURCES_COMPILER));
+                }
+                return ImmutableSet.of();
             }
-        });
+
+            @Override
+            public String getDisplayName() {
+                return "System includes for " + binary.getToolChain().getDisplayName();
+            }
+        }));
+
         task.source(sourceSet.getSource());
 
         final Project project = task.getProject();
-        task.setOutputDir(project.file(String.valueOf(project.getBuildDir()) + "/objs/" + binary.getNamingScheme().getOutputDirectoryBase() + "/" + ((LanguageSourceSetInternal) sourceSet).getFullName()));
+        task.setOutputDir(new File(binary.getNamingScheme().getOutputDirectory(project.getBuildDir(), "objs"), ((LanguageSourceSetInternal) sourceSet).getProjectScopedName()));
 
-        PreprocessingTool rcCompiler = (PreprocessingTool) ((ExtensionAware) binary).getExtensions().getByName("rcCompiler");
+        PreprocessingTool rcCompiler = (PreprocessingTool) binary.getToolByName("rcCompiler");
         task.setMacros(rcCompiler.getMacros());
         task.setCompilerArgs(rcCompiler.getArgs());
 

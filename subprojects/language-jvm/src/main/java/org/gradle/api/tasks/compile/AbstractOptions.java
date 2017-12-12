@@ -17,9 +17,11 @@
 package org.gradle.api.tasks.compile;
 
 import com.google.common.collect.Maps;
-import org.gradle.api.Nullable;
+import org.gradle.api.internal.plugins.DslObject;
 import org.gradle.internal.reflect.JavaReflectionUtil;
+import org.gradle.util.DeprecationLogger;
 
+import javax.annotation.Nullable;
 import java.io.Serializable;
 import java.lang.reflect.Field;
 import java.lang.reflect.Modifier;
@@ -36,21 +38,22 @@ public abstract class AbstractOptions implements Serializable {
             return;
         }
         for (Map.Entry<String, Object> arg: args.entrySet()) {
-            JavaReflectionUtil.writeableProperty(getClass(), arg.getKey()).setValue(this, arg.getValue());
+            setProperty(arg.getKey(), arg.getValue());
         }
     }
 
     public Map<String, Object> optionMap() {
-        final Class<?> thisClass = getClass();
-        Map<String, Object> map = Maps.newHashMap();
-        Class<?> currClass = thisClass;
-        if (currClass.getName().endsWith("_Decorated")) {
-            currClass = currClass.getSuperclass();
-        }
+        final Map<String, Object> map = Maps.newHashMap();
+        Class<?> currClass = new DslObject(this).getDeclaredType();
         while (currClass != AbstractOptions.class) {
-            for (Field field : currClass.getDeclaredFields()) {
+            for (final Field field : currClass.getDeclaredFields()) {
                 if (isOptionField(field)) {
-                    addValueToMapIfNotNull(map, field);
+                    DeprecationLogger.whileDisabled(new Runnable() {
+                        @Override
+                        public void run() {
+                            addValueToMapIfNotNull(map, field);
+                        }
+                    });
                 }
             }
             currClass = currClass.getSuperclass();
@@ -70,6 +73,10 @@ public abstract class AbstractOptions implements Serializable {
         return value;
     }
 
+    private void setProperty(String property, Object value) {
+        JavaReflectionUtil.writeableProperty(getClass(), property, value == null ? null : value.getClass()).setValue(this, value);
+    }
+
     private void addValueToMapIfNotNull(Map<String, Object> map, Field field) {
         Object value = JavaReflectionUtil.readableProperty(this, Object.class, field.getName()).getValue(this);
         if (value != null) {
@@ -80,6 +87,7 @@ public abstract class AbstractOptions implements Serializable {
     private boolean isOptionField(Field field) {
         return ((field.getModifiers() & Modifier.STATIC) == 0)
                 && (!field.getName().equals("metaClass"))
+                && (!field.getName().equals("fileResolver"))
                 && (!excludeFromAntProperties(field.getName()));
     }
 }

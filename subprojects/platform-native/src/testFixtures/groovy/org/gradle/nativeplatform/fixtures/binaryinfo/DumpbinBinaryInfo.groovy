@@ -15,15 +15,14 @@
  */
 
 package org.gradle.nativeplatform.fixtures.binaryinfo
-import net.rubygrapefruit.platform.SystemInfo
-import net.rubygrapefruit.platform.WindowsRegistry
-import org.gradle.internal.nativeintegration.services.NativeServices
-import org.gradle.internal.os.OperatingSystem
+
+import org.gradle.nativeplatform.fixtures.msvcpp.VisualStudioLocatorTestFixture
 import org.gradle.nativeplatform.platform.internal.ArchitectureInternal
 import org.gradle.nativeplatform.platform.internal.Architectures
 import org.gradle.nativeplatform.platform.internal.DefaultNativePlatform
-import org.gradle.nativeplatform.toolchain.internal.msvcpp.DefaultVisualStudioLocator
 import org.gradle.nativeplatform.toolchain.internal.msvcpp.VisualStudioInstall
+
+import javax.annotation.Nullable
 
 class DumpbinBinaryInfo implements BinaryInfo {
     final File binaryFile
@@ -34,14 +33,16 @@ class DumpbinBinaryInfo implements BinaryInfo {
         this.binaryFile = binaryFile
 
         VisualStudioInstall vsInstall = findVisualStudio()
+        if (vsInstall == null) {
+            throw new UnsupportedOperationException("Visual Studio is unavailable on this system.")
+        }
         DefaultNativePlatform targetPlatform = new DefaultNativePlatform("default");
         vcBin = vsInstall.getVisualCpp().getBinaryPath(targetPlatform)
         vcPath = vsInstall.getVisualCpp().getPath(targetPlatform).join(';')
     }
 
-    static VisualStudioInstall findVisualStudio() {
-        def vsLocator = new DefaultVisualStudioLocator(OperatingSystem.current(), NativeServices.instance.get(WindowsRegistry), NativeServices.instance.get(SystemInfo))
-        return vsLocator.locateVisualStudioInstalls(null).visualStudio
+    static @Nullable VisualStudioInstall findVisualStudio() {
+        return VisualStudioLocatorTestFixture.visualStudioLocator.locateDefaultVisualStudioInstall().visualStudio
     }
 
     private findExe(String exe) {
@@ -74,6 +75,8 @@ class DumpbinBinaryInfo implements BinaryInfo {
                 return Architectures.forInput("x86_64")
             case "IA64":
                 return Architectures.forInput("ia-64")
+            case "ARM":
+                return Architectures.forInput("arm")
             default:
                 throw new RuntimeException("Cannot determine architecture for ${archString}")
         }
@@ -89,6 +92,14 @@ class DumpbinBinaryInfo implements BinaryInfo {
         def dumpbin = findExe("dumpbin.exe")
         def process = [dumpbin.absolutePath, '/IMPORTS', binaryFile.absolutePath].execute(["PATH=$vcPath"], null)
         return process.inputStream.readLines()
+    }
+
+    List<BinaryInfo.Symbol> listSymbols() {
+        throw new UnsupportedOperationException("Not yet implemented")
+    }
+
+    List<BinaryInfo.Symbol> listDebugSymbols() {
+        throw new UnsupportedOperationException("Not yet implemented")
     }
 
     String getSoName() {

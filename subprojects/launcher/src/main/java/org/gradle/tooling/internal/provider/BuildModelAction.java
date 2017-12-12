@@ -16,21 +16,18 @@
 package org.gradle.tooling.internal.provider;
 
 import org.gradle.StartParameter;
-import org.gradle.internal.invocation.BuildAction;
+import org.gradle.tooling.internal.protocol.ModelIdentifier;
 
-import java.io.Serializable;
-
-public class BuildModelAction implements BuildAction, Serializable {
+public class BuildModelAction extends SubscribableBuildAction {
     private final StartParameter startParameter;
     private final String modelName;
     private final boolean runTasks;
-    private final boolean sendTestProgressEvents;
 
-    public BuildModelAction(StartParameter startParameter, String modelName, boolean runTasks, boolean sendTestProgressEvents) {
+    public BuildModelAction(StartParameter startParameter, String modelName, boolean runTasks, BuildClientSubscriptions clientSubscriptions) {
+        super(clientSubscriptions);
         this.startParameter = startParameter;
         this.modelName = modelName;
         this.runTasks = runTasks;
-        this.sendTestProgressEvents = sendTestProgressEvents;
     }
 
     @Override
@@ -46,7 +43,8 @@ public class BuildModelAction implements BuildAction, Serializable {
         return runTasks;
     }
 
-    public boolean isSendTestProgressEvents() {
-        return sendTestProgressEvents;
+    public boolean isModelRequest() {
+        return !ModelIdentifier.NULL_MODEL.equals(modelName);
     }
+
 }

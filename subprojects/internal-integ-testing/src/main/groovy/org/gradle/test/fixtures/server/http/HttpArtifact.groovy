@@ -37,8 +37,8 @@ abstract class HttpArtifact extends HttpResource implements RemoteArtifact {
         return new BasicHttpResource(server, getSha1File(), "${path}.sha1")
     }
 
-    protected String getPath() {
-        "${modulePath}/${file.name}"
+    String getPath() {
+        return "${modulePath}/${file.name}"
     }
 
     protected abstract TestFile getSha1File();
@@ -54,6 +54,12 @@ abstract class HttpArtifact extends HttpResource implements RemoteArtifact {
         def md5File = getMd5File()
         md5File.assertIsFile()
         assert new BigInteger(md5File.text, 16) == new BigInteger(getHash(getFile(), "md5"), 16)
+    }
+
+    void expectPublish() {
+        expectPut()
+        sha1.expectPut()
+        md5.expectPut()
     }
 
     protected String getHash(TestFile file, String algorithm) {

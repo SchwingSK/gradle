@@ -16,15 +16,15 @@
 
 package org.gradle.api.internal.artifacts.ivyservice.moduleconverter.dependencies;
 
-import org.apache.ivy.core.module.descriptor.DependencyDescriptor;
 import org.gradle.api.artifacts.ExternalModuleDependency;
 import org.gradle.api.artifacts.ModuleDependency;
 import org.gradle.api.artifacts.ProjectDependency;
+import org.gradle.api.artifacts.component.ComponentIdentifier;
+import org.gradle.api.artifacts.component.ModuleComponentSelector;
 import org.gradle.api.internal.artifacts.dependencies.DefaultExternalModuleDependency;
-import org.gradle.api.internal.artifacts.ivyservice.IvyUtil;
-import org.gradle.internal.component.local.model.DslOriginDependencyMetaData;
+import org.gradle.internal.component.local.model.OpaqueComponentIdentifier;
+import org.gradle.internal.component.model.LocalOriginDependencyMetadata;
 import org.hamcrest.Matchers;
-import org.jmock.integration.junit4.JUnit4Mockery;
 import org.junit.Test;
 
 import static org.hamcrest.Matchers.equalTo;
@@ -32,11 +32,11 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertThat;
 
 public class ExternalModuleDependencyDescriptorFactoryTest extends AbstractDependencyDescriptorFactoryInternalTest {
-    private JUnit4Mockery context = new JUnit4Mockery();
 
     ExternalModuleIvyDependencyDescriptorFactory externalModuleDependencyDescriptorFactory =
             new ExternalModuleIvyDependencyDescriptorFactory(excludeRuleConverterStub);
-    
+    private final ComponentIdentifier componentId = new OpaqueComponentIdentifier("foo");
+
     @Test
     public void canConvert() {
         assertThat(externalModuleDependencyDescriptorFactory.canConvert(context.mock(ProjectDependency.class)), Matchers.equalTo(false));
@@ -46,8 +46,12 @@ public class ExternalModuleDependencyDescriptorFactoryTest extends AbstractDepen
     @Test
     public void testAddWithNullGroupAndNullVersionShouldHaveEmptyStringModuleRevisionValues() {
         ModuleDependency dependency = new DefaultExternalModuleDependency(null, "gradle-core", null, TEST_DEP_CONF);
-        DslOriginDependencyMetaData dependencyMetaData = externalModuleDependencyDescriptorFactory.createDependencyDescriptor(TEST_CONF, dependency, moduleDescriptor);
-        assertThat(dependencyMetaData.getDescriptor().getDependencyRevisionId(), equalTo(IvyUtil.createModuleRevisionId(dependency)));
+        LocalOriginDependencyMetadata dependencyMetaData = externalModuleDependencyDescriptorFactory.createDependencyDescriptor(componentId, TEST_CONF, null, dependency);
+        ModuleComponentSelector selector = (ModuleComponentSelector) dependencyMetaData.getSelector();
+        assertThat(selector.getGroup(), equalTo(""));
+        assertThat(selector.getModule(), equalTo("gradle-core"));
+        assertThat(selector.getVersion(), equalTo(""));
+        assertThat(selector.getVersionConstraint().getPreferredVersion(), equalTo(""));
     }
 
     @Test
@@ -56,12 +60,15 @@ public class ExternalModuleDependencyDescriptorFactoryTest extends AbstractDepen
                 "gradle-core", "1.0", TEST_DEP_CONF);
         setUpDependency(moduleDependency);
 
-        DslOriginDependencyMetaData dependencyMetaData = externalModuleDependencyDescriptorFactory.createDependencyDescriptor(TEST_CONF, moduleDependency, moduleDescriptor);
+        LocalOriginDependencyMetadata dependencyMetaData = externalModuleDependencyDescriptorFactory.createDependencyDescriptor(componentId, TEST_CONF, null, moduleDependency);
+        ModuleComponentSelector selector = (ModuleComponentSelector) dependencyMetaData.getSelector();
 
-        DependencyDescriptor dependencyDescriptor = dependencyMetaData.getDescriptor();
-        assertEquals(moduleDependency.isChanging(), dependencyDescriptor.isChanging());
-        assertEquals(dependencyDescriptor.isForce(), moduleDependency.isForce());
-        assertEquals(IvyUtil.createModuleRevisionId(moduleDependency), dependencyDescriptor.getDependencyRevisionId());
-        assertDependencyDescriptorHasCommonFixtureValues(dependencyDescriptor);
+        assertEquals(moduleDependency.isChanging(), dependencyMetaData.isChanging());
+        assertEquals(moduleDependency.isForce(), dependencyMetaData.isForce());
+        assertEquals(moduleDependency.getGroup(), selector.getGroup());
+        assertEquals(moduleDependency.getName(), selector.getModule());
+        assertEquals(moduleDependency.getVersion(), selector.getVersion());
+        assertEquals(moduleDependency.getVersionConstraint(), selector.getVersionConstraint());
+        assertDependencyDescriptorHasCommonFixtureValues(dependencyMetaData);
     }
 }

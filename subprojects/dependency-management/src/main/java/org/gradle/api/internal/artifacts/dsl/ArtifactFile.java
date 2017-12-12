@@ -29,7 +29,11 @@ public class ArtifactFile {
     private String extension;
 
     public ArtifactFile(File file, String version) {
-        name = file.getName();
+        this(file.getName(), version);
+    }
+
+    public ArtifactFile(String fileBaseName, String version) {
+        name = fileBaseName;
         extension = "";
         classifier = "";
         boolean done = false;
@@ -55,9 +59,6 @@ public class ArtifactFile {
         if (!done) {
             extension = StringUtils.substringAfterLast(name, ".");
             name = StringUtils.substringBeforeLast(name, ".");
-        }
-        if (extension.length() == 0) {
-            extension = null;
         }
         if (classifier.length() == 0) {
             classifier = null;

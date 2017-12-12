@@ -19,9 +19,9 @@ package org.gradle.initialization
 import org.gradle.StartParameter
 import org.gradle.api.initialization.ProjectDescriptor
 import org.gradle.api.internal.GradleInternal
+import org.gradle.api.internal.SettingsInternal
 import org.gradle.api.internal.file.TestFiles
 import org.gradle.api.internal.initialization.ClassLoaderScope
-import org.gradle.api.internal.project.DefaultProject
 import org.gradle.api.internal.project.IProjectFactory
 import org.gradle.api.internal.project.ProjectInternal
 import org.gradle.test.fixtures.file.TestNameTestDirectoryProvider
@@ -66,6 +66,25 @@ class InstantiatingBuildLoaderTest extends Specification {
         build.getStartParameter() >> startParameter
     }
 
+    def "attaches settings when loaded"() {
+        given:
+        def settings = Stub(SettingsInternal) {
+            getRootProject() >> rootDescriptor
+            getDefaultProject() >> rootDescriptor
+            getRootClassLoaderScope() >> baseClassLoaderScope
+        }
+
+        when:
+        buildLoader.load(settings, build)
+
+        then:
+        1 * build.getRootProject() >> rootProject
+        1 * projectFactory.createProject(rootDescriptor, null, !null, rootProjectClassLoaderScope, baseClassLoaderScope) >> rootProject
+
+        and:
+        1 * build.setSettings(settings)
+    }
+
     def createsBuildWithRootProjectAsTheDefaultOne() {
         when:
         ProjectDescriptor rootDescriptor = descriptor('root', null, rootProjectDir)
@@ -102,7 +121,7 @@ class InstantiatingBuildLoaderTest extends Specification {
     }
 
     ProjectInternal project(ProjectDescriptor descriptor, ProjectInternal parent) {
-        DefaultProject project
+        ProjectInternal project
         if (parent) {
             project = TestUtil.createChildProject(parent, descriptor.name, descriptor.projectDir)
         } else {

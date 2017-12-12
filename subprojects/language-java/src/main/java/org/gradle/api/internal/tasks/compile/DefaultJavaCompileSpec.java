@@ -19,24 +19,28 @@ package org.gradle.api.internal.tasks.compile;
 import org.gradle.api.tasks.compile.CompileOptions;
 
 import java.io.File;
+import java.util.List;
 
 public class DefaultJavaCompileSpec extends DefaultJvmLanguageCompileSpec implements JavaCompileSpec {
-    private CompileOptions compileOptions;
-    private File dependencyCacheDir;
+    private MinimalJavaCompileOptions compileOptions;
+    private List<File> annotationProcessorPath;
 
-    public CompileOptions getCompileOptions() {
+    @Override
+    public MinimalJavaCompileOptions getCompileOptions() {
         return compileOptions;
     }
 
     public void setCompileOptions(CompileOptions compileOptions) {
-        this.compileOptions = compileOptions;
+        this.compileOptions = new MinimalJavaCompileOptions(compileOptions);
     }
 
-    public File getDependencyCacheDir() {
-        return dependencyCacheDir;
+    @Override
+    public List<File> getAnnotationProcessorPath() {
+        return annotationProcessorPath;
     }
 
-    public void setDependencyCacheDir(File dependencyCacheDir) {
-        this.dependencyCacheDir = dependencyCacheDir;
+    @Override
+    public void setAnnotationProcessorPath(List<File> annotationProcessorPath) {
+        this.annotationProcessorPath = annotationProcessorPath;
     }
 }

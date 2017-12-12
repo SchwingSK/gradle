@@ -16,20 +16,22 @@
 
 package org.gradle.api.internal.artifacts.ivyservice.ivyresolve
 
-import org.gradle.internal.component.model.ComponentUsage
+import org.gradle.api.internal.artifacts.ivyservice.resolveengine.artifact.ArtifactSet
+import org.gradle.api.internal.artifacts.ivyservice.resolveengine.excludes.ModuleExclusion
+import org.gradle.api.internal.artifacts.type.ArtifactTypeRegistry
+import org.gradle.internal.component.model.ComponentArtifactMetadata
+import org.gradle.internal.component.model.ComponentArtifacts
+import org.gradle.internal.component.model.ComponentResolveMetadata
+import org.gradle.internal.component.model.ConfigurationMetadata
 import org.gradle.internal.component.model.ModuleSource
 import org.gradle.internal.resolve.result.DefaultBuildableArtifactResolveResult
-import org.gradle.internal.resolve.result.DefaultBuildableArtifactSetResolveResult
-import org.gradle.internal.component.model.ComponentArtifactMetaData
-import org.gradle.internal.component.model.ComponentResolveMetaData
 import spock.lang.Specification
 
 class RepositoryChainArtifactResolverTest extends Specification {
-    final artifact = Mock(ComponentArtifactMetaData)
-    final component = Mock(ComponentResolveMetaData)
+    final artifact = Mock(ComponentArtifactMetadata)
+    final component = Mock(ComponentResolveMetadata)
     final originalSource = Mock(ModuleSource)
     final result = new DefaultBuildableArtifactResolveResult()
-    final artifactSetResult = new DefaultBuildableArtifactSetResolveResult()
 
     def repo1 = Stub(ModuleComponentRepository) {
         getId() >> "repo1"
@@ -51,48 +53,60 @@ class RepositoryChainArtifactResolverTest extends Specification {
     }
 
     def "uses module artifacts from local access to repository defined by module source"() {
-        def usage = Mock(ComponentUsage)
-        def artifact = Mock(ComponentArtifactMetaData)
+        def artifacts = Mock(ComponentArtifacts)
+        def configuration = Stub(ConfigurationMetadata)
+        def artifactTypeRegistry = Stub(ArtifactTypeRegistry)
+        def exclusion = Stub(ModuleExclusion)
+        def artifactSet = Stub(ArtifactSet)
+
         when:
-        resolver.resolveModuleArtifacts(component, usage, artifactSetResult)
+        def result = resolver.resolveArtifacts(component, configuration, artifactTypeRegistry, exclusion)
 
         then:
-        _ * component.getSource() >> repo2Source
-        1 * component.withSource(originalSource) >> component
-        1 * repo2.getLocalAccess() >> localAccess2
-        1 * localAccess2.resolveModuleArtifacts(component, usage, artifactSetResult) >> {
-            it[2].resolved([artifact])
-        }
-        0 * _._
+        result == artifactSet
 
         and:
-        artifactSetResult.artifacts == [artifact] as Set
+        _ * component.getSource() >> repo2Source
+        1 * component.withSource(originalSource) >> component
+        1 * repo2.artifactCache >> [:]
+        1 * repo2.getLocalAccess() >> localAccess2
+        1 * localAccess2.resolveArtifacts(component, _) >> {
+            it[1].resolved(artifacts)
+        }
+        1 * artifacts.getArtifactsFor(component, configuration, resolver, [:], artifactTypeRegistry, exclusion) >> artifactSet
+        0 * _._
     }
 
     def "uses module artifacts from remote access to repository defined by module source"() {
-        def usage = Mock(ComponentUsage)
-        def artifact = Mock(ComponentArtifactMetaData)
+        def artifacts = Mock(ComponentArtifacts)
+        def configuration = Stub(ConfigurationMetadata)
+        def artifactTypeRegistry = Stub(ArtifactTypeRegistry)
+        def exclusion = Stub(ModuleExclusion)
+        def artifactSet = Stub(ArtifactSet)
+
         when:
-        resolver.resolveModuleArtifacts(component, usage, artifactSetResult)
+        def result = resolver.resolveArtifacts(component, configuration, artifactTypeRegistry, exclusion)
 
         then:
-        _ * component.getSource() >> repo2Source
-        1 * component.withSource(originalSource) >> component
-        1 * repo2.getLocalAccess() >> localAccess2
-        1 * localAccess2.resolveModuleArtifacts(component, usage, artifactSetResult)
-        1 * repo2.getRemoteAccess() >> remoteAccess2
-        1 * remoteAccess2.resolveModuleArtifacts(component, usage, artifactSetResult) >> {
-            it[2].resolved([artifact])
-        }
-        0 * _._
+        result == artifactSet
 
         and:
-        artifactSetResult.artifacts == [artifact] as Set
+        _ * component.getSource() >> repo2Source
+        1 * component.withSource(originalSource) >> component
+        1 * repo2.artifactCache >> [:]
+        1 * repo2.getLocalAccess() >> localAccess2
+        1 * localAccess2.resolveArtifacts(component, _)
+        1 * repo2.getRemoteAccess() >> remoteAccess2
+        1 * remoteAccess2.resolveArtifacts(component, _) >> {
+            it[1].resolved(artifacts)
+        }
+        1 * artifacts.getArtifactsFor(component, configuration, resolver, [:], artifactTypeRegistry, exclusion) >> artifactSet
+        0 * _._
     }
 
     def "locates artifact with local access in repository defined by module source"() {
         def artifactFile = Mock(File)
-        def artifact = Mock(ComponentArtifactMetaData)
+        def artifact = Mock(ComponentArtifactMetadata)
         when:
         resolver.resolveArtifact(artifact, repo2Source, result)
 
@@ -104,12 +118,12 @@ class RepositoryChainArtifactResolverTest extends Specification {
         0 * _._
 
         and:
-        result.file == artifactFile
+        result.result == artifactFile
     }
 
     def "locates artifact with remote access in repository defined by module source"() {
         def artifactFile = Mock(File)
-        def artifact = Mock(ComponentArtifactMetaData)
+        def artifact = Mock(ComponentArtifactMetadata)
         when:
         resolver.resolveArtifact(artifact, repo2Source, result)
 
@@ -123,6 +137,6 @@ class RepositoryChainArtifactResolverTest extends Specification {
         0 * _._
 
         and:
-        result.file == artifactFile
+        result.result == artifactFile
     }
 }

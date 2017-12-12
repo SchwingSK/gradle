@@ -18,7 +18,9 @@ package org.gradle.internal.nativeintegration.filesystem.services;
 import com.google.common.base.Charsets;
 import com.google.common.io.Files;
 import org.apache.commons.io.FileUtils;
+import org.gradle.internal.file.FileMetadataSnapshot;
 import org.gradle.internal.nativeintegration.filesystem.FileException;
+import org.gradle.internal.nativeintegration.filesystem.FileMetadataAccessor;
 import org.gradle.internal.nativeintegration.filesystem.FileModeAccessor;
 import org.gradle.internal.nativeintegration.filesystem.FileModeMutator;
 import org.gradle.internal.nativeintegration.filesystem.Symlink;
@@ -33,21 +35,26 @@ import java.util.UUID;
 class GenericFileSystem implements FileSystem {
     private static final Logger LOGGER = LoggerFactory.getLogger(GenericFileSystem.class);
 
-    final boolean caseSensitive;
-    final boolean canCreateSymbolicLink;
+    private Boolean caseSensitive;
+    private final boolean canCreateSymbolicLink;
 
     private final FileModeMutator chmod;
     private final FileModeAccessor stat;
     private final Symlink symlink;
+    private final FileMetadataAccessor metadata;
 
+    @Override
     public boolean isCaseSensitive() {
+        initializeCaseSensitive();
         return caseSensitive;
     }
 
+    @Override
     public boolean canCreateSymbolicLink() {
         return canCreateSymbolicLink;
     }
 
+    @Override
     public void createSymbolicLink(File link, File target) {
         try {
             symlink.symlink(link, target);
@@ -56,6 +63,12 @@ class GenericFileSystem implements FileSystem {
         }
     }
 
+    @Override
+    public boolean isSymlink(File suspect) {
+        return symlink.isSymlink(suspect);
+    }
+
+    @Override
     public int getUnixMode(File f) {
         try {
             return stat.getUnixMode(f);
@@ -64,6 +77,12 @@ class GenericFileSystem implements FileSystem {
         }
     }
 
+    @Override
+    public FileMetadataSnapshot stat(File f) throws FileException {
+        return metadata.stat(f);
+    }
+
+    @Override
     public void chmod(File f, int mode) {
         try {
             chmod.chmod(f, mode);
@@ -72,21 +91,28 @@ class GenericFileSystem implements FileSystem {
         }
     }
 
-    public GenericFileSystem(FileModeMutator chmod, FileModeAccessor stat, Symlink symlink) {
+    public GenericFileSystem(FileModeMutator chmod, FileModeAccessor stat, Symlink symlink, FileMetadataAccessor metadata) {
+        this.metadata = metadata;
         this.stat = stat;
         this.symlink = symlink;
         this.chmod = chmod;
         canCreateSymbolicLink = symlink.isSymlinkSupported();
-        String content = generateUniqueContent();
-        File file = null;
-        try {
-            checkJavaIoTmpDirExists();
-            file = createFile(content);
-            caseSensitive = probeCaseSensitive(file, content);
-        } catch (IOException e) {
-            throw new RuntimeException(e);
-        } finally {
-            FileUtils.deleteQuietly(file);
+    }
+
+    private void initializeCaseSensitive() {
+        if (caseSensitive == null) {
+
+            String content = generateUniqueContent();
+            File file = null;
+            try {
+                checkJavaIoTmpDirExists();
+                file = createFile(content);
+                caseSensitive = probeCaseSensitive(file, content);
+            } catch (IOException e) {
+                throw new RuntimeException(e);
+            } finally {
+                FileUtils.deleteQuietly(file);
+            }
         }
     }
 

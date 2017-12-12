@@ -113,7 +113,7 @@ class IvyPublishDescriptorCustomizationIntegTest extends AbstractIvyPublishInteg
         then:
         file('generated-ivy.xml').assertIsFile()
         IvyDescriptor ivy = new IvyDescriptor(file('generated-ivy.xml'))
-        ivy.expectArtifact(moduleName).hasAttributes("jar", "jar", ["runtime"])
+        ivy.expectArtifact(moduleName).hasAttributes("jar", "jar", ["compile"])
         module.ivyFile.assertDoesNotExist()
     }
 
@@ -180,7 +180,7 @@ class IvyPublishDescriptorCustomizationIntegTest extends AbstractIvyPublishInteg
 
         then:
         failure.assertHasDescription("A problem occurred configuring root project 'publish'.")
-        failure.assertHasCause("Exception thrown while executing model rule: org.gradle.api.publish.plugins.PublishingPlugin\$Rules#publishing(org.gradle.api.plugins.ExtensionContainer)")
+        failure.assertHasCause("Exception thrown while executing model rule: PublishingPlugin.Rules#publishing")
         failure.assertHasCause("Invalid ivy extra info element name: '${name}'")
 
         where:

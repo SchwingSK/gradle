@@ -26,14 +26,16 @@ import org.gradle.nativeplatform.plugins.NativeComponentPlugin;
  *
  * <p>Automatically includes the {@link ObjectiveCppLangPlugin} for core Objective-C++ support and the {@link NativeComponentPlugin} for native component support.</p>
  *
+ * <ul>
  * <li>Creates a {@link org.gradle.language.objectivecpp.tasks.ObjectiveCppCompile} task for each {@link org.gradle.language.objectivecpp.ObjectiveCppSourceSet} to compile the Objective-C++ sources.</li>
+ * </ul>
  */
 @Incubating
 public class ObjectiveCppPlugin implements Plugin<Project> {
+    @Override
     public void apply(Project project) {
         project.getPluginManager().apply(NativeComponentPlugin.class);
         project.getPluginManager().apply(ObjectiveCppLangPlugin.class);
-        project.getPluginManager().apply(ObjectiveCppLangPCHPlugin.class);
     }
 
 }

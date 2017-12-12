@@ -25,7 +25,7 @@ class HtmlTestExecutionResult implements TestExecutionResult {
 
     private File htmlReportDirectory
 
-    public HtmlTestExecutionResult(File projectDirectory, String testReportDirectory = "build/reports/tests") {
+    public HtmlTestExecutionResult(File projectDirectory, String testReportDirectory = "build/reports/tests/test") {
         this.htmlReportDirectory = new File(projectDirectory, testReportDirectory);
     }
 
@@ -36,11 +36,16 @@ class HtmlTestExecutionResult implements TestExecutionResult {
     }
 
     private void indexContainsTestClass(String... expectedTestClasses) {
+        List<String> executedTestClasses = getExecutedTestClasses()
+        assert executedTestClasses.containsAll(expectedTestClasses)
+    }
+
+    private List<String> getExecutedTestClasses() {
         def indexFile = new File(htmlReportDirectory, "index.html")
         assert indexFile.exists()
         Document html = Jsoup.parse(indexFile, null)
         def executedTestClasses = html.select("div:has(h2:contains(Classes)).tab a").collect { it.text() }
-        assert executedTestClasses.containsAll(expectedTestClasses)
+        executedTestClasses
     }
 
     private void assertHtmlReportForTestClassExists(String... classNames) {
@@ -50,7 +55,16 @@ class HtmlTestExecutionResult implements TestExecutionResult {
     }
 
     TestClassExecutionResult testClass(String testClass) {
-        return new HtmlTestClassExecutionResult(new File(htmlReportDirectory, "classes/${FileUtils.toSafeFileName(testClass)}.html"));
+        return new HtmlTestClassExecutionResult(new File(htmlReportDirectory, "classes/${FileUtils.toSafeFileName(testClass)}.html"))
+    }
+
+    TestClassExecutionResult testClassStartsWith(String testClass) {
+        return new HtmlTestClassExecutionResult(new File(htmlReportDirectory, "classes").listFiles().find { it.name.startsWith(FileUtils.toSafeFileName(testClass)) })
+    }
+
+    @Override
+    int getTotalNumberOfTestClassesExecuted() {
+        return getExecutedTestClasses().size()
     }
 
     private static class HtmlTestClassExecutionResult implements TestClassExecutionResult {
@@ -93,7 +107,9 @@ class HtmlTestExecutionResult implements TestExecutionResult {
         }
 
         TestClassExecutionResult assertTestsExecuted(String... testNames) {
-            assert testsExecuted - testsSkipped == testNames as List
+            def executedAndNotSkipped = testsExecuted - testsSkipped
+            assert executedAndNotSkipped.containsAll(testNames as List)
+            assert executedAndNotSkipped.size() == testNames.size()
             return this
         }
 

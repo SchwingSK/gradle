@@ -18,16 +18,19 @@ package org.gradle.integtests.fixtures.executer;
 import groovy.lang.Closure;
 import groovy.lang.DelegatesTo;
 import org.gradle.api.Action;
+import org.gradle.api.logging.configuration.ConsoleOutput;
+import org.gradle.integtests.fixtures.AbstractConsoleFunctionalSpec;
+import org.gradle.internal.concurrent.Stoppable;
 import org.gradle.test.fixtures.file.TestDirectoryProvider;
 import org.gradle.test.fixtures.file.TestFile;
 
 import java.io.File;
-import java.io.InputStream;
+import java.io.PipedOutputStream;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
-public interface GradleExecuter {
+public interface GradleExecuter extends Stoppable {
     /**
      * Sets the working directory to use. Defaults to the test's temporary directory.
      */
@@ -94,8 +97,11 @@ public interface GradleExecuter {
     GradleExecuter withUserHomeDir(File userHomeDir);
 
     /**
-     * Sets the <em>Gradle</em> user home dir. Setting to null requests that the executer use the real default Gradle user home dir rather than the
-     * default used for testing.
+     * Sets the <em>Gradle</em> user home dir. Setting to null requests that the executer use the real default Gradle user home dir rather than the default used for testing.
+     *
+     * This value is persistent across executions by this executer.
+     *
+     * <p>Note: does not affect the daemon base dir.</p>
      */
     GradleExecuter withGradleUserHomeDir(File userHomeDir);
 
@@ -105,24 +111,19 @@ public interface GradleExecuter {
     GradleExecuter withJavaHome(File userHomeDir);
 
     /**
-     * Sets the executable to use. Set to null to use the read default executable (if any) rather than the default used for testing.
+     * Sets the executable to use. Set to null to use the real default executable (if any) rather than the default used for testing.
      */
     GradleExecuter usingExecutable(String script);
 
     /**
-     * Sets the stdin to use for the build. Defaults to an empty string.
+     * Sets a stream to use for writing to stdin which can be retrieved with getStdinPipe().
      */
-    GradleExecuter withStdIn(String text);
+    GradleExecuter withStdinPipe();
 
     /**
-     * Sets the stdin to use for the build. Defaults to an empty string.
+     * Sets a stream to use for writing to stdin.
      */
-    GradleExecuter withStdIn(InputStream stdin);
-
-    /**
-     * Specifies that the executer should not set any default jvm args.
-     */
-    GradleExecuter withNoDefaultJvmArgs();
+    GradleExecuter withStdinPipe(PipedOutputStream stdInPipe);
 
     /**
      * Executes the requested build, asserting that the build succeeds. Resets the configuration of this executer.
@@ -146,13 +147,57 @@ public interface GradleExecuter {
     GradleHandle start();
 
     /**
-     * Adds options that should be used to start the JVM, if a JVM is to be started. Ignored if not.
+     * Adds JVM args that should be used to start any command-line `gradle` executable used to run the build. Note that this may be different to the build JVM, for example the build may run in a
+     * daemon process. You should prefer using {@link #withBuildJvmOpts(String...)} over this method.
+     */
+    GradleExecuter withCommandLineGradleOpts(String... jvmOpts);
+
+    /**
+     * See {@link #withCommandLineGradleOpts(String...)}.
+     */
+    GradleExecuter withCommandLineGradleOpts(Iterable<String> jvmOpts);
+
+    /**
+     * Adds JVM args that should be used by the build JVM. Does not necessarily imply that the build will be run in a separate process, or that a new build JVM will be started, only that the build
+     * will run in a JVM that was started with the specified args.
      *
-     * @param gradleOpts the jvm opts
+     * @param jvmOpts the JVM opts
+     * @return this executer
+     */
+    GradleExecuter withBuildJvmOpts(String... jvmOpts);
+
+    /**
+     * See {@link #withBuildJvmOpts(String...)}.
+     */
+    GradleExecuter withBuildJvmOpts(Iterable<String> jvmOpts);
+
+    /**
+     * Activates the build cache
      *
      * @return this executer
      */
-    GradleExecuter withGradleOpts(String ... gradleOpts);
+    GradleExecuter withBuildCacheEnabled();
+
+    /**
+     * Don't set temp folder explicitly.
+     */
+    GradleExecuter withNoExplicitTmpDir();
+
+    /**
+     * Don't set native services dir explicitly.
+     */
+    GradleExecuter withNoExplicitNativeServicesDir();
+
+    /**
+     * Disables the rendering of stack traces for deprecation logging.
+     */
+    GradleExecuter withFullDeprecationStackTraceDisabled();
+
+    /**
+     * Specifies that the executer should only those JVM args explicitly requested using {@link #withBuildJvmOpts(String...)} and {@link #withCommandLineGradleOpts(String...)} (where appropriate) for
+     * the build JVM and not attempt to provide any others.
+     */
+    GradleExecuter useOnlyRequestedJvmOpts();
 
     /**
      * Sets the default character encoding to use.
@@ -162,15 +207,6 @@ public interface GradleExecuter {
      * @return this executer
      */
     GradleExecuter withDefaultCharacterEncoding(String defaultCharacterEncoding);
-
-    /**
-     * Sets the temp dir to use.
-     *
-     * Only makes sense for forking executers, and is optional.
-     *
-     * @return this executer
-     */
-    GradleExecuter withTmpDir(String tmpDir);
 
     /**
      * Sets the default locale to use.
@@ -184,20 +220,30 @@ public interface GradleExecuter {
     /**
      * Set the number of seconds an idle daemon should live for.
      *
-     * @param secs
-     *
      * @return this executer
      */
     GradleExecuter withDaemonIdleTimeoutSecs(int secs);
 
     /**
-     * Set the working space for the daemon and launched daemons
+     * Set the working space for any daemons used by the builds.
      *
-     * @param baseDir
+     * This value is persistent across executions by this executer.
+     *
+     * <p>Note: this does not affect the Gradle user home directory.</p>
      *
      * @return this executer
      */
     GradleExecuter withDaemonBaseDir(File baseDir);
+
+    /**
+     * Returns the working space for any daemons used by the builds.
+     */
+    File getDaemonBaseDir();
+
+    /**
+     * Requires that the build run in a separate daemon process.
+     */
+    GradleExecuter requireDaemon();
 
     /**
      * Asserts that this executer will be able to run a build, given its current configuration.
@@ -234,9 +280,23 @@ public interface GradleExecuter {
     TestDirectoryProvider getTestDirectoryProvider();
 
     /**
-     * Disables asserting that the execution did not trigger any deprecation warnings.
+     * Expects exactly one deprecation warning in the build output. If more than one warning is produced,
+     * or no warning is produced at all, the assertion fails.
+     *
+     * @see #expectDeprecationWarnings(int)
      */
-    GradleExecuter withDeprecationChecksDisabled();
+    GradleExecuter expectDeprecationWarning();
+
+    /**
+     * Expects exactly the given number of deprecation warnings. If fewer or more warnings are produced during
+     * the execution, the assertion fails.
+     */
+    GradleExecuter expectDeprecationWarnings(int count);
+
+    /**
+     * Disable deprecation warning checks.
+     */
+    GradleExecuter noDeprecationChecks();
 
     /**
      * Disables asserting that class loaders were not eagerly created, potentially leading to performance problems.
@@ -254,23 +314,40 @@ public interface GradleExecuter {
     GradleExecuter noExtraLogging();
 
     /**
-     * Requires that there is a gradle home for the execution, which in process execution does not.
+     * Requires that there is a real gradle distribution for the execution, which in-process execution does not.
+     *
+     * <p>Note: try to avoid using this method. It has some major drawbacks when it comes to development: 1. It requires a Gradle distribution or installation, and this will need to be rebuilt after
+     * each change in order to use the test, and 2. it requires that the build run in a different JVM, which makes it very difficult to debug.</p>
      */
-    GradleExecuter requireGradleHome();
+    GradleExecuter requireGradleDistribution();
 
     /**
-     * Configures that any daemons launched by or during the execution are unique to the test.
+     * Configures that any daemons used by the execution are unique to the test.
      *
-     * This value is persistent across executions in the same test.
+     * This value is persistent across executions by this executer.
+     *
+     * <p>Note: this does not affect the Gradle user home directory.</p>
      */
     GradleExecuter requireIsolatedDaemons();
+
+    /**
+     * Disable worker daemons expiration.
+     */
+    GradleExecuter withWorkerDaemonsExpirationDisabled();
+
+    /**
+     * Returns true if this executer will share daemons with other executers.
+     */
+    boolean usesSharedDaemons();
 
     /**
      * Configures a unique gradle user home dir for the test.
      *
      * The gradle user home dir used will be underneath the {@link #getTestDirectoryProvider()} directory.
      *
-     * This value is persistent across executions in the same test.
+     * This value is persistent across executions by this executer.
+     *
+     * <p>Note: does not affect the daemon base dir.</p>
      */
     GradleExecuter requireOwnGradleUserHomeDir();
 
@@ -292,5 +369,65 @@ public interface GradleExecuter {
      */
     GradleExecuter copyTo(GradleExecuter executer);
 
-    GradleExecuter withDaemonStartingMessageEnabled();
+    /**
+     * Where possible, starts the Gradle build process in suspended debug mode.
+     */
+    GradleExecuter startBuildProcessInDebugger(boolean flag);
+
+    GradleExecuter withProfiler(String profilerArg);
+
+    /**
+     * Forces Gradle to consider the build to be interactive
+     */
+    GradleExecuter withForceInteractive(boolean flag);
+
+    boolean isDebug();
+
+    boolean isProfile();
+
+    /**
+     * Starts the launcher JVM (daemon client) in suspended debug mode
+     */
+    GradleExecuter startLauncherInDebugger(boolean debugLauncher);
+
+    boolean isDebugLauncher();
+
+    /**
+     * Clears previous settings so that instance can be reused
+     */
+    GradleExecuter reset();
+
+    /**
+     * Measures the duration of the execution
+     */
+    GradleExecuter withDurationMeasurement(DurationMeasurement durationMeasurement);
+
+    /**
+     * Returns true if this executer uses a daemon
+     */
+    boolean isUseDaemon();
+
+    /**
+     * Configures that user home services should not be reused across multiple invocations.
+     *
+     * <p>
+     * Note: You will want to call this method if the test case defines a custom Gradle user home directory
+     * so the services can be shut down after test execution in
+     * {@link org.gradle.internal.service.scopes.DefaultGradleUserHomeScopeServiceRegistry#release(org.gradle.internal.service.ServiceRegistry)}.
+     * Not calling the method in those situations will result in the inability to delete a file lock.
+     * </p>
+     */
+    GradleExecuter withOwnUserHomeServices();
+
+    /**
+     * Executes the build with {@code "--console=rich, auto, verbose"} argument.
+     *
+     * @see AbstractConsoleFunctionalSpec
+     */
+    GradleExecuter withConsole(ConsoleOutput consoleOutput);
+
+    /**
+     * Execute the builds without adding the {@code "--stacktrace"} argument.
+     */
+    GradleExecuter withStacktraceDisabled();
 }

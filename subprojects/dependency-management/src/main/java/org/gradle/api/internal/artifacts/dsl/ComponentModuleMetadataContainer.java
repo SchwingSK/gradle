@@ -20,7 +20,8 @@ import com.google.common.base.Joiner;
 import org.gradle.api.InvalidUserDataException;
 import org.gradle.api.artifacts.ComponentModuleMetadataDetails;
 import org.gradle.api.artifacts.ModuleIdentifier;
-import org.gradle.api.internal.notations.ModuleIdentiferNotationConverter;
+import org.gradle.api.internal.artifacts.ImmutableModuleIdentifierFactory;
+import org.gradle.api.internal.notations.ModuleIdentifierNotationConverter;
 import org.gradle.internal.typeconversion.NotationParser;
 import org.gradle.internal.typeconversion.NotationParserBuilder;
 
@@ -29,20 +30,28 @@ import java.util.Map;
 import java.util.Set;
 
 import static com.google.common.collect.Maps.newHashMap;
+import static com.google.common.collect.Sets.newHashSet;
 import static java.lang.String.format;
 
 public class ComponentModuleMetadataContainer implements ModuleReplacementsData {
 
     private final Map<ModuleIdentifier, ModuleIdentifier> replacements = newHashMap();
+    private final Set<ModuleIdentifier> targets = newHashSet();
+    private final ImmutableModuleIdentifierFactory moduleIdentifierFactory;
+
+    public ComponentModuleMetadataContainer(ImmutableModuleIdentifierFactory moduleIdentifierFactory) {
+        this.moduleIdentifierFactory = moduleIdentifierFactory;
+    }
 
     public ComponentModuleMetadataDetails module(final Object sourceModule) {
-        final NotationParser<Object, ModuleIdentifier> parser = parser();
+        final NotationParser<Object, ModuleIdentifier> parser = parser(moduleIdentifierFactory);
         final ModuleIdentifier source = parser.parseNotation(sourceModule);
         return new ComponentModuleMetadataDetails() {
             public void replacedBy(final Object targetModule) {
                 ModuleIdentifier target = parser.parseNotation(targetModule);
                 detectCycles(replacements, source, target);
                 replacements.put(source, target);
+                targets.add(target);
             }
 
             public ModuleIdentifier getId() {
@@ -57,6 +66,11 @@ public class ComponentModuleMetadataContainer implements ModuleReplacementsData 
 
     public ModuleIdentifier getReplacementFor(ModuleIdentifier sourceModule) {
         return replacements.get(sourceModule);
+    }
+
+    @Override
+    public boolean participatesInReplacements(ModuleIdentifier moduleId) {
+        return targets.contains(moduleId) || replacements.keySet().contains(moduleId);
     }
 
     private static void detectCycles(Map<ModuleIdentifier, ModuleIdentifier> replacements, ModuleIdentifier source, ModuleIdentifier target) {
@@ -84,10 +98,10 @@ public class ComponentModuleMetadataContainer implements ModuleReplacementsData 
         }
     }
 
-    private static NotationParser<Object, ModuleIdentifier> parser() {
+    private static NotationParser<Object, ModuleIdentifier> parser(ImmutableModuleIdentifierFactory moduleIdentifierFactory) {
         return NotationParserBuilder
                 .toType(ModuleIdentifier.class)
-                .converter(new ModuleIdentiferNotationConverter())
+                .converter(new ModuleIdentifierNotationConverter(moduleIdentifierFactory))
                 .toComposite();
     }
 }

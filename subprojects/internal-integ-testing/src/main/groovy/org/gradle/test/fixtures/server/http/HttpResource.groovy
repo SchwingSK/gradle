@@ -45,8 +45,21 @@ abstract class HttpResource extends AbstractHttpResource {
         server.expectGetBroken(getPath())
     }
 
+    void expectGetUnauthorized() {
+        server.expectGetUnauthorized(getPath())
+    }
+
+    void expectGetBlocking() {
+        server.expectGetBlocking(getPath())
+    }
+
     void expectGetMissing(PasswordCredentials credentials = null) {
         server.expectGetMissing(getPath(), credentials)
+    }
+
+    @Override
+    void expectGetRevalidate() {
+        server.expectGetRevalidate(getPath(), file)
     }
 
     void expectHead() {
@@ -54,11 +67,15 @@ abstract class HttpResource extends AbstractHttpResource {
     }
 
     void expectHeadMissing() {
-        server.expectHeadMissing(path)
+        server.expectHeadMissing(getPath())
     }
 
     void expectHeadBroken() {
         server.expectHeadBroken(path)
+    }
+
+    void expectHeadRevalidate() {
+        server.expectHeadRevalidate(path, file)
     }
 
     void expectPut(PasswordCredentials credentials) {

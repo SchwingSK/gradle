@@ -27,6 +27,7 @@ public class Identifier {
     private static final String NON_PRECOMPOSED_NON_ASCII = "-√æ∫ʙ₦∆√∫";
     private static final String FILESYSTEM_RESERVED_CHARS = "-./\\?%*:|\"<>";
     private static final String XML_MARKUP_CHARS = "-<with>some<xml-markup/></with>";
+    private static final String GRADLE_NAME_FORBIDDEN_CHARACTERS = " /\\:<>\"?*|"; //See: NameValidator.FORBIDDEN_CHARACTERS
 
     private final String suffix;
     private final String displayName;
@@ -42,6 +43,10 @@ public class Identifier {
 
     public Identifier safeForFileName() {
         return without(getUnsupportedFileNameCharacters());
+    }
+
+    public Identifier safeForGradleDomainObjectName() {
+        return without(GRADLE_NAME_FORBIDDEN_CHARACTERS);
     }
 
     public Identifier without(String toRemove) {
@@ -82,7 +87,7 @@ public class Identifier {
 
     public static Identifier getNonAscii() {
         if (OperatingSystem.current().isMacOsX()) {
-            // The hfs+ file system stores file names in decomposed form. Don't use precomposed characters on OS X, as way too few things normalise text correctly
+            // The hfs+ file system stores file names in decomposed form. Don't use precomposed characters on macOS, as way too few things normalise text correctly
             return new Identifier(NON_PRECOMPOSED_NON_ASCII, "non-ascii");
         }
         return new Identifier(NON_ASCII_CHARS, "non-ascii");

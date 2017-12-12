@@ -15,14 +15,17 @@
  */
 package org.gradle.internal.os;
 
-import org.gradle.api.Nullable;
+import org.gradle.internal.scan.UsedByScanPlugin;
 
+import javax.annotation.Nullable;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.regex.Pattern;
+
+import static org.gradle.internal.FileUtils.withExtension;
 
 public abstract class OperatingSystem {
     public static final Windows WINDOWS = new Windows();
@@ -31,9 +34,27 @@ public abstract class OperatingSystem {
     public static final Linux LINUX = new Linux();
     public static final FreeBSD FREE_BSD = new FreeBSD();
     public static final Unix UNIX = new Unix();
+    private static OperatingSystem currentOs;
+    private final String toStringValue;
+    private final String osName;
+    private final String osVersion;
+
+    OperatingSystem() {
+        osName = System.getProperty("os.name");
+        osVersion = System.getProperty("os.version");
+        toStringValue = getName() + " " + getVersion() + " " + System.getProperty("os.arch");
+    }
 
     public static OperatingSystem current() {
-        return forName(System.getProperty("os.name"));
+        if (currentOs == null) {
+            currentOs = forName(System.getProperty("os.name"));
+        }
+        return currentOs;
+    }
+
+    // for testing current()
+    static void resetCurrent() {
+        currentOs = null;
     }
 
     public static OperatingSystem forName(String os) {
@@ -56,17 +77,18 @@ public abstract class OperatingSystem {
 
     @Override
     public String toString() {
-        return String.format("%s %s %s", getName(), getVersion(), System.getProperty("os.arch"));
+        return toStringValue;
     }
 
     public String getName() {
-        return System.getProperty("os.name");
-    }
-    
-    public String getVersion() {
-        return System.getProperty("os.version");
+        return osName;
     }
 
+    public String getVersion() {
+        return osVersion;
+    }
+
+    @UsedByScanPlugin
     public boolean isWindows() {
         return false;
     }
@@ -89,10 +111,19 @@ public abstract class OperatingSystem {
 
     public abstract String getExecutableName(String executablePath);
 
+    public abstract String getExecutableSuffix();
+
     public abstract String getSharedLibraryName(String libraryName);
+
+    public abstract String getSharedLibrarySuffix();
 
     public abstract String getStaticLibraryName(String libraryName);
 
+    public abstract String getLinkLibrarySuffix();
+
+    public abstract String getLinkLibraryName(String libraryPath);
+
+    @UsedByScanPlugin
     public abstract String getFamilyName();
 
     /**
@@ -130,7 +161,7 @@ public abstract class OperatingSystem {
 
         return all;
     }
-    
+
     public List<File> getPath() {
         String path = System.getenv(getPathVar());
         if (path == null) {
@@ -148,6 +179,12 @@ public abstract class OperatingSystem {
     }
 
     static class Windows extends OperatingSystem {
+        private final String nativePrefix;
+
+        Windows() {
+            nativePrefix = resolveNativePrefix();
+        }
+
         @Override
         public boolean isWindows() {
             return true;
@@ -160,50 +197,56 @@ public abstract class OperatingSystem {
 
         @Override
         public String getScriptName(String scriptPath) {
-            return withSuffix(scriptPath, ".bat");
+            return withExtension(scriptPath, ".bat");
+        }
+
+        @Override
+        public String getExecutableSuffix() {
+            return ".exe";
         }
 
         @Override
         public String getExecutableName(String executablePath) {
-            return withSuffix(executablePath, ".exe");
+            return withExtension(executablePath, ".exe");
+        }
+
+        @Override
+        public String getSharedLibrarySuffix() {
+            return ".dll";
         }
 
         @Override
         public String getSharedLibraryName(String libraryPath) {
-            return withSuffix(libraryPath, ".dll");
+            return withExtension(libraryPath, ".dll");
+        }
+
+        @Override
+        public String getLinkLibrarySuffix() {
+            return ".lib";
+        }
+
+        @Override
+        public String getLinkLibraryName(String libraryPath) {
+            return withExtension(libraryPath, ".lib");
         }
 
         @Override
         public String getStaticLibraryName(String libraryName) {
-            return withSuffix(libraryName, ".lib");
+            return withExtension(libraryName, ".lib");
         }
 
         @Override
         public String getNativePrefix() {
+            return nativePrefix;
+        }
+
+        private String resolveNativePrefix() {
             String arch = System.getProperty("os.arch");
             if ("i386".equals(arch)) {
                 arch = "x86";
             }
             return "win32-" + arch;
         }
-
-        private String withSuffix(String executablePath, String extension) {
-            if (executablePath.toLowerCase().endsWith(extension)) {
-                return executablePath;
-            }
-            return removeExtension(executablePath) + extension;
-        }
-
-        private String removeExtension(String executablePath) {
-            int fileNameStart = Math.max(executablePath.lastIndexOf('/'), executablePath.lastIndexOf('\\'));
-            int extensionPos = executablePath.lastIndexOf('.');
-
-            if (extensionPos > fileNameStart) {
-                return executablePath.substring(0, extensionPos);
-            }
-            return executablePath;
-        }
-
 
         @Override
         public String getPathVar() {
@@ -212,6 +255,12 @@ public abstract class OperatingSystem {
     }
 
     static class Unix extends OperatingSystem {
+        private final String nativePrefix;
+
+        Unix() {
+            this.nativePrefix = resolveNativePrefix();
+        }
+
         @Override
         public String getScriptName(String scriptPath) {
             return scriptPath;
@@ -223,13 +272,18 @@ public abstract class OperatingSystem {
         }
 
         @Override
+        public String getExecutableSuffix() {
+            return "";
+        }
+
+        @Override
         public String getExecutableName(String executablePath) {
             return executablePath;
         }
 
         @Override
         public String getSharedLibraryName(String libraryName) {
-            return getLibraryName(libraryName, getSharedLibSuffix());
+            return getLibraryName(libraryName, getSharedLibrarySuffix());
         }
 
         private String getLibraryName(String libraryName, String suffix) {
@@ -244,8 +298,19 @@ public abstract class OperatingSystem {
             }
         }
 
-        protected String getSharedLibSuffix() {
+        @Override
+        public String getSharedLibrarySuffix() {
             return ".so";
+        }
+
+        @Override
+        public String getLinkLibrarySuffix() {
+            return getSharedLibrarySuffix();
+        }
+
+        @Override
+        public String getLinkLibraryName(String libraryPath) {
+            return getSharedLibraryName(libraryPath);
         }
 
         @Override
@@ -258,7 +323,12 @@ public abstract class OperatingSystem {
             return true;
         }
 
+        @Override
         public String getNativePrefix() {
+            return nativePrefix;
+        }
+
+        private String resolveNativePrefix() {
             String arch = getArch();
             String osPrefix = getOsPrefix();
             osPrefix += "-" + arch;
@@ -301,7 +371,7 @@ public abstract class OperatingSystem {
         }
 
         @Override
-        protected String getSharedLibSuffix() {
+        public String getSharedLibrarySuffix() {
             return ".dylib";
         }
 

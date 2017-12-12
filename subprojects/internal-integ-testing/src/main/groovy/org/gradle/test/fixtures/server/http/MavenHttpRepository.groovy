@@ -24,7 +24,8 @@ import org.gradle.test.fixtures.maven.MavenRepository
  * A fixture for dealing with remote HTTP Maven repositories.
  */
 class MavenHttpRepository implements MavenRepository, HttpRepository {
-    private final HttpServer server
+    final HttpServer server
+
     private final MavenFileRepository backingRepository
     private final String contextPath
 
@@ -54,7 +55,7 @@ class MavenHttpRepository implements MavenRepository, HttpRepository {
         return module(groupId, artifactId, "1.0")
     }
 
-    MavenHttpModule module(String groupId, String artifactId, Object version) {
+    MavenHttpModule module(String groupId, String artifactId, String version) {
         def backingModule = backingRepository.module(groupId, artifactId, version)
         return new MavenHttpModule(server, contextPath, backingModule)
     }

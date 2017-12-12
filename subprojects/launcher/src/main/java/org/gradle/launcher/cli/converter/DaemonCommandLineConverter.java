@@ -20,26 +20,27 @@ import org.gradle.cli.AbstractCommandLineConverter;
 import org.gradle.cli.CommandLineArgumentException;
 import org.gradle.cli.CommandLineParser;
 import org.gradle.cli.ParsedCommandLine;
+import org.gradle.internal.buildoption.BuildOption;
+import org.gradle.launcher.daemon.configuration.DaemonBuildOptions;
 import org.gradle.launcher.daemon.configuration.DaemonParameters;
+
+import java.util.List;
 
 public class DaemonCommandLineConverter extends AbstractCommandLineConverter<DaemonParameters> {
 
-    private static final String DAEMON = "daemon";
-    private static final String NO_DAEMON = "no-daemon";
+    private List<BuildOption<DaemonParameters>> buildOptions = DaemonBuildOptions.get();
 
     public DaemonParameters convert(ParsedCommandLine args, DaemonParameters target) throws CommandLineArgumentException {
-        if (args.hasOption(NO_DAEMON)) {
-            return target.setEnabled(false);
+        for (BuildOption<DaemonParameters> option : buildOptions) {
+            option.applyFromCommandLine(args, target);
         }
-        if (args.hasOption(DAEMON)) {
-            return target.setEnabled(true);
-        }
+
         return target;
     }
 
     public void configure(CommandLineParser parser) {
-        parser.option(DAEMON).hasDescription("Uses the Gradle daemon to run the build. Starts the daemon if not running.");
-        parser.option(NO_DAEMON).hasDescription("Do not use the Gradle daemon to run the build.");
-        parser.allowOneOf(DAEMON, NO_DAEMON);
+        for (BuildOption<DaemonParameters> option : buildOptions) {
+            option.configure(parser);
+        }
     }
 }

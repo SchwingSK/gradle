@@ -23,8 +23,9 @@ import org.gradle.internal.os.OperatingSystem
 import org.gradle.nativeplatform.fixtures.AbstractInstalledToolChainIntegrationSpec
 import org.gradle.nativeplatform.fixtures.RequiresInstalledToolChain
 import org.gradle.nativeplatform.fixtures.app.*
+import spock.lang.Issue
 
-import static org.gradle.nativeplatform.fixtures.ToolChainRequirement.VisualCpp
+import static org.gradle.nativeplatform.fixtures.ToolChainRequirement.VISUALCPP
 
 class VisualStudioSingleProjectIntegrationTest extends AbstractInstalledToolChainIntegrationSpec {
     private final Set<String> projectConfigurations = ['win32Debug', 'win32Release', 'x64Debug', 'x64Release'] as Set
@@ -59,6 +60,38 @@ model {
 """
     }
 
+    @Issue("https://github.com/gradle/gradle/issues/790")
+    def "creating visual studio multiple time gives the same result"() {
+        given:
+        app.writeSources(file("src/main"))
+        buildFile << """
+model {
+    components {
+        main(NativeExecutableSpec)
+    }
+}
+"""
+        when:
+        run "mainVisualStudio"
+        def filtersFileContent = filtersFile("mainExe.vcxproj.filters").file.text
+        def projectFileContent = projectFile("mainExe.vcxproj").projectFile.text
+        def solutionFileContent = solutionFile("mainExe.sln").file.text
+
+        then:
+        executedAndNotSkipped ":mainExeVisualStudio"
+
+        when:
+        run "mainVisualStudio"
+
+        then:
+        executedAndNotSkipped ":mainExeVisualStudio"
+
+        and:
+        filtersFile("mainExe.vcxproj.filters").file.text == filtersFileContent
+        projectFile("mainExe.vcxproj").projectFile.text == projectFileContent
+        solutionFile("mainExe.sln").file.text == solutionFileContent
+    }
+
     def "create visual studio solution for single executable"() {
         when:
         app.writeSources(file("src/main"))
@@ -87,8 +120,8 @@ model {
         projectFile.projectConfigurations.values().each {
             assert it.macros == "TEST;foo=bar"
             assert it.includePath == filePath("src/main/headers")
-            assert it.buildCommand == "gradle :install${it.name.capitalize()}MainExecutable"
-            assert it.outputFile == OperatingSystem.current().getExecutableName("build/install/mainExecutable/${it.name}/lib/main")
+            assert it.buildCommand == "gradle :installMain${it.name.capitalize()}Executable"
+            assert it.outputFile == OperatingSystem.current().getExecutableName("build/install/main/${it.outputDir}/lib/main")
         }
 
         and:
@@ -119,8 +152,8 @@ model {
         projectFile.projectConfigurations.keySet() == projectConfigurations
         projectFile.projectConfigurations.values().each {
             assert it.includePath == filePath("src/main/headers")
-            assert it.buildCommand == "gradle :${it.name}MainSharedLibrary"
-            assert it.outputFile == OperatingSystem.current().getSharedLibraryName("build/binaries/mainSharedLibrary/${it.name}/main")
+            assert it.buildCommand == "gradle :main${it.name.capitalize()}SharedLibrary"
+            assert it.outputFile == OperatingSystem.current().getSharedLibraryName("build/libs/main/shared/${it.outputDir}/main")
         }
 
         and:
@@ -166,7 +199,7 @@ model {
         both(NativeLibrarySpec)
         staticOnly(NativeLibrarySpec) {
             binaries.withType(SharedLibraryBinarySpec) {
-                buildable false
+                buildable = false
             }
         }
     }
@@ -584,7 +617,7 @@ model {
         solutionFile("mainExe.sln").assertHasProjects("mainExe")
     }
 
-    @RequiresInstalledToolChain(VisualCpp)
+    @RequiresInstalledToolChain(VISUALCPP)
     def "generate visual studio solution for executable with windows resource files"() {
         given:
         def resourceApp = new WindowsResourceHelloWorldApp()
@@ -597,10 +630,12 @@ model {
     components {
         main(NativeExecutableSpec)
     }
-}
-binaries.all {
-    rcCompiler.define "TEST"
-    rcCompiler.define "foo", "bar"
+    binaries {
+        all {
+            rcCompiler.define "TEST"
+            rcCompiler.define "foo", "bar"
+        }
+    }
 }
 """
 
@@ -654,7 +689,7 @@ model {
     def "visual studio project includes headers co-located with sources"() {
         when:
         // Write headers so they sit with sources
-        app.allFiles.each {
+        app.files.each {
             it.writeToFile(file("src/main/cpp/${it.name}"))
         }
         buildFile << """
@@ -808,6 +843,49 @@ model {
         with (mainExeProject.projectConfigurations['win32Debug']) {
             includePath == filePath("src/main/headers", "libs/test/include")
         }
+    }
+
+    def "visual studio solution for executable that depends on library using precompiled header"() {
+        when:
+        app = new CppHelloWorldApp()
+        app.executable.writeSources(file("src/main"))
+        app.library.writeSources(file("src/hello"))
+        buildFile << """
+            model {
+                components {
+                    hello(NativeLibrarySpec) {
+                        sources {
+                            cpp.preCompiledHeader "pch.h"
+                        }
+                    }
+                    main(NativeExecutableSpec) {
+                        sources {
+                            cpp.lib library: 'hello'
+                        }
+                    }
+                }
+            }
+        """
+        and:
+        run "mainVisualStudio"
+
+        then:
+        final exeProject = projectFile("mainExe.vcxproj")
+        exeProject.assertHasComponentSources(app.executable, "src/main")
+        exeProject.projectConfigurations.keySet() == projectConfigurations
+        exeProject.projectConfigurations['win32Debug'].includePath == filePath("src/main/headers", "src/hello/headers")
+
+        and:
+        final dllProject = projectFile("helloDll.vcxproj")
+        dllProject.assertHasComponentSources(app.library, "src/hello")
+        dllProject.projectConfigurations.keySet() == projectConfigurations
+        dllProject.projectConfigurations['win32Debug'].includePath == filePath("src/hello/headers")
+
+        and:
+        final mainSolution = solutionFile("mainExe.sln")
+        mainSolution.assertHasProjects("mainExe", "helloDll")
+        mainSolution.assertReferencesProject(exeProject, projectConfigurations)
+        mainSolution.assertReferencesProject(dllProject, projectConfigurations)
     }
 
     def "visual studio solution for component graph with library dependency cycle"() {

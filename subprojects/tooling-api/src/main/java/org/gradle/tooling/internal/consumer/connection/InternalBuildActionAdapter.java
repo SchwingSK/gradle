@@ -17,26 +17,66 @@
 package org.gradle.tooling.internal.consumer.connection;
 
 import org.gradle.tooling.BuildAction;
+import org.gradle.tooling.BuildController;
 import org.gradle.tooling.internal.adapter.ProtocolToModelAdapter;
+import org.gradle.tooling.internal.consumer.converters.ConsumerTargetTypeProvider;
 import org.gradle.tooling.internal.consumer.versioning.ModelMapping;
+import org.gradle.tooling.internal.consumer.versioning.VersionDetails;
+import org.gradle.tooling.internal.protocol.BuildResult;
 import org.gradle.tooling.internal.protocol.InternalBuildAction;
+import org.gradle.tooling.internal.protocol.InternalBuildActionVersion2;
 import org.gradle.tooling.internal.protocol.InternalBuildController;
+import org.gradle.tooling.internal.protocol.InternalBuildControllerVersion2;
+import org.gradle.tooling.internal.protocol.ModelIdentifier;
+import org.gradle.tooling.model.gradle.BuildInvocations;
+
+import java.io.File;
 
 /**
  * Adapter to create {@link org.gradle.tooling.internal.protocol.InternalBuildAction}
  * from an instance of {@link org.gradle.tooling.BuildAction}.
  * Used by consumer connections 1.8+.
  */
-class InternalBuildActionAdapter<T> implements InternalBuildAction<T> {
+public class InternalBuildActionAdapter<T> implements InternalBuildAction<T>, InternalBuildActionVersion2<T> {
     private final BuildAction<T> action;
-    private final ProtocolToModelAdapter adapter;
+    private final File rootDir;
+    private final VersionDetails versionDetails;
 
-    public InternalBuildActionAdapter(BuildAction<T> action, ProtocolToModelAdapter adapter) {
+    public InternalBuildActionAdapter(BuildAction<T> action, File rootDir, VersionDetails versionDetails) {
         this.action = action;
-        this.adapter = adapter;
+        this.rootDir = rootDir;
+        this.versionDetails = versionDetails;
     }
 
+    /**
+     * This is used by providers 1.8-rc-1 to 4.3
+     */
     public T execute(final InternalBuildController buildController) {
-        return action.execute(new BuildControllerAdapter(adapter, buildController, new ModelMapping()));
+        ProtocolToModelAdapter protocolToModelAdapter = new ProtocolToModelAdapter(new ConsumerTargetTypeProvider());
+        BuildController buildControllerAdapter = new BuildControllerAdapter(protocolToModelAdapter, new InternalBuildControllerAdapter() {
+            @Override
+            public BuildResult<?> getModel(Object target, ModelIdentifier modelIdentifier, Object parameter) {
+                return buildController.getModel(target, modelIdentifier);
+            }
+        }, new ModelMapping(), rootDir);
+        buildControllerAdapter  = new BuildControllerWithoutParameterSupport(versionDetails, buildControllerAdapter);
+        if (!versionDetails.maySupportModel(BuildInvocations.class)) {
+            buildControllerAdapter= new BuildInvocationsAdapterController(protocolToModelAdapter, buildControllerAdapter);
+        }
+        return action.execute(buildControllerAdapter);
+    }
+
+    /**
+     * This is used by providers 4.4 and later
+     */
+    public T execute(final InternalBuildControllerVersion2 buildController) {
+        ProtocolToModelAdapter protocolToModelAdapter = new ProtocolToModelAdapter(new ConsumerTargetTypeProvider());
+        BuildController buildControllerAdapter = new BuildControllerAdapter(protocolToModelAdapter, new InternalBuildControllerAdapter() {
+            @Override
+            public BuildResult<?> getModel(Object target, ModelIdentifier modelIdentifier, Object parameter) {
+                return buildController.getModel(target, modelIdentifier, parameter);
+            }
+        }, new ModelMapping(), rootDir);
+        return action.execute(buildControllerAdapter);
     }
 }

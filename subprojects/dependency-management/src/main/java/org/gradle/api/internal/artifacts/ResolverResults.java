@@ -1,5 +1,5 @@
 /*
- * Copyright 2012 the original author or authors.
+ * Copyright 2015 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,63 +13,61 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 package org.gradle.api.internal.artifacts;
 
 import org.gradle.api.artifacts.ResolveException;
 import org.gradle.api.artifacts.ResolvedConfiguration;
 import org.gradle.api.artifacts.result.ResolutionResult;
-import org.gradle.api.internal.artifacts.ivyservice.resolveengine.projectresult.ResolvedProjectConfigurationResults;
+import org.gradle.api.internal.artifacts.ivyservice.resolveengine.artifact.VisitedArtifactSet;
+import org.gradle.api.internal.artifacts.ivyservice.resolveengine.projectresult.ResolvedLocalComponentsResult;
 
-public class ResolverResults {
-    private ResolvedConfiguration resolvedConfiguration;
-    private ResolutionResult resolutionResult;
-    private ResolveException fatalFailure;
-    private ResolvedProjectConfigurationResults resolvedProjectConfigurationResults;
+public interface ResolverResults {
+    boolean hasError();
 
-    //old model, slowly being replaced by the new model
-    public ResolvedConfiguration getResolvedConfiguration() {
-        assertHasResult();
-        return resolvedConfiguration;
-    }
+    /**
+     * Returns the old model, slowly being replaced by the new model represented by {@link ResolutionResult}. Requires artifacts to be resolved.
+     */
+    ResolvedConfiguration getResolvedConfiguration();
 
-    //new model
-    public ResolutionResult getResolutionResult() {
-        assertHasResult();
-        if (fatalFailure != null) {
-            throw fatalFailure;
-        }
-        return resolutionResult;
-    }
+    /**
+     * Returns details of the artifacts visited during dependency graph resolution. This set is later refined during artifact resolution and replaced with a new instance.
+     */
+    VisitedArtifactSet getVisitedArtifacts();
 
-    public ResolvedProjectConfigurationResults getResolvedProjectConfigurationResults() {
-        assertHasResult();
-        if (fatalFailure != null) {
-            throw fatalFailure;
-        }
-        return resolvedProjectConfigurationResults;
-    }
+    /**
+     * Returns the dependency graph resolve result.
+     */
+    ResolutionResult getResolutionResult();
 
-    private void assertHasResult() {
-        if (resolvedConfiguration == null) {
-            throw new IllegalStateException("Resolution result has not been attached.");
-        }
-    }
+    /**
+     * Returns details of the local components in the resolved dependency graph.
+     */
+    ResolvedLocalComponentsResult getResolvedLocalComponents();
 
-    public void withResolvedConfiguration(ResolvedConfiguration resolvedConfiguration) {
-        this.resolvedConfiguration = resolvedConfiguration;
-    }
+    /**
+     * Marks the dependency graph resolution as successful, with the given result.
+     */
+    void graphResolved(VisitedArtifactSet visitedArtifacts);
 
-    public void resolved(ResolvedConfiguration resolvedConfiguration, ResolutionResult resolutionResult, ResolvedProjectConfigurationResults resolvedProjectConfigurationResults) {
-        this.resolvedConfiguration = resolvedConfiguration;
-        this.resolutionResult = resolutionResult;
-        this.resolvedProjectConfigurationResults = resolvedProjectConfigurationResults;
-        this.fatalFailure = null;
-    }
+    /**
+     * Marks the dependency graph resolution as successful, with the given result.
+     */
+    void graphResolved(ResolutionResult resolutionResult, ResolvedLocalComponentsResult resolvedLocalComponentsResult, VisitedArtifactSet visitedArtifacts);
 
-    public void failed(ResolvedConfiguration resolvedConfiguration, ResolveException failure) {
-        this.resolvedConfiguration = resolvedConfiguration;
-        this.resolutionResult = null;
-        this.fatalFailure = failure;
-    }
+    void failed(ResolveException failure);
+
+    /**
+     * Attaches some opaque state calculated during dependency graph resolution that will later be required to resolve the artifacts.
+     */
+    void retainState(Object artifactResolveState);
+
+    /**
+     * Returns the opaque state required to resolve the artifacts.
+     */
+    Object getArtifactResolveState();
+
+    /**
+     * Marks artifact resolution as successful, clearing state provided by {@link #retainState(Object)}.
+     */
+    void artifactsResolved(ResolvedConfiguration resolvedConfiguration, VisitedArtifactSet visitedArtifacts);
 }

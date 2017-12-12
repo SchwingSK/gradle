@@ -26,9 +26,7 @@ sourceSets {
     custom
 }
 
-repositories {
-    mavenCentral()
-}
+${mavenCentralRepository()}
 
 dependencies {
     customCompile "$dependency"
@@ -38,9 +36,11 @@ task groovydoc(type: Groovydoc) {
     classpath = sourceSets.custom.runtimeClasspath
 }
 
-task verify << {
-    assert compileCustomGroovy.groovyClasspath.files.any { it.name == "$jarFile" }
-    assert groovydoc.groovyClasspath.files.any { it.name == "$jarFile" }
+task verify {
+    doLast {
+        assert compileCustomGroovy.groovyClasspath.files.any { it.name == "$jarFile" }
+        assert groovydoc.groovyClasspath.files.any { it.name == "$jarFile" }
+    }
 }
 """
 
@@ -49,9 +49,9 @@ task verify << {
 
         where:
         dependency                                   | jarFile
-        "org.codehaus.groovy:groovy-all:2.3.10"      | "groovy-all-2.3.10.jar"
-        "org.codehaus.groovy:groovy:2.3.10"          | "groovy-2.3.10.jar"
-        "org.codehaus.groovy:groovy-all:2.3.10:indy" | "groovy-all-2.3.10-indy.jar"
+        "org.codehaus.groovy:groovy-all:2.4.10"      | "groovy-all-2.4.10.jar"
+        "org.codehaus.groovy:groovy:2.4.10"          | "groovy-2.4.10.jar"
+        "org.codehaus.groovy:groovy-all:2.4.10:indy" | "groovy-all-2.4.10-indy.jar"
     }
 
     def "only resolves source class path feeding into inferred Groovy class path if/when the latter is actually used (but not during autowiring)"() {
@@ -62,21 +62,21 @@ sourceSets {
     custom
 }
 
-repositories {
-    mavenCentral()
-}
+${mavenCentralRepository()}
 
 dependencies {
-    customCompile "org.codehaus.groovy:groovy-all:2.3.10"
+    customCompile "org.codehaus.groovy:groovy-all:2.4.10"
 }
 
 task groovydoc(type: Groovydoc) {
     classpath = sourceSets.custom.runtimeClasspath
 }
 
-task verify << {
-    assert configurations.customCompile.state.toString() == "UNRESOLVED"
-    assert configurations.customRuntime.state.toString() == "UNRESOLVED"
+task verify {
+    doLast {
+        assert configurations.customCompile.state.toString() == "UNRESOLVED"
+        assert configurations.customRuntime.state.toString() == "UNRESOLVED"
+    }
 }
         """
 
@@ -93,9 +93,7 @@ task verify << {
                 main {}
             }
 
-            repositories {
-                mavenCentral()
-            }
+            ${mavenCentralRepository()}
 
             dependencies {
                 compile "com.google.guava:guava:11.0.2"
@@ -110,7 +108,7 @@ task verify << {
         fails "compileGroovy"
 
         then:
-        failure.assertHasDescription "Cannot infer Groovy class path because no Groovy Jar was found on class path: configuration ':compile'"
+        failure.assertHasCause "Cannot infer Groovy class path because no Groovy Jar was found on class path: "
     }
 
 }

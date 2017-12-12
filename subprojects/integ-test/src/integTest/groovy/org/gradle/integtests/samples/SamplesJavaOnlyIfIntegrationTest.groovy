@@ -23,7 +23,7 @@ import org.gradle.test.fixtures.file.TestFile
 import org.junit.Rule
 import org.junit.Test
 
-public class SamplesJavaOnlyIfIntegrationTest extends AbstractIntegrationTest {
+class SamplesJavaOnlyIfIntegrationTest extends AbstractIntegrationTest {
 
     @Rule public final Sample sample = new Sample(testDirectoryProvider, 'java/onlyif')
 
@@ -38,40 +38,40 @@ public class SamplesJavaOnlyIfIntegrationTest extends AbstractIntegrationTest {
      *
      * remove class file
      * execute dists
-     * check that it re-ran tests 
+     * check that it re-ran tests
      */
-    @Test public void testOptimizedBuild() {
+    @Test void testOptimizedBuild() {
         TestFile javaprojectDir = sample.dir
 
         // Build and test projects
         executer.inDirectory(javaprojectDir).withTasks('clean', 'build').run()
 
         // Check tests have run
-        assertExists(javaprojectDir, 'build/test-results/TEST-org.gradle.PersonTest.xml')
-        assertExists(javaprojectDir, 'build/reports/tests/index.html')
+        assertExists(javaprojectDir, 'build/test-results/test/TEST-org.gradle.PersonTest.xml')
+        assertExists(javaprojectDir, 'build/reports/tests/test/index.html')
 
         // Check jar exists
         assertExists(javaprojectDir, "build/libs/onlyif.jar")
 
         // remove test results
-        removeFile(javaprojectDir, 'build/test-results/TEST-org.gradle.PersonTest.xml')
-        removeFile(javaprojectDir, 'build/reports/tests/index.html')
+        removeFile(javaprojectDir, 'build/test-results/test/TEST-org.gradle.PersonTest.xml')
+        removeFile(javaprojectDir, 'build/reports/tests/test/index.html')
 
         executer.inDirectory(javaprojectDir).withTasks('test').run()
 
         // assert that tests did not run
         // (since neither compile nor compileTests should have done anything)
-        assertDoesNotExist(javaprojectDir, 'build/test-results/TEST-org.gradle.PersonTest.xml')
-        assertDoesNotExist(javaprojectDir, 'build/reports/tests/index.html')
+        assertDoesNotExist(javaprojectDir, 'build/test-results/test/TEST-org.gradle.PersonTest.xml')
+        assertDoesNotExist(javaprojectDir, 'build/reports/tests/test/index.html')
 
         // remove a compiled class file
-        removeFile(javaprojectDir, 'build/classes/main/org/gradle/Person.class')
+        removeFile(javaprojectDir, 'build/classes/java/main/org/gradle/Person.class')
 
         executer.inDirectory(javaprojectDir).withTasks('test').run()
 
         // Check tests have run
-        assertExists(javaprojectDir, 'build/test-results/TEST-org.gradle.PersonTest.xml')
-        assertExists(javaprojectDir, 'build/reports/tests/index.html')
+        assertExists(javaprojectDir, 'build/test-results/test/TEST-org.gradle.PersonTest.xml')
+        assertExists(javaprojectDir, 'build/reports/tests/test/index.html')
     }
 
     private static void assertExists(File baseDir, String path) {

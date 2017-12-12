@@ -15,7 +15,6 @@
  */
 package org.gradle.util
 
-import com.google.common.base.Equivalence
 import org.gradle.api.Action
 import org.gradle.api.Transformer
 import org.gradle.api.internal.ClosureBackedAction
@@ -173,6 +172,12 @@ class CollectionUtilsTest extends Specification {
         collectMap([], transformer { it * 10 }) == [:]
     }
 
+    def "collect values as map"() {
+        expect:
+        collectMapValues([1, 2, 3], transformer { it * 10 }) == [1: 10, 2: 20, 3: 30]
+        collectMapValues([], transformer { it * 10 }) == [:]
+    }
+
     def "every"() {
         expect:
         every([1, 2, 3], spec { it < 4 })
@@ -248,6 +253,38 @@ class CollectionUtilsTest extends Specification {
         ""        | null as Collection | "objects"
         null      | null as Collection | "separator"
         null      | null as Object[]   | "separator"
+    }
+
+    def "partitioning"() {
+        when:
+        def pair = partition([1, 2, 3], spec { it % 2 == 0 })
+
+        then:
+        pair.left == [2]
+        pair.right == [1, 3]
+    }
+
+    def "partitioning empty collection"() {
+        when:
+        def pair = partition([], spec { it })
+
+        then:
+        pair.left == []
+        pair.right == []
+    }
+
+    def "partitioning throws exception given nulls"() {
+        when:
+        partition(null, spec { it })
+
+        then:
+        thrown(NullPointerException)
+
+        when:
+        partition([], null)
+
+        then:
+        thrown(NullPointerException)
     }
 
     def "addAll from iterable"() {
@@ -338,17 +375,10 @@ class CollectionUtilsTest extends Specification {
 
     def "grouping"() {
         expect:
-        groupBy([1, 2, 3], transformer { "a" }).asMap() == ["a": [1, 2, 3]]
-        groupBy(["a", "b", "c"], transformer { it.toUpperCase() }).asMap() == ["A": ["a"], "B": ["b"], "C": ["c"]]
+        groupBy([1, 2, 3], transformer { "a" }) == ["a": [1, 2, 3]]
+        groupBy(["a", "b", "c"], transformer { it.toUpperCase() }) == ["A": ["a"], "B": ["b"], "C": ["c"]]
         groupBy([], transformer { throw new AssertionError("shouldn't be called") }).isEmpty()
     }
-
-    def "dedup"() {
-        expect:
-        dedup([1, 2, 3, 2], Equivalence.equals()) == [1, 2, 3]
-        dedup([], Equivalence.equals()) == []
-    }
-
     def unpack() {
         expect:
         unpack([{ 1 } as org.gradle.internal.Factory, { 2 } as org.gradle.internal.Factory, { 3 } as org.gradle.internal.Factory]).toList() == [1, 2, 3]
@@ -370,6 +400,7 @@ class CollectionUtilsTest extends Specification {
     }
 
     Action action(Closure c) {
-        new ClosureBackedAction(c)
+        ClosureBackedAction.of(c)
     }
+
 }

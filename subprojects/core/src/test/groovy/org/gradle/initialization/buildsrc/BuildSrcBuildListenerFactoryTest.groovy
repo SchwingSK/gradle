@@ -17,6 +17,7 @@
 package org.gradle.initialization.buildsrc
 
 import org.gradle.StartParameter
+import org.gradle.api.Action
 import org.gradle.api.internal.GradleInternal
 import org.gradle.api.internal.component.BuildableJavaComponent
 import org.gradle.api.internal.component.ComponentRegistry
@@ -41,19 +42,8 @@ class BuildSrcBuildListenerFactoryTest extends Specification {
         getRootProject() >> project
     }
 
-    def "configures task names when rebuild on"() {
-        def listener = new BuildSrcBuildListenerFactory().create(true)
-        component.getRebuildTasks() >> ['fooBuild']
-
-        when:
-        listener.onConfigure(gradle)
-
-        then:
-        1 * startParameter.setTaskNames(['fooBuild'])
-    }
-
-    def "configures task names when rebuild off"() {
-        def listener = new BuildSrcBuildListenerFactory().create(false)
+    def "configures task names"() {
+        def listener = new BuildSrcBuildListenerFactory().create()
         component.getBuildTasks() >> ['barBuild']
 
         when:
@@ -61,5 +51,16 @@ class BuildSrcBuildListenerFactoryTest extends Specification {
 
         then:
         1 * startParameter.setTaskNames(['barBuild'])
+    }
+
+    def "executes buildSrc configuration action after projects are loaded"() {
+        def action = Mock(Action)
+        def listener = new BuildSrcBuildListenerFactory(action).create()
+
+        when:
+        listener.projectsLoaded(gradle)
+
+        then:
+        1 * action.execute(project)
     }
 }

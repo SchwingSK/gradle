@@ -17,15 +17,23 @@ package org.gradle.api.plugins.quality
 
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
 import org.gradle.integtests.fixtures.executer.GradleContextualExecuter
+import org.gradle.util.Matchers
+import org.gradle.util.Resources
+import org.gradle.util.ToBeImplemented
 import org.hamcrest.Matcher
+import org.junit.Rule
 import spock.lang.IgnoreIf
 import spock.lang.Issue
 
 import static org.gradle.util.Matchers.containsLine
+import static org.gradle.util.TextUtil.normaliseFileSeparators
 import static org.hamcrest.Matchers.containsString
 import static org.hamcrest.Matchers.startsWith
 
 abstract class AbstractFindBugsPluginIntegrationTest extends AbstractIntegrationSpec {
+
+    @Rule
+    public final Resources resources = new Resources()
 
     def setup() {
         writeBuildFile()
@@ -130,8 +138,8 @@ abstract class AbstractFindBugsPluginIntegrationTest extends AbstractIntegration
 
         expect:
         succeeds("check")
-        file("build/reports/findbugs/main.xml").assertContents(containsClass("org.gradle.Class1"))
-        file("build/reports/findbugs/test.xml").assertContents(containsClass("org.gradle.Class1Test"))
+        file("build/reports/findbugs/main.xml").assertContents(containsClass("Class1.java"))
+        file("build/reports/findbugs/test.xml").assertContents(containsClass("Class1Test.java"))
     }
 
     void "excludes baseline bug for matching bug instance"() {
@@ -185,7 +193,28 @@ abstract class AbstractFindBugsPluginIntegrationTest extends AbstractIntegration
         then:
         file("build/reports/findbugs/main.html").exists()
     }
-    
+
+    def "can generate html reports with a custom stylesheet"() {
+        given:
+        buildFile << """
+            findbugsMain.reports {
+                xml.enabled false
+                html.enabled true
+                html.stylesheet resources.text.fromFile('${sampleStylesheet()}')
+            }
+        """
+
+        and:
+        goodCode()
+
+        when:
+        run "findbugsMain"
+
+        then:
+        file("build/reports/findbugs/main.html").exists()
+        file("build/reports/findbugs/main.html").assertContents(containsString("A custom Findbugs stylesheet"))
+    }
+
     def "can generate xml with messages reports"() {
         given:
         buildFile << """
@@ -387,9 +416,236 @@ abstract class AbstractFindBugsPluginIntegrationTest extends AbstractIntegration
 
         expect:
         fails("check")
+        failure.assertHasDescription "Execution failed for task ':findbugsMain'."
+        failure.assertHasCause 'Failed to run Gradle FindBugs Worker'
+        failure.assertThatCause(Matchers.matchesRegexp("org[\\./]apache[\\./]bcel[\\./]classfile[\\./]ClassFormatException"))
+    }
+
+    def "valid adjustPriority extra args"() {
+        given:
+        file("src/main/java/org/gradle/ClassUsingCaseConversion.java") <<
+            'package org.gradle; public class ClassUsingCaseConversion { public boolean useConversion() { return "Hi".toUpperCase().equals("HI"); } }'
+
+        expect:
+        succeeds("findbugsMain")
+
+        when:
+        // Test extraArgs using DM_CONVERT_CASE which FindBugs treats as a LOW confidence warning.  We will use
+        // extraArgs to boost the confidence which should make it be reported
+        buildFile << """
+            findbugsMain {
+                extraArgs '-adjustPriority', 'DM_CONVERT_CASE=raise,DM_CONVERT_CASE=raise'
+            }
+        """
+
+        then:
+        fails("findbugsMain")
+        failure.assertHasDescription("Execution failed for task ':findbugsMain'.")
+        failure.assertThatCause(startsWith("FindBugs rule violations were found. See the report at:"))
+        file("build/reports/findbugs/main.xml").exists()
+        file("build/reports/findbugs/main.xml").assertContents(containsClass("org.gradle.ClassUsingCaseConversion"))
+        file("build/reports/findbugs/main.xml").assertContents(containsString("DM_CONVERT_CASE"))
+    }
+
+    def "fails when given invalid extraArgs"() {
+        given:
+        goodCode()
+        and:
+        buildFile << """
+            findbugsMain {
+                extraArgs 'gobbledygook'
+            }
+        """
+
+        expect:
+        fails "check"
         failure.assertHasCause 'FindBugs encountered an error.'
         failure.assertHasDescription "Execution failed for task ':findbugsMain'."
-        errorOutput.contains 'Caused by: java.lang.NoClassDefFoundError'
+    }
+
+    def "valid jvm args"() {
+        given:
+        badCode()
+        buildFile << extensionProgressConfiguration(true)
+        // We don't have many jvm args to use for FindBugs, see:
+        // http://findbugs.sourceforge.net/manual/running.html
+        // https://github.com/findbugsproject/findbugs/blob/master/findbugs/build.xml#L771
+        buildFile << '''
+            findbugs {
+                jvmArgs = ['-Duser.language=fr']
+            }
+            findbugsMain.reports {
+                html.enabled true
+                xml.enabled false
+            }
+        '''
+
+        fails('findbugsMain')
+
+        expect:
+        file('build/reports/findbugs/main.html').text.contains('DM_EXIT: La méthode invoque System.exit(...)') // <- this is french
+    }
+
+    def "fails when given invalid jvmArgs"() {
+        given:
+        goodCode()
+
+        and:
+        buildFile << """
+            findbugsMain {
+                jvmArgs '-XInvalid'
+            }
+        """
+        // java.io.IOException: The pipe is being closed on windows
+        executer.withStackTraceChecksDisabled()
+
+        expect:
+        fails("check")
+        failure.assertHasDescription("Execution failed for task ':findbugsMain'.")
+        failure.assertHasCause("Failed to run Gradle FindBugs Worker")
+        failure.assertThatCause(Matchers.matchesRegexp("Process 'Gradle FindBugs Worker [0-9]+' finished with non-zero exit value 1"))
+    }
+
+    @IgnoreIf({GradleContextualExecuter.parallel})
+    def "out-of-date with mixed Java and Groovy sources"() {
+        given:
+        goodCode()
+        buildFile << """
+            apply plugin: 'groovy'
+            dependencies {
+                compile localGroovy()
+            }
+        """
+        file("src/main/groovy/org/gradle/Groovy1.groovy") << """
+            package org.gradle
+            
+            class Groovy1 {
+                boolean is() { true }
+            }
+        """
+        expect:
+        succeeds("check")
+        file("build/reports/findbugs/main.xml").assertContents(containsClass("org.gradle.Groovy1"))
+        file("build/reports/findbugs/main.xml").assertContents(containsClass("org.gradle.Class1"))
+
+        when:
+        file("src/main/java/org/gradle/Class1.java").text = """
+            package org.gradle; 
+            public class Class1 { 
+                public boolean isFoo(Object arg) { return true; } 
+                public boolean isNotFoo(Object arg) { return false; } 
+            }
+        """
+        then:
+        succeeds("check")
+        result.assertTaskNotSkipped(":findbugsMain")
+
+        when:
+        file("src/main/groovy/org/gradle/Groovy1.groovy").text = """
+            package org.gradle
+            
+            class Groovy1 {
+                boolean is() { true }
+                boolean isNot() { false }
+            }
+        """
+        then:
+        succeeds("check")
+        result.assertTaskNotSkipped(":findbugsMain")
+    }
+
+    def "does not fail if resources are generated into classes"() {
+        given:
+        goodCode()
+        buildFile << """
+            compileJava {
+                doLast {
+                    def manifest = new File(destinationDir, "META-INF/MANIFEST.MF")
+                    manifest.parentFile.mkdirs()
+                    manifest.text = "manifest"
+                    def properties = new File(destinationDir, "com/example/service.properties")
+                    properties.parentFile.mkdirs()
+                    properties.text = "someProp=value"
+                }
+            } 
+        """
+        when:
+        succeeds("check")
+        then:
+        !result.error.contains("Wrong magic bytes")
+    }
+
+    @Issue("https://github.com/gradle/gradle/issues/1307")
+    def "does not render progress output by default"() {
+        given:
+        goodCode()
+
+        when:
+        run "findbugsMain"
+
+        then:
+        !output.contains("Scanning archives")
+        !output.contains("Done with analysis")
+    }
+
+    @Issue("https://github.com/gradle/gradle/issues/1307")
+    def "can disable progress output"() {
+        given:
+        buildFile << extensionProgressConfiguration(false)
+
+        and:
+        goodCode()
+
+        when:
+        run "findbugsMain"
+
+        then:
+        !output.contains("Scanning archives")
+        !output.contains("Done with analysis")
+    }
+
+    @Issue("https://github.com/gradle/gradle/issues/1307")
+    def "can enable progress output"() {
+        given:
+        buildFile << extensionProgressConfiguration(true)
+
+        and:
+        goodCode()
+
+        when:
+        run "findbugsMain"
+
+        then:
+        output.contains("Scanning archives")
+        output.contains("Done with analysis")
+    }
+
+    @Issue("https://github.com/gradle/gradle/issues/2326")
+    @ToBeImplemented
+    def "check task should not be up-to-date after clean if it only outputs to console"() {
+        given:
+        badCode()
+        buildFile << """
+            findbugs {
+                ignoreFailures true
+            }
+            tasks.withType(FindBugs) {
+                reports {
+                    html.enabled false
+                    xml.enabled false
+                    text.enabled false
+                }
+            }
+        """
+
+        when:
+        succeeds('check')
+        succeeds('clean', 'check')
+
+        then:
+        // TODO These should match
+        !!! nonSkippedTasks.contains(':findbugsMain')
+        !!! output.contains("Analyzing classes")
     }
 
     private static boolean containsXmlMessages(File xmlReportFile) {
@@ -410,8 +666,12 @@ abstract class AbstractFindBugsPluginIntegrationTest extends AbstractIntegration
         file('src/test/java/org/gradle/BadClassTest.java') << 'package org.gradle; public class BadClassTest { public boolean isFoo(Object arg) { return "true" == "false"; } }'
     }
 
+    private sampleStylesheet() {
+        normaliseFileSeparators(resources.getResource('/findbugs-custom-stylesheet.xsl').absolutePath)
+    }
+
     private Matcher<String> containsClass(String className) {
-        containsLine(containsString(className.replace(".", File.separator)))
+        containsLine(containsString(className))
     }
 
     private void writeBuildFile() {
@@ -419,9 +679,7 @@ abstract class AbstractFindBugsPluginIntegrationTest extends AbstractIntegration
             apply plugin: "java"
             apply plugin: "findbugs"
 
-            repositories {
-                mavenCentral()
-            }
+            ${mavenCentralRepository()}
         """
     }
 
@@ -465,5 +723,13 @@ abstract class AbstractFindBugsPluginIntegrationTest extends AbstractIntegration
             classFilename = "${className}.java"
             fullyQualifiedClassFilename = "${pkg.replaceAll('\\.', '/')}/${classFilename}"
         }
+    }
+
+    static String extensionProgressConfiguration(boolean flag) {
+        """
+            findbugs {
+                showProgress = $flag 
+            }
+        """
     }
 }

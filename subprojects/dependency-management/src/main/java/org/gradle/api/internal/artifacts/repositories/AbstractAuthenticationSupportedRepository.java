@@ -16,90 +16,66 @@
 package org.gradle.api.internal.artifacts.repositories;
 
 import org.gradle.api.Action;
+import org.gradle.api.artifacts.repositories.AuthenticationContainer;
 import org.gradle.api.artifacts.repositories.PasswordCredentials;
-import org.gradle.api.credentials.AwsCredentials;
 import org.gradle.api.credentials.Credentials;
-import org.gradle.internal.Cast;
+import org.gradle.authentication.Authentication;
 import org.gradle.internal.artifacts.repositories.AuthenticationSupportedInternal;
-import org.gradle.internal.credentials.DefaultAwsCredentials;
 import org.gradle.internal.reflect.Instantiator;
 
+import javax.annotation.Nullable;
+import java.util.Collection;
+
 public abstract class AbstractAuthenticationSupportedRepository extends AbstractArtifactRepository implements AuthenticationSupportedInternal {
+    private final AuthenticationSupporter delegate;
 
-    private Credentials credentials;
-    private final Instantiator instantiator;
-
-    AbstractAuthenticationSupportedRepository(Instantiator instantiator) {
-        this.instantiator = instantiator;
+    AbstractAuthenticationSupportedRepository(Instantiator instantiator, AuthenticationContainer authenticationContainer) {
+        this.delegate = new AuthenticationSupporter(instantiator, authenticationContainer);
     }
 
     @Override
     public PasswordCredentials getCredentials() {
-        if (credentials == null) {
-            return setCredentials(PasswordCredentials.class);
-        } else if (credentials instanceof PasswordCredentials) {
-            return Cast.uncheckedCast(credentials);
-        } else {
-            throw new IllegalStateException("Can not use getCredentials() method when not using PasswordCredentals; please use getCredentials(Class)");
-        }
+        return delegate.getCredentials();
     }
 
     @Override
     public <T extends Credentials> T getCredentials(Class<T> credentialsType) {
-        if (credentials == null) {
-            return setCredentials(credentialsType);
-        } else if (credentialsType.isInstance(credentials)) {
-            return Cast.uncheckedCast(credentials);
-        } else {
-            throw new IllegalArgumentException(String.format("Given credentials type '%s' does not match actual type '%s'", credentialsType.getName(), getPublicType(credentials.getClass()).getName()));
-        }
+        return delegate.getCredentials(credentialsType);
     }
 
-    public void credentials(Action<? super PasswordCredentials> action) {
-        if (credentials != null && !(credentials instanceof PasswordCredentials)) {
-            throw new IllegalStateException("Can not use credentials(Action) method when not using PasswordCredentals; please use credentials(Class, Action)");
-        }
-        credentials(PasswordCredentials.class, action);
-    }
-
-    public <T extends Credentials> void credentials(Class<T> credentialsType, Action<? super T> action) throws IllegalStateException {
-        action.execute(getCredentials(credentialsType));
-    }
-
-    private <T extends Credentials> T setCredentials(Class<T> clazz) {
-        T t = newCredentials(clazz);
-        credentials = t;
-        return t;
-    }
-
-    private <T extends Credentials> T newCredentials(Class<T> clazz) {
-        return instantiator.newInstance(getImplType(clazz));
-    }
-
+    @Nullable
+    @Override
     public Credentials getConfiguredCredentials() {
-        return credentials;
+        return delegate.getConfiguredCredentials();
     }
 
-    // Mappings between public and impl types
-    // If the list of mappings grows we should move it to a data structure
-
-    private static <T extends Credentials> Class<? extends T> getImplType(Class<T> publicType) {
-        if (publicType == PasswordCredentials.class) {
-            return Cast.uncheckedCast(DefaultPasswordCredentials.class);
-        } else if (publicType == AwsCredentials.class) {
-            return Cast.uncheckedCast(DefaultAwsCredentials.class);
-        } else {
-            throw new IllegalArgumentException(String.format("Unknown credentials type: '%s' (supported types: %s and %s).", publicType.getName(), PasswordCredentials.class.getName(), AwsCredentials.class.getName()));
-        }
+    @Override
+    public void setConfiguredCredentials(Credentials credentials) {
+        delegate.setConfiguredCredentials(credentials);
     }
 
-    private static <T extends Credentials> Class<? super T> getPublicType(Class<T> implType) {
-        if (PasswordCredentials.class.isAssignableFrom(implType)) {
-            return Cast.uncheckedCast(PasswordCredentials.class);
-        } else if (AwsCredentials.class.isAssignableFrom(implType)) {
-            return Cast.uncheckedCast(AwsCredentials.class);
-        } else {
-            throw new IllegalArgumentException(String.format("Unknown credentials implementation type: '%s' (supported types: %s and %s).", implType.getName(), DefaultPasswordCredentials.class.getName(), DefaultAwsCredentials.class.getName()));
-        }
+    @Override
+    public void credentials(Action<? super PasswordCredentials> action) {
+        delegate.credentials(action);
+    }
+
+    @Override
+    public <T extends Credentials> void credentials(Class<T> credentialsType, Action<? super T> action) throws IllegalStateException {
+        delegate.credentials(credentialsType, action);
+    }
+
+    @Override
+    public void authentication(Action<? super AuthenticationContainer> action) {
+        delegate.authentication(action);
+    }
+
+    @Override
+    public AuthenticationContainer getAuthentication() {
+        return delegate.getAuthentication();
+    }
+
+    @Override
+    public Collection<Authentication> getConfiguredAuthentication() {
+        return delegate.getConfiguredAuthentication();
     }
 }

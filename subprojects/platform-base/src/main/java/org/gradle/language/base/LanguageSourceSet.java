@@ -15,21 +15,20 @@
  */
 package org.gradle.language.base;
 
-import org.gradle.api.Action;
+import org.gradle.api.BuildableComponentSpec;
 import org.gradle.api.Incubating;
-import org.gradle.api.Named;
 import org.gradle.api.Task;
 import org.gradle.api.file.SourceDirectorySet;
-import org.gradle.api.BuildableModelElement;
 import org.gradle.internal.HasInternalProtocol;
+
+import javax.annotation.Nullable;
 
 /**
  * A set of sources for a programming language.
  */
 @Incubating
 @HasInternalProtocol
-public interface LanguageSourceSet extends Named, BuildableModelElement {
-    String getDisplayName();
+public interface LanguageSourceSet extends BuildableComponentSpec {
 
     // TODO: do we want to keep using SourceDirectorySet in the new API?
     // would feel more natural if dirs could be added directly to LanguageSourceSet
@@ -40,10 +39,8 @@ public interface LanguageSourceSet extends Named, BuildableModelElement {
      */
     SourceDirectorySet getSource();
 
-    /**
-     * Configure the sources
-     */
-    void source(Action<? super SourceDirectorySet> config);
-
     void generatedBy(Task generatorTask);
+
+    @Nullable
+    String getParentName();
 }

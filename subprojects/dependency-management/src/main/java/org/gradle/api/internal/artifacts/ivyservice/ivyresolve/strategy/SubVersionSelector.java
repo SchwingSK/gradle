@@ -18,7 +18,7 @@ package org.gradle.api.internal.artifacts.ivyservice.ivyresolve.strategy;
 /**
  * Version matcher for dynamic version selectors ending in '+'.
  */
-public class SubVersionSelector extends AbstractVersionSelector {
+public class SubVersionSelector extends AbstractStringVersionSelector {
     private final String prefix;
 
     public SubVersionSelector(String selector) {
@@ -40,5 +40,10 @@ public class SubVersionSelector extends AbstractVersionSelector {
 
     public boolean accept(String candidate) {
         return candidate.startsWith(prefix);
+    }
+
+    @Override
+    public boolean canShortCircuitWhenVersionAlreadyPreselected() {
+        return false;
     }
 }

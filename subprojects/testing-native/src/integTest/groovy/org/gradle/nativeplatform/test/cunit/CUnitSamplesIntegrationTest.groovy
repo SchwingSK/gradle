@@ -16,14 +16,17 @@
 
 
 package org.gradle.nativeplatform.test.cunit
+
 import org.gradle.integtests.fixtures.Sample
 import org.gradle.internal.os.OperatingSystem
 import org.gradle.nativeplatform.fixtures.AbstractInstalledToolChainIntegrationSpec
-import org.gradle.nativeplatform.fixtures.AvailableToolChains
+import org.gradle.nativeplatform.fixtures.ToolChainRequirement
 import org.gradle.test.fixtures.file.TestDirectoryProvider
 import org.gradle.util.Requires
 import org.gradle.util.TestPrecondition
 import org.junit.Rule
+
+import static org.junit.Assume.assumeTrue
 
 @Requires(TestPrecondition.CAN_INSTALL_EXECUTABLE)
 class CUnitSamplesIntegrationTest extends AbstractInstalledToolChainIntegrationSpec {
@@ -47,23 +50,21 @@ class CUnitSamplesIntegrationTest extends AbstractInstalledToolChainIntegrationS
 
     def "cunit"() {
         given:
-        // CUnit prebuilt library only works for VS2010 on windows
-        if (OperatingSystem.current().windows && !isVisualCpp2010()) {
-            return
-        }
+        // On windows, CUnit sample only works out of the box with VS2015
+        assumeTrue(!OperatingSystem.current().windows || isVisualCpp2015())
 
         when:
         sample cunit
-        succeeds "runPassing"
+        succeeds "runOperatorsTestPassingCUnitExe"
 
         then:
         executedAndNotSkipped ":operatorsTestCUnitLauncher",
-                              ":compilePassingOperatorsTestCUnitExeOperatorsTestC", ":compilePassingOperatorsTestCUnitExeOperatorsTestCunitLauncher",
-                              ":linkPassingOperatorsTestCUnitExe", ":passingOperatorsTestCUnitExe",
-                              ":installPassingOperatorsTestCUnitExe", ":runPassingOperatorsTestCUnitExe"
+                              ":compileOperatorsTestPassingCUnitExeOperatorsTestC", ":compileOperatorsTestPassingCUnitExeOperatorsTestCunitLauncher",
+                              ":linkOperatorsTestPassingCUnitExe", ":operatorsTestPassingCUnitExe",
+                              ":installOperatorsTestPassingCUnitExe", ":runOperatorsTestPassingCUnitExe"
 
         and:
-        def passingResults = new CUnitTestResults(cunit.dir.file("build/test-results/operatorsTestCUnitExe/passing/CUnitAutomated-Results.xml"))
+        def passingResults = new CUnitTestResults(cunit.dir.file("build/test-results/operatorsTest/passing/CUnitAutomated-Results.xml"))
         passingResults.suiteNames == ['operator tests']
         passingResults.suites['operator tests'].passingTests == ['test_plus', 'test_minus']
         passingResults.suites['operator tests'].failingTests == []
@@ -72,16 +73,16 @@ class CUnitSamplesIntegrationTest extends AbstractInstalledToolChainIntegrationS
 
         when:
         sample cunit
-        fails "runFailing"
+        fails "runOperatorsTestFailingCUnitExe"
 
         then:
         skipped ":operatorsTestCUnitLauncher"
-        executedAndNotSkipped ":compileFailingOperatorsTestCUnitExeOperatorsTestC", ":compileFailingOperatorsTestCUnitExeOperatorsTestCunitLauncher",
-                              ":linkFailingOperatorsTestCUnitExe", ":failingOperatorsTestCUnitExe",
-                              ":installFailingOperatorsTestCUnitExe", ":runFailingOperatorsTestCUnitExe"
+        executedAndNotSkipped ":compileOperatorsTestFailingCUnitExeOperatorsTestC", ":compileOperatorsTestFailingCUnitExeOperatorsTestCunitLauncher",
+                              ":linkOperatorsTestFailingCUnitExe", ":operatorsTestFailingCUnitExe",
+                              ":installOperatorsTestFailingCUnitExe", ":runOperatorsTestFailingCUnitExe"
 
         and:
-        def failingResults = new CUnitTestResults(cunit.dir.file("build/test-results/operatorsTestCUnitExe/failing/CUnitAutomated-Results.xml"))
+        def failingResults = new CUnitTestResults(cunit.dir.file("build/test-results/operatorsTest/failing/CUnitAutomated-Results.xml"))
         failingResults.suiteNames == ['operator tests']
         failingResults.suites['operator tests'].passingTests == ['test_minus']
         failingResults.suites['operator tests'].failingTests == ['test_plus']
@@ -89,7 +90,7 @@ class CUnitSamplesIntegrationTest extends AbstractInstalledToolChainIntegrationS
         failingResults.checkAssertions(6, 4, 2)
     }
 
-    private static boolean isVisualCpp2010() {
-        return (AbstractInstalledToolChainIntegrationSpec.toolChain.visualCpp && (AbstractInstalledToolChainIntegrationSpec.toolChain as AvailableToolChains.InstalledVisualCpp).version.major == "10")
+    private static boolean isVisualCpp2015() {
+        return toolChain.meets(ToolChainRequirement.VISUALCPP_2015)
     }
 }

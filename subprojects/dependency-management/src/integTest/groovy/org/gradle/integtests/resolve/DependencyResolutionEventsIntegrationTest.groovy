@@ -16,9 +16,40 @@
 package org.gradle.integtests.resolve
 
 import org.gradle.integtests.fixtures.*
+import org.junit.runner.RunWith
 import spock.lang.Issue
 
+@RunWith(FluidDependenciesResolveRunner)
 class DependencyResolutionEventsIntegrationTest extends AbstractIntegrationSpec {
+    def "fires exactly one beforeResolve and afterResolve event when configuration is resolved"() {
+        given:
+        buildFile << """
+            configurations {
+                parent { }
+                things.extendsFrom parent          
+                all {
+                    incoming.beforeResolve { c -> println "before " + c.path }
+                    incoming.afterResolve { c -> println "after " + c.path }
+                }
+            }
+            dependencies {
+                parent files("parent.txt")
+                things files("thing.txt")
+            }
+
+            task resolveIt(type: Sync) {
+                from configurations.things
+                into buildDir
+            }
+        """
+
+        when:
+        run "resolveIt"
+
+        then:
+        output.count("before :things") == 1
+        output.count("after :things") == 1
+    }
 
     @Issue("https://issues.gradle.org/browse/GRADLE-2047")
     def "can access resolved files from afterResolve hook"() {
@@ -35,7 +66,7 @@ class DependencyResolutionEventsIntegrationTest extends AbstractIntegrationSpec 
                 things files("thing.txt")
             }
 
-            task resolveIt(type: Copy, dependsOn: configurations.things) {
+            task resolveIt(type: Sync) {
                 from configurations.things
                 into buildDir
             }

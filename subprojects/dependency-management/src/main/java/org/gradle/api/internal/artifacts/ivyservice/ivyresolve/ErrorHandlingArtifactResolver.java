@@ -15,10 +15,9 @@
  */
 package org.gradle.api.internal.artifacts.ivyservice.ivyresolve;
 
-import org.gradle.internal.component.model.ComponentArtifactMetaData;
-import org.gradle.internal.component.model.ComponentResolveMetaData;
-import org.gradle.internal.component.model.ComponentUsage;
 import org.gradle.api.internal.component.ArtifactType;
+import org.gradle.internal.component.model.ComponentArtifactMetadata;
+import org.gradle.internal.component.model.ComponentResolveMetadata;
 import org.gradle.internal.component.model.ModuleSource;
 import org.gradle.internal.resolve.ArtifactResolveException;
 import org.gradle.internal.resolve.resolver.ArtifactResolver;
@@ -32,23 +31,17 @@ public class ErrorHandlingArtifactResolver implements ArtifactResolver {
         this.resolver = resolver;
     }
 
-    public void resolveModuleArtifacts(ComponentResolveMetaData component, ArtifactType artifactType, BuildableArtifactSetResolveResult result) {
+    @Override
+    public void resolveArtifactsWithType(ComponentResolveMetadata component, ArtifactType artifactType, BuildableArtifactSetResolveResult result) {
         try {
-            resolver.resolveModuleArtifacts(component, artifactType, result);
+            resolver.resolveArtifactsWithType(component, artifactType, result);
         } catch (Throwable t) {
             result.failed(new ArtifactResolveException(component.getComponentId(), t));
         }
     }
 
-    public void resolveModuleArtifacts(ComponentResolveMetaData component, ComponentUsage usage, BuildableArtifactSetResolveResult result) {
-        try {
-            resolver.resolveModuleArtifacts(component, usage, result);
-        } catch (Throwable t) {
-            result.failed(new ArtifactResolveException(component.getComponentId(), t));
-        }
-    }
-
-    public void resolveArtifact(ComponentArtifactMetaData artifact, ModuleSource moduleSource, BuildableArtifactResolveResult result) {
+    @Override
+    public void resolveArtifact(ComponentArtifactMetadata artifact, ModuleSource moduleSource, BuildableArtifactResolveResult result) {
         try {
             resolver.resolveArtifact(artifact, moduleSource, result);
         } catch (Throwable t) {

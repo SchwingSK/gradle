@@ -16,10 +16,13 @@
 
 package org.gradle.launcher.cli.converter
 
-import org.gradle.StartParameter
+import org.gradle.api.internal.StartParameterInternal
+import org.gradle.api.logging.LogLevel
+import org.gradle.initialization.ParallelismBuildOptions
+import org.gradle.initialization.StartParameterBuildOptions
+import org.gradle.internal.logging.LoggingConfigurationBuildOptions
 import spock.lang.Specification
-
-import static org.gradle.launcher.daemon.configuration.GradleProperties.*
+import spock.lang.Unroll
 
 class PropertiesToStartParameterConverterTest extends Specification {
 
@@ -27,17 +30,46 @@ class PropertiesToStartParameterConverterTest extends Specification {
 
     def "converts"() {
         expect:
-        converter.convert([(WORKERS_PROPERTY): "37"], new StartParameter()).maxWorkerCount == 37
-        converter.convert([(PARALLEL_PROPERTY): "true"], new StartParameter()).parallelProjectExecutionEnabled
-        converter.convert([(PARALLEL_PROPERTY): "false"], new StartParameter()).parallelThreadCount == 0
-        converter.convert([(CONFIGURE_ON_DEMAND_PROPERTY): "TRUE"], new StartParameter()).configureOnDemand
-        !converter.convert([(CONFIGURE_ON_DEMAND_PROPERTY): "xxx"], new StartParameter()).configureOnDemand
+        converter.convert([(ParallelismBuildOptions.MaxWorkersOption.GRADLE_PROPERTY): "37"], new StartParameterInternal()).maxWorkerCount == 37
+        converter.convert([(ParallelismBuildOptions.ParallelOption.GRADLE_PROPERTY): "true"], new StartParameterInternal()).parallelProjectExecutionEnabled
+        converter.convert([(StartParameterBuildOptions.BuildCacheOption.GRADLE_PROPERTY): "true"], new StartParameterInternal()).buildCacheEnabled
+        converter.convert([(StartParameterBuildOptions.ConfigureOnDemandOption.GRADLE_PROPERTY): "TRUE"], new StartParameterInternal()).configureOnDemand
+        !converter.convert([(StartParameterBuildOptions.ConfigureOnDemandOption.GRADLE_PROPERTY): "xxx"], new StartParameterInternal()).configureOnDemand
     }
 
     def invalidMaxWorkersProperty() {
         when:
-        converter.convert([(WORKERS_PROPERTY): "invalid"], new StartParameter())
+        converter.convert([(ParallelismBuildOptions.MaxWorkersOption.GRADLE_PROPERTY): "invalid"], new StartParameterInternal())
         then:
         thrown(IllegalArgumentException)
     }
+
+    @Unroll
+    def "converts log levels"() {
+        expect:
+        converter.convert([(LoggingConfigurationBuildOptions.LogLevelOption.GRADLE_PROPERTY): level], new StartParameterInternal()).logLevel == logLevel
+
+        where:
+        level       | logLevel
+        'quiet'     | LogLevel.QUIET
+        'warn'      | LogLevel.WARN
+        'LifeCycle' | LogLevel.LIFECYCLE
+        'Info'      | LogLevel.INFO
+        'DEBUG'     | LogLevel.DEBUG
+    }
+
+    def "throws exception for invalid log level"() {
+        when:
+        converter.convert([(LoggingConfigurationBuildOptions.LogLevelOption.GRADLE_PROPERTY): "fakeLevel"], new StartParameterInternal())
+
+        then:
+        def ex = thrown(IllegalArgumentException)
+        ex.getMessage().contains(LoggingConfigurationBuildOptions.LogLevelOption.GRADLE_PROPERTY)
+        LogLevel.values().each { level ->
+            if(level != LogLevel.ERROR) {
+                ex.getMessage().contains(level.toString())
+            }
+        }
+    }
+
 }

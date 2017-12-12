@@ -20,7 +20,6 @@ package org.gradle.integtests.resource.s3.maven
 import org.gradle.api.credentials.AwsCredentials
 import org.gradle.integtests.resource.s3.AbstractS3DependencyResolutionTest
 import org.gradle.integtests.resource.s3.fixtures.MavenS3Module
-import org.gradle.util.TextUtil
 
 class MavenS3RepoErrorsIntegrationTest extends AbstractS3DependencyResolutionTest {
     final String artifactVersion = "1.85"
@@ -55,7 +54,7 @@ task retrieve(type: Sync) {
         then:
         fails 'retrieve'
         and:
-        failure.assertHasDescription("Could not resolve all dependencies for configuration ':compile'.")
+        failure.assertHasDescription("Could not resolve all files for configuration ':compile'.")
                 .assertHasCause('Could not resolve org.gradle:test:1.85')
                 .assertHasCause("Could not get resource '${module.pom.uri}'.")
                 .assertHasCause("The AWS Access Key Id you provided does not exist in our records.")
@@ -97,7 +96,7 @@ repositories {
         fails 'retrieve'
         then:
         failure.assertHasDescription("Could not resolve all dependencies for configuration ':compile'.")
-                .assertHasCause("AwsCredentials must be set for S3 backed repository.")
+                .assertHasCause("S3 resource should either specify AwsImAuthentication or provide some AwsCredentials.")
 
     }
 
@@ -111,13 +110,35 @@ repositories {
         fails 'retrieve'
 
         and:
-        failure.assertHasDescription("Could not resolve all dependencies for configuration ':compile'.")
-        errorOutput.contains(TextUtil.toPlatformLineSeparators(
+        failure.assertHasDescription("Could not resolve all files for configuration ':compile'.")
+        failure.assertHasCause(
                 """Could not find org.gradle:test:1.85.
 Searched in the following locations:
     ${module.pom.uri}
     ${module.artifact.uri}
 Required by:
-"""))
+""")
+    }
+
+    def "cannot add invalid authentication types for s3 repo"() {
+        given:
+        module.publish()
+
+        and:
+        buildFile << """
+            repositories {
+                maven {
+                    url "${mavenS3Repo.uri}"
+                    authentication {
+                        auth(BasicAuthentication)
+                    }
+                }
+            }
+        """
+
+        expect:
+        fails 'retrieve'
+        and:
+        failure.assertHasCause("Authentication scheme 'auth'(BasicAuthentication) is not supported by protocol 's3'")
     }
 }

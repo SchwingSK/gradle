@@ -20,7 +20,11 @@ import org.gradle.integtests.fixtures.AbstractHttpDependencyResolutionTest
 import org.gradle.test.fixtures.server.http.MavenHttpModule
 import org.gradle.test.fixtures.server.http.MavenHttpRepository
 import org.hamcrest.Matchers
+import spock.lang.Timeout
 
+import static org.gradle.util.Matchers.matchesRegexp
+
+@Timeout(120)
 class RecoverFromBrokenResolutionIntegrationTest extends AbstractHttpDependencyResolutionTest {
 
     MavenHttpRepository repo
@@ -69,7 +73,7 @@ class RecoverFromBrokenResolutionIntegrationTest extends AbstractHttpDependencyR
         //TODO should expose the failed task in the error message like
         //failure.assertHasDescription('Execution failed for task \':retrieve\'.')
         //failure.assertHasCause('Could not resolve all dependencies for configuration \':compile\'.')
-        failure.assertHasDescription('Could not resolve all dependencies for configuration \':compile\'.')
+        failure.assertHasDescription('Could not resolve all files for configuration \':compile\'.')
         failure.assertThatCause(Matchers.containsString("Received status code 500 from server: broken"))
 
 
@@ -105,8 +109,8 @@ class RecoverFromBrokenResolutionIntegrationTest extends AbstractHttpDependencyR
         //TODO should expose the failed task in the error message like
         //failure.assertHasDescription('Execution failed for task \':retrieve\'.')
         //failure.assertHasCause('Could not resolve all dependencies for configuration \':compile\'.')
-        failure.assertHasDescription('Could not resolve all dependencies for configuration \':compile\'.')
-        failure.assertThatCause(Matchers.containsString("Connection to http://localhost:${port} refused"))
+        failure.assertHasDescription('Could not resolve all files for configuration \':compile\'.')
+        failure.assertThatCause(matchesRegexp(".*?Connect to localhost:${port} (\\[.*\\])? failed: Connection refused.*"))
 
         when:
         server.resetExpectations()
@@ -140,8 +144,8 @@ class RecoverFromBrokenResolutionIntegrationTest extends AbstractHttpDependencyR
         //TODO should expose the failed task in the error message like
         //failure.assertHasDescription('Execution failed for task \':retrieve\'.')
         //failure.assertHasCause('Could not resolve all dependencies for configuration \':compile\'.')
-        failure.assertHasDescription('Could not resolve all dependencies for configuration \':compile\'.')
-        failure.assertThatCause(Matchers.containsString("Connection to http://localhost:${port} refused"))
+        failure.assertHasDescription('Could not resolve all files for configuration \':compile\'.')
+        failure.assertThatCause(matchesRegexp(".*?Connect to localhost:${port} (\\[.*\\])? failed: Connection refused.*"))
 
         when:
         server.resetExpectations()
@@ -178,7 +182,7 @@ class RecoverFromBrokenResolutionIntegrationTest extends AbstractHttpDependencyR
         //TODO should expose the failed task in the error message like
         //failure.assertHasDescription('Execution failed for task \':retrieve\'.')
         //failure.assertHasCause('Could not resolve all dependencies for configuration \':compile\'.')
-        failure.assertHasDescription('Could not resolve all dependencies for configuration \':compile\'.')
+        failure.assertHasDescription('Could not resolve all files for configuration \':compile\'.')
         failure.assertThatCause(Matchers.containsString("Received status code 401 from server: Unauthorized"))
 
         when:
@@ -237,8 +241,8 @@ class RecoverFromBrokenResolutionIntegrationTest extends AbstractHttpDependencyR
         //TODO should expose the failed task in the error message like
         //failure.assertHasDescription('Execution failed for task \':retrieve\'.')
         //failure.assertHasCause('Could not resolve all dependencies for configuration \':compile\'.')
-        failure.assertHasDescription('Could not resolve all dependencies for configuration \':compile\'.')
-        failure.assertThatCause(Matchers.containsString("Connection to http://localhost:${port} refused"))
+        failure.assertHasDescription('Could not resolve all files for configuration \':compile\'.')
+        failure.assertThatCause(matchesRegexp(".*?Connect to localhost:${port} (\\[.*\\])? failed: Connection refused.*"))
 
         when:
         server.resetExpectations()
@@ -289,9 +293,9 @@ class RecoverFromBrokenResolutionIntegrationTest extends AbstractHttpDependencyR
         fails 'retrieve'
 
         and:
-        failure.assertHasDescription('Could not resolve all dependencies for configuration \':compile\'.')
+        failure.assertHasDescription('Could not resolve all files for configuration \':compile\'.')
         failure.assertHasCause("Could not list versions using Ivy pattern 'http://localhost:${port}/ivyRepo/[organisation]/[module]/[revision]/ivy-[revision].xml")
-        failure.assertHasCause("Connection to http://localhost:${port} refused")
+        failure.assertThatCause(matchesRegexp(".*?Connect to localhost:${port} (\\[.*\\])? failed: Connection refused.*"))
 
         when:
         server.resetExpectations()
@@ -305,15 +309,14 @@ class RecoverFromBrokenResolutionIntegrationTest extends AbstractHttpDependencyR
     def moduleAvailableViaHttp() {
         module.metaData.expectGet()
         module.pom.expectGet()
-        module.getArtifact().expectGet()
+        module.artifact.expectGet()
     }
 
     def moduleAvailableViaHttpWithoutMetaData() {
         module.metaData.expectGetMissing()
         module.pom.expectGet()
-        module.getArtifact().expectGet()
+        module.artifact.expectGet()
     }
-
 
     private MavenHttpModule publishedMavenModule(withNonUniqueVersion = false) {
         module = repo.module("group", "projectA", "1.0-SNAPSHOT")

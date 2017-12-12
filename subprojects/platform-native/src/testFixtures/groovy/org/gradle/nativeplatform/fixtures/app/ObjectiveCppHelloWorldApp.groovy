@@ -34,12 +34,14 @@ class ObjectiveCppHelloWorldApp extends IncrementalHelloWorldApp {
                 printf("%d", sum(7, 5));
                 return 0;
             }
-        """);
+        """)
     }
 
     @Override
     SourceFile getLibraryHeader() {
         return sourceFile("headers", "hello.h", """
+            #ifndef HELLO_H
+            #define HELLO_H
             #ifdef _WIN32
             #define DLL_FUNC __declspec(dllexport)
             #else
@@ -48,14 +50,33 @@ class ObjectiveCppHelloWorldApp extends IncrementalHelloWorldApp {
 
             void DLL_FUNC sayHello();
             int DLL_FUNC sum(int a, int b);
-        """);
+
+            #ifdef FRENCH
+            #pragma message("<==== compiling bonjour.h ====>")
+            #else
+            #pragma message("<==== compiling hello.h ====>")
+            #endif
+
+            #endif
+        """)
+    }
+
+    @Override
+    SourceFile getCommonHeader() {
+        sourceFile("headers", "common.h", """
+            #ifndef COMMON_H
+            #define COMMON_H
+            #include "hello.h"
+            #include <iostream>
+            #endif
+        """)
     }
 
     List<SourceFile> librarySources = [
             sourceFile("objcpp", "hello.mm", """
             #define __STDC_LIMIT_MACROS
+            #include "common.h"
             #include <stdint.h>
-            #include "hello.h"
             #import <Foundation/Foundation.h>
 
             #include <iostream>
@@ -78,7 +99,7 @@ class ObjectiveCppHelloWorldApp extends IncrementalHelloWorldApp {
             }
         """),
             sourceFile("objcpp", "sum.mm", """
-            #include "hello.h"
+            #include "common.h"
             int DLL_FUNC sum(int a, int b) {
                 return a + b;
             }
@@ -100,7 +121,7 @@ class ObjectiveCppHelloWorldApp extends IncrementalHelloWorldApp {
                 std::cout << "${HELLO_WORLD} ${HELLO_WORLD}" << std::endl;
                 return 0;
             }
-        """);
+        """)
     }
 
     String alternateOutput = "${HELLO_WORLD} ${HELLO_WORLD}\n"
@@ -111,16 +132,16 @@ class ObjectiveCppHelloWorldApp extends IncrementalHelloWorldApp {
         return [
             sourceFile("objcpp", "hello.mm", """
             #define __STDC_LIMIT_MACROS
+            #include "common.h"
             #include <stdint.h>
             #include <iostream>
-            #include "hello.h"
 
             void DLL_FUNC sayHello() {
                 std::cout << "${HELLO_WORLD} - ${HELLO_WORLD_FRENCH}" << std::endl;
             }
         """),
         sourceFile("objcpp", "sum.mm", """
-            #include "hello.h"
+            #include "common.h"
             int DLL_FUNC sum(int a, int b) {
                 return a + b;
             }
@@ -129,14 +150,18 @@ class ObjectiveCppHelloWorldApp extends IncrementalHelloWorldApp {
 
     String alternateLibraryOutput = "${HELLO_WORLD} - ${HELLO_WORLD_FRENCH}\n12"
 
-    public String getExtraConfiguration(String binaryName = null) {
+    String getExtraConfiguration(String binaryName = null) {
         return """
-            binaries.matching { ${binaryName ? "it.name == '$binaryName'" : "true"} }.all {
-                if (targetPlatform.operatingSystem.macOsX) {
-                    linker.args "-framework", "Foundation"
-                } else {
-                    objcppCompiler.args "-I/usr/include/GNUstep", "-I/usr/local/include/objc", "-fconstant-string-class=NSConstantString", "-D_NATIVE_OBJC_EXCEPTIONS"
-                    linker.args "-lgnustep-base", "-lobjc"
+            model {
+                binaries {
+                    ${binaryName ? binaryName : "all"} {
+                        if (targetPlatform.operatingSystem.macOsX) {
+                            linker.args "-framework", "Foundation"
+                        } else {
+                            objcppCompiler.args "-I/usr/include/GNUstep", "-I/usr/local/include/objc", "-fconstant-string-class=NSConstantString", "-D_NATIVE_OBJC_EXCEPTIONS"
+                            linker.args "-lgnustep-base", "-lobjc"
+                        }
+                    }
                 }
             }
         """
@@ -147,7 +172,12 @@ class ObjectiveCppHelloWorldApp extends IncrementalHelloWorldApp {
         ['objective-cpp']
     }
 
-    public SourceFile getBrokenFile() {
+    SourceFile getBrokenFile() {
         return sourceFile("objcpp", "broken.mm", """'broken""")
+    }
+
+    @Override
+    String getSourceSetType() {
+        return "ObjectiveCppSourceSet"
     }
 }

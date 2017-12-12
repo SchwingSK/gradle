@@ -16,118 +16,50 @@
 
 package org.gradle.api.internal.artifacts.ivyservice.resolveengine.oldresult;
 
-import org.gradle.api.artifacts.ModuleDependency;
-import org.gradle.api.artifacts.ResolvedArtifact;
-import org.gradle.api.artifacts.UnresolvedDependency;
-import org.gradle.api.internal.artifacts.DefaultResolvedArtifact;
-import org.gradle.api.internal.artifacts.ResolvedConfigurationIdentifier;
-import org.gradle.internal.component.model.ComponentResolveMetaData;
-import org.gradle.internal.resolve.resolver.ArtifactResolver;
-import org.gradle.internal.resolve.result.DefaultBuildableArtifactResolveResult;
-import org.gradle.api.internal.artifacts.ivyservice.dynamicversions.DefaultResolvedModuleVersion;
-import org.gradle.internal.component.model.ModuleSource;
-import org.gradle.internal.component.model.ComponentArtifactMetaData;
-import org.gradle.internal.Factory;
-import org.gradle.internal.id.IdGenerator;
-import org.gradle.internal.id.LongIdGenerator;
+import org.gradle.api.artifacts.Dependency;
+import org.gradle.api.internal.artifacts.ivyservice.resolveengine.graph.DependencyGraphNode;
 
-import java.io.File;
-import java.util.*;
+import java.util.HashMap;
+import java.util.Map;
 
-public class DefaultResolvedConfigurationBuilder implements
-        ResolvedConfigurationBuilder, ResolvedConfigurationResults, ResolvedContentsMapping {
-
-    private final Map<Long, ResolvedArtifact> artifacts = new LinkedHashMap<Long, ResolvedArtifact>();
-    private final Set<UnresolvedDependency> unresolvedDependencies = new LinkedHashSet<UnresolvedDependency>();
-    private final IdGenerator<Long> idGenerator = new LongIdGenerator();
-    private final Map<ResolvedConfigurationIdentifier, ModuleDependency> modulesMap = new HashMap<ResolvedConfigurationIdentifier, ModuleDependency>();
-
+public class DefaultResolvedConfigurationBuilder implements ResolvedConfigurationBuilder {
+    private final Map<Long, Dependency> modulesMap = new HashMap<Long, Dependency>();
     private final TransientConfigurationResultsBuilder builder;
 
     public DefaultResolvedConfigurationBuilder(TransientConfigurationResultsBuilder builder) {
         this.builder = builder;
     }
 
-    public void addUnresolvedDependency(UnresolvedDependency unresolvedDependency) {
-        unresolvedDependencies.add(unresolvedDependency);
-    }
-
-    public void addFirstLevelDependency(ModuleDependency moduleDependency, ResolvedConfigurationIdentifier dependency) {
-        builder.firstLevelDependency(dependency);
+    @Override
+    public void addFirstLevelDependency(Dependency moduleDependency, DependencyGraphNode dependency) {
+        builder.firstLevelDependency(dependency.getNodeId());
         //we don't serialise the module dependencies at this stage so we need to keep track
         //of the mapping module dependency <-> resolved dependency
-        modulesMap.put(dependency, moduleDependency);
+        modulesMap.put(dependency.getNodeId(), moduleDependency);
     }
 
-    public void done(ResolvedConfigurationIdentifier root) {
-        builder.done(root);
+    @Override
+    public void done(DependencyGraphNode root) {
+        builder.done(root.getNodeId());
     }
 
-    public void addChild(ResolvedConfigurationIdentifier parent, ResolvedConfigurationIdentifier child) {
-        builder.parentChildMapping(parent, child);
+    @Override
+    public void addChild(DependencyGraphNode parent, DependencyGraphNode child, int artifactsId) {
+        builder.parentChildMapping(parent.getNodeId(), child.getNodeId(), artifactsId);
     }
 
-    public void addParentSpecificArtifacts(ResolvedConfigurationIdentifier child, ResolvedConfigurationIdentifier parent, Set<ResolvedArtifact> artifacts) {
-        for (ResolvedArtifact a : artifacts) {
-            builder.parentSpecificArtifact(child, parent, ((DefaultResolvedArtifact) a).getId());
-        }
+    @Override
+    public void addNodeArtifacts(DependencyGraphNode node, int artifactsId) {
+        builder.nodeArtifacts(node.getNodeId(), artifactsId);
     }
 
-    public void newResolvedDependency(ResolvedConfigurationIdentifier id) {
-        builder.resolvedDependency(id);
+    @Override
+    public void newResolvedDependency(DependencyGraphNode node) {
+        builder.resolvedDependency(node.getNodeId(), node.getResolvedConfigurationId());
     }
 
-    public ResolvedArtifact newArtifact(ResolvedConfigurationIdentifier owner, ComponentResolveMetaData component, ComponentArtifactMetaData artifact, ArtifactResolver artifactResolver) {
-        Factory<File> artifactSource = new LazyArtifactSource(artifact, component.getSource(), artifactResolver);
-        long id = idGenerator.generateId();
-        ResolvedArtifact newArtifact = new DefaultResolvedArtifact(new DefaultResolvedModuleVersion(owner.getId()), artifact.getName(), artifactSource, id);
-        artifacts.put(id, newArtifact);
-        return newArtifact;
-    }
-
-    public boolean hasError() {
-        return !unresolvedDependencies.isEmpty();
-    }
-
-    public TransientConfigurationResults more() {
-        return builder.load(this);
-    }
-
-    public Set<ResolvedArtifact> getArtifacts() {
-        return new LinkedHashSet<ResolvedArtifact>(artifacts.values());
-    }
-
-    public ResolvedArtifact getArtifact(long artifactId) {
-        ResolvedArtifact a = artifacts.get(artifactId);
-        assert a != null : "Unable to find artifact for id: " + artifactId;
-        return a;
-    }
-
-    public ModuleDependency getModuleDependency(ResolvedConfigurationIdentifier id) {
-        ModuleDependency m = modulesMap.get(id);
-        assert m != null : "Unable to find module dependency for id: " + id;
-        return m;
-    }
-
-    public Set<UnresolvedDependency> getUnresolvedDependencies() {
-        return unresolvedDependencies;
-    }
-
-    private static class LazyArtifactSource implements Factory<File> {
-        private final ArtifactResolver artifactResolver;
-        private final ModuleSource moduleSource;
-        private final ComponentArtifactMetaData artifact;
-
-        private LazyArtifactSource(ComponentArtifactMetaData artifact, ModuleSource moduleSource, ArtifactResolver artifactResolver) {
-            this.artifact = artifact;
-            this.artifactResolver = artifactResolver;
-            this.moduleSource = moduleSource;
-        }
-
-        public File create() {
-            DefaultBuildableArtifactResolveResult result = new DefaultBuildableArtifactResolveResult();
-            artifactResolver.resolveArtifact(artifact, moduleSource, result);
-            return result.getFile();
-        }
+    @Override
+    public ResolvedGraphResults complete() {
+        return new DefaultResolvedGraphResults(modulesMap);
     }
 }

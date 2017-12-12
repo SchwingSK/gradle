@@ -16,10 +16,13 @@
 
 package org.gradle.api.plugins.buildcomparison.gradle;
 
-import org.gradle.api.*;
-import org.gradle.api.internal.file.FileResolver;
-import org.gradle.internal.resource.local.PathNormalisingKeyFileStore;
+import org.gradle.api.Action;
+import org.gradle.api.DefaultTask;
+import org.gradle.api.GradleException;
+import org.gradle.api.Incubating;
+import org.gradle.api.Task;
 import org.gradle.api.logging.Logger;
+import org.gradle.api.model.ObjectFactory;
 import org.gradle.api.plugins.buildcomparison.compare.internal.BuildComparisonResult;
 import org.gradle.api.plugins.buildcomparison.gradle.internal.ComparableGradleBuildExecuter;
 import org.gradle.api.plugins.buildcomparison.gradle.internal.DefaultGradleBuildInvocationSpec;
@@ -33,20 +36,26 @@ import org.gradle.api.plugins.buildcomparison.outcome.internal.unknown.UnknownBu
 import org.gradle.api.plugins.buildcomparison.outcome.internal.unknown.UnknownBuildOutcomeComparisonResultHtmlRenderer;
 import org.gradle.api.plugins.buildcomparison.outcome.internal.unknown.UnknownBuildOutcomeHtmlRenderer;
 import org.gradle.api.specs.Spec;
+import org.gradle.api.tasks.Nested;
 import org.gradle.api.tasks.OutputDirectory;
 import org.gradle.api.tasks.TaskAction;
 import org.gradle.api.tasks.VerificationTask;
+import org.gradle.internal.file.PathToFileResolver;
+import org.gradle.internal.logging.ConsoleRenderer;
+import org.gradle.internal.logging.progress.ProgressLogger;
+import org.gradle.internal.logging.progress.ProgressLoggerFactory;
 import org.gradle.internal.resource.local.FileStore;
-import org.gradle.internal.reflect.Instantiator;
-import org.gradle.logging.ConsoleRenderer;
-import org.gradle.logging.ProgressLogger;
-import org.gradle.logging.ProgressLoggerFactory;
+import org.gradle.internal.resource.local.PathNormalisingKeyFileStore;
 import org.gradle.util.GradleVersion;
 
 import javax.inject.Inject;
 import java.io.File;
 import java.text.SimpleDateFormat;
-import java.util.*;
+import java.util.Arrays;
+import java.util.Date;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 
 /**
  * Executes two Gradle builds (that can be the same build) with specified versions and compares the outcomes.
@@ -66,11 +75,11 @@ public class CompareGradleBuilds extends DefaultTask implements VerificationTask
     private Object reportDir;
 
     public CompareGradleBuilds() {
-        FileResolver fileResolver = getFileResolver();
-        Instantiator instantiator = getInstantiator();
-        sourceBuild = instantiator.newInstance(DefaultGradleBuildInvocationSpec.class, fileResolver, getProject().getRootDir());
+        PathToFileResolver fileResolver = getFileResolver();
+        ObjectFactory objectFactory = getObjectFactory();
+        sourceBuild = objectFactory.newInstance(DefaultGradleBuildInvocationSpec.class, fileResolver, getProject().getRootDir());
         sourceBuild.setTasks(DEFAULT_TASKS);
-        targetBuild = instantiator.newInstance(DefaultGradleBuildInvocationSpec.class, fileResolver, getProject().getRootDir());
+        targetBuild = objectFactory.newInstance(DefaultGradleBuildInvocationSpec.class, fileResolver, getProject().getRootDir());
         targetBuild.setTasks(DEFAULT_TASKS);
 
         // Never up to date
@@ -82,7 +91,7 @@ public class CompareGradleBuilds extends DefaultTask implements VerificationTask
     }
 
     @Inject
-    protected FileResolver getFileResolver() {
+    protected PathToFileResolver getFileResolver() {
         throw new UnsupportedOperationException();
     }
 
@@ -91,8 +100,13 @@ public class CompareGradleBuilds extends DefaultTask implements VerificationTask
         throw new UnsupportedOperationException();
     }
 
+    /**
+     * Injects and returns an instance of {@link ObjectFactory}.
+     *
+     * @since 4.2
+     */
     @Inject
-    protected Instantiator getInstantiator() {
+    protected ObjectFactory getObjectFactory() {
         throw new UnsupportedOperationException();
     }
 
@@ -106,6 +120,7 @@ public class CompareGradleBuilds extends DefaultTask implements VerificationTask
      *
      * @return The specification of how to invoke the source build.
      */
+    @Nested
     public GradleBuildInvocationSpec getSourceBuild() {
         return sourceBuild;
     }
@@ -137,6 +152,7 @@ public class CompareGradleBuilds extends DefaultTask implements VerificationTask
      *
      * @return The specification of how to invoke the target build.
      */
+    @Nested
     public GradleBuildInvocationSpec getTargetBuild() {
         return targetBuild;
     }
@@ -189,7 +205,17 @@ public class CompareGradleBuilds extends DefaultTask implements VerificationTask
     /**
      * Sets the directory that will contain the HTML comparison report and any other report files.
      *
-     * The value will be evaluated by {@link Project#file(Object) project.file()}.
+     * @param reportDir The directory that will contain the HTML comparison report and any other report files.
+     * @since 4.0
+     */
+    public void setReportDir(File reportDir) {
+        setReportDir((Object) reportDir);
+    }
+
+    /**
+     * Sets the directory that will contain the HTML comparison report and any other report files.
+     *
+     * The value will be evaluated by {@link org.gradle.api.Project#file(Object) project.file()}.
      *
      * @param reportDir The directory that will contain the HTML comparison report and any other report files.
      */
@@ -199,10 +225,6 @@ public class CompareGradleBuilds extends DefaultTask implements VerificationTask
             throw new IllegalArgumentException("reportDir cannot be null");
         }
         this.reportDir = reportDir;
-    }
-
-    private File getReportFile() {
-        return new File(getReportDir(), GradleBuildComparison.HTML_REPORT_FILE_NAME);
     }
 
     @SuppressWarnings("UnusedDeclaration")
@@ -257,7 +279,8 @@ public class CompareGradleBuilds extends DefaultTask implements VerificationTask
     }
 
     private void communicateResult(BuildComparisonResult result) {
-        String reportUrl = new ConsoleRenderer().asClickableFileUrl(getReportFile());
+        File reportFile = new File(getReportDir(), GradleBuildComparison.HTML_REPORT_FILE_NAME);
+        String reportUrl = new ConsoleRenderer().asClickableFileUrl(reportFile);
         if (result.isBuildsAreIdentical()) {
             getLogger().info("The build outcomes were found to be identical. See the report at: {}", reportUrl);
         } else {

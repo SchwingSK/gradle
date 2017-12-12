@@ -1,5 +1,5 @@
 /*
- * Copyright 2014 the original author or authors.
+ * Copyright 2017 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,35 +16,19 @@
 
 package org.gradle.api.tasks.compile
 
-import org.gradle.api.internal.TaskExecutionHistory
-import org.gradle.api.tasks.WorkResult
-import org.gradle.language.base.internal.compile.Compiler
-import org.gradle.platform.base.internal.toolchain.ResolvedTool
-import org.gradle.platform.base.internal.toolchain.ToolResolver
-import org.gradle.test.fixtures.file.TestNameTestDirectoryProvider
-import org.gradle.util.TestUtil
-import org.junit.Rule
-import spock.lang.Specification
+import org.gradle.jvm.toolchain.JavaToolChain
+import org.gradle.test.fixtures.AbstractProjectBuilderSpec
+import spock.lang.Issue
 
-class JavaCompileTest extends Specification {
-    @Rule TestNameTestDirectoryProvider tmpDir = new TestNameTestDirectoryProvider()
-    def toolResolver = Mock(ToolResolver)
-    def resolvedTool = Mock(ResolvedTool)
-    def compiler = Mock(Compiler)
-    def task = TestUtil.createTask(JavaCompile)
+class JavaCompileTest extends AbstractProjectBuilderSpec {
 
-    def "uses specified ToolResolver to create a Compiler to do the work"() {
-        given:
-        task.outputs.history = Stub(TaskExecutionHistory)
-        task.destinationDir = tmpDir.file("classes")
-        task.toolResolver = toolResolver
-
+    @Issue("https://github.com/gradle/gradle/issues/1645")
+    def "can set the Java tool chain"() {
+        def javaCompile = project.tasks.create("compileJava", JavaCompile)
+        def toolChain = Mock(JavaToolChain)
         when:
-        task.compile()
-
+        javaCompile.setToolChain(toolChain)
         then:
-        1 * toolResolver.resolveCompiler(_, {!null}) >> resolvedTool
-        1 * resolvedTool.get() >> compiler
-        1 * compiler.execute(!null) >> Stub(WorkResult)
+        javaCompile.toolChain == toolChain
     }
 }

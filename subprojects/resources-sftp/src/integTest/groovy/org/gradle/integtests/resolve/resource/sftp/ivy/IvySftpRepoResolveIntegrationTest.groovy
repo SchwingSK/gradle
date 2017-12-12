@@ -24,11 +24,18 @@ import org.junit.Rule
 class IvySftpRepoResolveIntegrationTest extends AbstractIvyRemoteRepoResolveIntegrationTest {
 
     @Rule
-    final SFTPServer server = new SFTPServer(this)
+    final SFTPServer server = new SFTPServer(temporaryFolder)
 
     @Override
     RepositoryServer getServer() {
         return server
+    }
+
+    def setup() {
+        // SFTP test fixture does not handle parallel resolution requests
+        executer.beforeExecute {
+            it.withArgument("--max-workers=1")
+        }
     }
 }
 

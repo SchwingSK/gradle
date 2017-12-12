@@ -16,8 +16,8 @@
 
 package org.gradle.api.internal.artifacts.ivyservice.resolveengine.store
 
-import org.gradle.api.internal.cache.BinaryStore
 import org.gradle.api.internal.file.TmpDirTemporaryFileProvider
+import org.gradle.cache.internal.BinaryStore
 import org.gradle.internal.concurrent.CompositeStoppable
 import spock.lang.Specification
 
@@ -82,12 +82,12 @@ class ResolutionResultsStoreFactoryTest extends Specification {
         def set2 = f.createStoreSet()
 
         expect:
-        set1.newModelStore().load({"1"} as org.gradle.internal.Factory) == "1"
-        set1.newModelStore().load({"2"} as org.gradle.internal.Factory) == "1"
-        set2.newModelStore().load({"3"} as org.gradle.internal.Factory) == "3"
+        set1.oldModelCache().load({"1"} as org.gradle.internal.Factory) == "1"
+        set1.oldModelCache().load({"2"} as org.gradle.internal.Factory) == "1"
+        set2.oldModelCache().load({"3"} as org.gradle.internal.Factory) == "3"
 
-        set1.oldModelStore().load({"1"} as org.gradle.internal.Factory) == "1"
-        set1.oldModelStore().load({"2"} as org.gradle.internal.Factory) == "1"
-        set2.oldModelStore().load({"3"} as org.gradle.internal.Factory) == "3"
+        set1.newModelCache().load({"1"} as org.gradle.internal.Factory) == "1"
+        set1.newModelCache().load({"2"} as org.gradle.internal.Factory) == "1"
+        set2.newModelCache().load({"3"} as org.gradle.internal.Factory) == "3"
     }
 }

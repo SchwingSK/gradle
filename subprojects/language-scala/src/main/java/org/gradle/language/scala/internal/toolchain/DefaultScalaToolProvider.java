@@ -16,8 +16,8 @@
 
 package org.gradle.language.scala.internal.toolchain;
 
-import org.gradle.api.internal.artifacts.dsl.dependencies.ProjectFinder;
-import org.gradle.api.internal.tasks.compile.daemon.CompilerDaemonManager;
+import org.gradle.api.internal.file.FileResolver;
+import org.gradle.workers.internal.WorkerDaemonFactory;
 import org.gradle.api.internal.tasks.scala.DaemonScalaCompiler;
 import org.gradle.api.internal.tasks.scala.NormalizingScalaCompiler;
 import org.gradle.api.internal.tasks.scala.ScalaJavaJointCompileSpec;
@@ -31,26 +31,30 @@ import java.io.File;
 import java.util.Set;
 
 public class DefaultScalaToolProvider implements ToolProvider {
-    public static final String DEFAULT_ZINC_VERSION = "0.3.5.3";
+    public static final String DEFAULT_ZINC_VERSION = "0.3.15";
 
-    private ProjectFinder projectFinder;
-    private final CompilerDaemonManager compilerDaemonManager;
+    private final File gradleUserHomeDir;
+    private final File daemonWorkingDir;
+    private final WorkerDaemonFactory workerDaemonFactory;
     private final Set<File> resolvedScalaClasspath;
     private final Set<File> resolvedZincClasspath;
+    private final FileResolver fileResolver;
 
-    public DefaultScalaToolProvider(ProjectFinder projectFinder, CompilerDaemonManager compilerDaemonManager, Set<File> resolvedScalaClasspath, Set<File> resolvedZincClasspath) {
-        this.projectFinder = projectFinder;
-        this.compilerDaemonManager = compilerDaemonManager;
+    public DefaultScalaToolProvider(File gradleUserHomeDir, File daemonWorkingDir, WorkerDaemonFactory workerDaemonFactory, FileResolver fileResolver, Set<File> resolvedScalaClasspath, Set<File> resolvedZincClasspath) {
+        this.gradleUserHomeDir = gradleUserHomeDir;
+        this.daemonWorkingDir = daemonWorkingDir;
+        this.workerDaemonFactory = workerDaemonFactory;
+        this.fileResolver = fileResolver;
         this.resolvedScalaClasspath = resolvedScalaClasspath;
         this.resolvedZincClasspath = resolvedZincClasspath;
     }
 
+    @Override
     @SuppressWarnings("unchecked")
     public <T extends CompileSpec> org.gradle.language.base.internal.compile.Compiler<T> newCompiler(Class<T> spec) {
         if (ScalaJavaJointCompileSpec.class.isAssignableFrom(spec)) {
-            File projectDir = projectFinder.getProject(":").getProjectDir();
-            Compiler<ScalaJavaJointCompileSpec> scalaCompiler = new ZincScalaCompiler(resolvedScalaClasspath, resolvedZincClasspath);
-            return (Compiler<T>) new NormalizingScalaCompiler(new DaemonScalaCompiler<ScalaJavaJointCompileSpec>(projectDir, scalaCompiler, compilerDaemonManager, resolvedZincClasspath));
+            Compiler<ScalaJavaJointCompileSpec> scalaCompiler = new ZincScalaCompiler(resolvedScalaClasspath, resolvedZincClasspath, gradleUserHomeDir);
+            return (Compiler<T>) new NormalizingScalaCompiler(new DaemonScalaCompiler<ScalaJavaJointCompileSpec>(daemonWorkingDir, scalaCompiler, workerDaemonFactory, resolvedZincClasspath, fileResolver));
         }
         throw new IllegalArgumentException(String.format("Cannot create Compiler for unsupported CompileSpec type '%s'", spec.getSimpleName()));
     }
@@ -60,10 +64,12 @@ public class DefaultScalaToolProvider implements ToolProvider {
         throw new IllegalArgumentException(String.format("Don't know how to provide tool of type %s.", toolType.getSimpleName()));
     }
 
+    @Override
     public boolean isAvailable() {
         return true;
     }
 
+    @Override
     public void explain(TreeVisitor<? super String> visitor) {
 
     }

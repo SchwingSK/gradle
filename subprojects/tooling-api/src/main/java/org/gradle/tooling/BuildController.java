@@ -16,10 +16,12 @@
 
 package org.gradle.tooling;
 
+import org.gradle.api.Action;
 import org.gradle.api.Incubating;
-import org.gradle.api.Nullable;
-import org.gradle.tooling.model.gradle.GradleBuild;
 import org.gradle.tooling.model.Model;
+import org.gradle.tooling.model.gradle.GradleBuild;
+
+import javax.annotation.Nullable;
 
 /**
  * Provides a {@link BuildAction} various ways to control a Gradle build and access information about the build.
@@ -111,4 +113,81 @@ public interface BuildController {
      */
     @Nullable
     <T> T findModel(Model target, Class<T> modelType);
+
+    /**
+     * Fetches a snapshot of the model of the given type using the given parameter.
+     *
+     * <p>See {@link #getModel(Model, Class, Class, Action)} for more details.
+     *
+     * @param modelType The model type.
+     * @param <T> The model type.
+     * @param parameterType The parameter type.
+     * @param <P> The parameter type.
+     * @param parameterInitializer Action to configure the parameter
+     * @return The model.
+     * @throws UnknownModelException When the target project does not support the requested model.
+     * @throws UnsupportedVersionException When the target project does not support the requested model or Gradle version does not support parametrized models.
+     *
+     * @since 4.4
+     */
+    <T, P> T getModel(Class<T> modelType, Class<P> parameterType, Action<? super P> parameterInitializer) throws UnsupportedVersionException, UnknownModelException;
+
+    /**
+     * Fetches a snapshot of the model of the given type using the given parameter, if available.
+     *
+     * <p>See {@link #getModel(Model, Class, Class, Action)} for more details.
+     *
+     * @param modelType The model type.
+     * @param <T> The model type.
+     * @param parameterType The parameter type.
+     * @param <P> The parameter type.
+     * @param parameterInitializer Action to configure the parameter
+     * @return The model.
+     *
+     * @since 4.4
+     */
+    @Nullable
+    <T, P> T findModel(Class<T> modelType, Class<P> parameterType, Action<? super P> parameterInitializer);
+
+    /**
+     * Fetches a snapshot of the model of the given type for the given element using the given parameter.
+     *
+     * <p>The parameter type must be an interface only with getters and setters and no nesting is supported.
+     * The Tooling API will create a proxy instance of this interface and use the initializer to run against
+     * that instance to configure it and then pass to the model builder.
+     * </p>
+     *
+     * <p>See {@link #getModel(Class)} for more details.
+     *
+     * @param target The target element, usually a project.
+     * @param modelType The model type.
+     * @param <T> The model type.
+     * @param parameterType The parameter type.
+     * @param <P> The parameter type.
+     * @param parameterInitializer Action to configure the parameter
+     * @return The model.
+     * @throws UnknownModelException When the target project does not support the requested model.
+     * @throws UnsupportedVersionException When the target project does not support the requested model or Gradle version does not support parametrized models.
+     *
+     * @since 4.4
+     */
+    <T, P> T getModel(Model target, Class<T> modelType, Class<P> parameterType, Action<? super P> parameterInitializer) throws UnsupportedVersionException, UnknownModelException;
+
+    /**
+     * Fetches a snapshot of the model of the given type for the given element using the given parameter, if available.
+     *
+     * <p>See {@link #getModel(Model, Class, Class, Action)} for more details.
+     *
+     * @param target The target element, usually a project.
+     * @param modelType The model type.
+     * @param <T> The model type.
+     * @param parameterType The parameter type.
+     * @param <P> The parameter type.
+     * @param parameterInitializer Action to configure the parameter
+     * @return The model.
+     *
+     * @since 4.4
+     */
+    @Nullable
+    <T, P> T findModel(Model target, Class<T> modelType, Class<P> parameterType, Action<? super P> parameterInitializer);
 }

@@ -17,12 +17,15 @@
 package org.gradle.integtests
 
 import org.gradle.api.internal.artifacts.ivyservice.CacheLayout
-import org.gradle.groovy.scripts.ScriptSource
-import org.gradle.groovy.scripts.UriScriptSource
 import org.gradle.integtests.fixtures.AbstractIntegrationTest
+import org.gradle.internal.hash.DefaultContentHasherFactory
+import org.gradle.internal.hash.DefaultFileHasher
+import org.gradle.internal.hash.DefaultStreamHasher
+import org.gradle.internal.hash.FileHasher
+import org.gradle.internal.hash.HashUtil
 import org.gradle.test.fixtures.file.TestFile
-import org.gradle.test.fixtures.server.http.MavenHttpRepository
 import org.gradle.test.fixtures.server.http.HttpServer
+import org.gradle.test.fixtures.server.http.MavenHttpRepository
 import org.gradle.util.GradleVersion
 import org.junit.Before
 import org.junit.Rule
@@ -30,8 +33,10 @@ import org.junit.Test
 
 import static org.junit.Assert.assertEquals
 
-public class CacheProjectIntegrationTest extends AbstractIntegrationTest {
+class CacheProjectIntegrationTest extends AbstractIntegrationTest {
     static final String TEST_FILE = "build/test.txt"
+
+    final FileHasher fileHasher = new DefaultFileHasher(new DefaultStreamHasher(new DefaultContentHasherFactory()))
 
     @Rule public final HttpServer server = new HttpServer()
 
@@ -54,10 +59,8 @@ public class CacheProjectIntegrationTest extends AbstractIntegrationTest {
         projectDir.mkdirs()
         userHomeDir = executer.gradleUserHomeDir
         buildFile = projectDir.file('build.gradle')
-        ScriptSource source = new UriScriptSource("build file", buildFile)
-        propertiesFile = userHomeDir.file("caches/$version/scripts/$source.className/ProjectScript/no_buildscript/cache.properties")
-        classFile = userHomeDir.file("caches/$version/scripts/$source.className/ProjectScript/no_buildscript/classes/${source.className}.class")
-        artifactsCache = projectDir.file(".gradle/$version/taskArtifacts/taskArtifacts.bin")
+
+        artifactsCache = projectDir.file(".gradle/$version/taskHistory/taskHistory.bin")
 
         repo = new MavenHttpRepository(server, mavenRepo)
 
@@ -65,6 +68,15 @@ public class CacheProjectIntegrationTest extends AbstractIntegrationTest {
         repo.module("commons-lang", "commons-lang", "2.6").publish().allowAll()
 
         server.start()
+    }
+
+    private void updateCaches() {
+        String version = GradleVersion.current().version
+        def hash = HashUtil.compactStringFor(fileHasher.hash(buildFile))
+        String dirName = userHomeDir.file("caches/$version/scripts/$hash/proj").list()[0]
+        String baseDir = "caches/$version/scripts/$hash/proj/$dirName"
+        propertiesFile = userHomeDir.file("$baseDir/cache.properties")
+        classFile = userHomeDir.file("$baseDir/classes/_BuildScript_.class")
     }
 
     @Test
@@ -81,8 +93,9 @@ public class CacheProjectIntegrationTest extends AbstractIntegrationTest {
         classFile.assertHasChangedSince(classFileSnapshot)
         classFileSnapshot = classFile.snapshot()
 
+        executer.expectDeprecationWarning().requireGradleDistribution()
         testBuild("newTask", "I am new", "--recompile-scripts")
-        classFile.assertHasChangedSince(classFileSnapshot)
+        classFile.assertContentsHaveNotChangedSince(classFileSnapshot)
     }
 
     @Test
@@ -111,6 +124,7 @@ public class CacheProjectIntegrationTest extends AbstractIntegrationTest {
         assert dependenciesCache.isDirectory() && dependenciesCache.listFiles().length > 0
 
         modifyLargeBuildScript()
+        executer.expectDeprecationWarning().requireGradleDistribution()
         testBuild("newTask", "I am new", "--recompile-scripts")
         assert dependenciesCache.isDirectory() && dependenciesCache.listFiles().length > 0
     }
@@ -136,6 +150,7 @@ public class CacheProjectIntegrationTest extends AbstractIntegrationTest {
     private def testBuild(String taskName, String expected, String... args) {
         executer.inDirectory(projectDir).withTasks(taskName).withArguments(args).run()
         assertEquals(expected, projectDir.file(TEST_FILE).text)
+        updateCaches()
         classFile.assertIsFile()
         propertiesFile.assertIsFile()
         artifactsCache.assertIsFile()

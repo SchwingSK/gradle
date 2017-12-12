@@ -19,32 +19,43 @@ package org.gradle.api.internal.artifacts.ivyservice.resolveengine.graph;
 import java.util.Arrays;
 import java.util.List;
 
-class CompositeDependencyGraphVisitor implements DependencyGraphVisitor {
+public class CompositeDependencyGraphVisitor implements DependencyGraphVisitor {
     private final List<DependencyGraphVisitor> visitors;
 
-    CompositeDependencyGraphVisitor(DependencyGraphVisitor... visitors) {
+    public CompositeDependencyGraphVisitor(DependencyGraphVisitor... visitors) {
         this.visitors = Arrays.asList(visitors);
     }
 
-    public void start(DependencyGraphBuilder.ConfigurationNode root) {
+    @Override
+    public void start(DependencyGraphNode root) {
         for (DependencyGraphVisitor visitor : visitors) {
             visitor.start(root);
         }
     }
 
-    public void visitNode(DependencyGraphBuilder.ConfigurationNode resolvedConfiguration) {
+    @Override
+    public void visitNode(DependencyGraphNode node) {
         for (DependencyGraphVisitor visitor : visitors) {
-            visitor.visitNode(resolvedConfiguration);
+            visitor.visitNode(node);
         }
     }
 
-    public void visitEdge(DependencyGraphBuilder.ConfigurationNode resolvedConfiguration) {
+    @Override
+    public void visitSelector(DependencyGraphSelector selector) {
         for (DependencyGraphVisitor visitor : visitors) {
-            visitor.visitEdge(resolvedConfiguration);
+            visitor.visitSelector(selector);
         }
     }
 
-    public void finish(DependencyGraphBuilder.ConfigurationNode root) {
+    @Override
+    public void visitEdges(DependencyGraphNode node) {
+        for (DependencyGraphVisitor visitor : visitors) {
+            visitor.visitEdges(node);
+        }
+    }
+
+    @Override
+    public void finish(DependencyGraphNode root) {
         for (DependencyGraphVisitor visitor : visitors) {
             visitor.finish(root);
         }

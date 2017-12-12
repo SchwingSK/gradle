@@ -13,34 +13,29 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.gradle.api.plugins.osgi;
+package org.gradle.api.plugins.osgi
 
-
-import org.gradle.api.Project
 import org.gradle.api.plugins.JavaPlugin
-import org.gradle.util.TestUtil
-import spock.lang.Specification
-import org.gradle.api.tasks.SourceSet
+import org.gradle.test.fixtures.AbstractProjectBuilderSpec
 
-public class OsgiPluginTest extends Specification {
-    private final Project project = TestUtil.createRootProject();
-    private final OsgiPlugin osgiPlugin = new OsgiPlugin();
-    
-    public void appliesTheJavaPlugin() {
-        osgiPlugin.apply(project);
+class OsgiPluginTest extends AbstractProjectBuilderSpec {
+    private final OsgiPlugin osgiPlugin = new OsgiPlugin()
+
+    void appliesTheJavaPlugin() {
+        osgiPlugin.apply(project)
 
         expect:
         project.plugins.hasPlugin('java-base')
         project.convention.plugins.osgi instanceof OsgiPluginConvention
     }
 
-    public void addsAnOsgiManifestToTheDefaultJar() {
+    void addsAnOsgiManifestToTheDefaultJar() {
         project.apply(plugin: 'java')
-        osgiPlugin.apply(project);
-        
+        osgiPlugin.apply(project)
+
         expect:
         OsgiManifest osgiManifest = project.jar.manifest
         osgiManifest.classpath == project.configurations."$JavaPlugin.RUNTIME_CONFIGURATION_NAME"
-        osgiManifest.classesDir == project.sourceSets."$SourceSet.MAIN_SOURCE_SET_NAME".output.classesDir
+        osgiManifest.classesDir == temporaryFolder.file("build/osgi-classes")
     }
 }

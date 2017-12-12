@@ -17,16 +17,23 @@
 package org.gradle.api.internal.artifacts.repositories
 
 import org.gradle.api.artifacts.dsl.RepositoryHandler
+import org.gradle.api.internal.ExperimentalFeatures
+import org.gradle.api.internal.artifacts.ImmutableModuleIdentifierFactory
 import org.gradle.api.internal.artifacts.dsl.DefaultRepositoryHandler
+import org.gradle.api.internal.artifacts.ivyservice.IvyContextManager
 import org.gradle.api.internal.artifacts.ivyservice.ivyresolve.parser.MetaDataParser
-import org.gradle.api.internal.artifacts.ivyservice.ivyresolve.strategy.ResolverStrategy
+import org.gradle.api.internal.artifacts.ivyservice.ivyresolve.parser.ModuleMetadataParser
 import org.gradle.api.internal.artifacts.mvnsettings.LocalMavenRepositoryLocator
 import org.gradle.api.internal.artifacts.repositories.transport.RepositoryTransportFactory
 import org.gradle.api.internal.file.FileResolver
 import org.gradle.api.internal.filestore.ivy.ArtifactIdentifierFileStore
-import org.gradle.internal.reflect.DirectInstantiator
+import org.gradle.internal.authentication.AuthenticationSchemeRegistry
+import org.gradle.internal.authentication.DefaultAuthenticationSchemeRegistry
+import org.gradle.internal.logging.progress.ProgressLoggerFactory
+import org.gradle.internal.resource.cached.ExternalResourceFileStore
+import org.gradle.internal.resource.local.FileResourceRepository
 import org.gradle.internal.resource.local.LocallyAvailableResourceFinder
-import org.gradle.logging.ProgressLoggerFactory
+import org.gradle.util.TestUtil
 import spock.lang.Specification
 
 class DefaultBaseRepositoryFactoryTest extends Specification {
@@ -36,18 +43,36 @@ class DefaultBaseRepositoryFactoryTest extends Specification {
     final LocallyAvailableResourceFinder locallyAvailableResourceFinder = Mock()
     final ProgressLoggerFactory progressLoggerFactory = Mock()
     final ArtifactIdentifierFileStore artifactIdentifierFileStore = Stub()
-    final ResolverStrategy resolverStrategy = Mock()
+    final ExternalResourceFileStore externalResourceFileStore = Stub()
     final MetaDataParser pomParser = Mock()
+    final ModuleMetadataParser metadataParser = Mock()
+    final ivyContextManager = Mock(IvyContextManager)
+    final AuthenticationSchemeRegistry authenticationSchemeRegistry = new DefaultAuthenticationSchemeRegistry()
+    final ImmutableModuleIdentifierFactory moduleIdentifierFactory = Mock()
 
     final DefaultBaseRepositoryFactory factory = new DefaultBaseRepositoryFactory(
-            localMavenRepoLocator, fileResolver, DirectInstantiator.INSTANCE, transportFactory, locallyAvailableResourceFinder,
-            resolverStrategy, artifactIdentifierFileStore, pomParser
+        localMavenRepoLocator, fileResolver, transportFactory, locallyAvailableResourceFinder,
+        artifactIdentifierFileStore, externalResourceFileStore, pomParser, metadataParser, authenticationSchemeRegistry, ivyContextManager, moduleIdentifierFactory,
+        TestUtil.instantiatorFactory(), Mock(FileResourceRepository), new ExperimentalFeatures()
     )
 
     def testCreateFlatDirResolver() {
         expect:
         def repo =factory.createFlatDirRepository()
         repo instanceof DefaultFlatDirArtifactRepository
+    }
+
+    def testCreateGoogleRepo() {
+        given:
+        def googleUrl = new URI(DefaultRepositoryHandler.GOOGLE_URL)
+
+        when:
+        fileResolver.resolveUri(DefaultRepositoryHandler.GOOGLE_URL) >> googleUrl
+
+        then:
+        def repo = factory.createGoogleRepository()
+        repo instanceof DefaultMavenArtifactRepository
+        repo.url == googleUrl
     }
 
     def testCreateLocalMavenRepo() {

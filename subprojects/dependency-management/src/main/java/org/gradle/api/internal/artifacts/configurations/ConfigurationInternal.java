@@ -16,11 +16,40 @@
 package org.gradle.api.internal.artifacts.configurations;
 
 import org.gradle.api.artifacts.Configuration;
+import org.gradle.api.internal.artifacts.ResolveContext;
+import org.gradle.api.internal.attributes.AttributeContainerInternal;
+import org.gradle.util.Path;
 
-public interface ConfigurationInternal extends Configuration, DependencyMetaDataProvider {
+public interface ConfigurationInternal extends ResolveContext, Configuration, DependencyMetaDataProvider {
+    enum InternalState {UNRESOLVED, GRAPH_RESOLVED, ARTIFACTS_RESOLVED}
+
+    @Override
     ResolutionStrategyInternal getResolutionStrategy();
+
+    @Override
+    AttributeContainerInternal getAttributes();
 
     String getPath();
 
-    void includedInResolveResult();
+    Path getIdentityPath();
+
+    /**
+     * Runs any registered dependency actions for this Configuration, and any parent Configuration.
+     * Actions may mutate the dependency set for this configuration.
+     * After execution, all actions are de-registered, so execution will only occur once.
+     */
+    void runDependencyActions();
+
+    void markAsObserved(InternalState requestedState);
+
+    void addMutationValidator(MutationValidator validator);
+
+    void removeMutationValidator(MutationValidator validator);
+
+    /**
+     * Converts this configuration to an {@link OutgoingVariant} view. The view may not necessarily be immutable.
+     */
+    OutgoingVariant convertToOutgoingVariant();
+
+    void preventFromFurtherMutation();
 }

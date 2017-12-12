@@ -15,51 +15,69 @@
  */
 
 package org.gradle.language.c.tasks
-import org.gradle.language.base.internal.compile.Compiler
+
+import org.gradle.api.internal.file.collections.SimpleFileCollection
 import org.gradle.api.tasks.WorkResult
+import org.gradle.language.base.internal.compile.Compiler
 import org.gradle.nativeplatform.platform.internal.ArchitectureInternal
 import org.gradle.nativeplatform.platform.internal.NativePlatformInternal
 import org.gradle.nativeplatform.platform.internal.OperatingSystemInternal
-import org.gradle.nativeplatform.toolchain.internal.PlatformToolProvider
 import org.gradle.nativeplatform.toolchain.internal.NativeToolChainInternal
+import org.gradle.nativeplatform.toolchain.internal.PlatformToolProvider
+import org.gradle.nativeplatform.toolchain.internal.PreCompiledHeader
 import org.gradle.nativeplatform.toolchain.internal.compilespec.CCompileSpec
-import org.gradle.nativeplatform.toolchain.internal.compilespec.CppCompileSpec
-import org.gradle.test.fixtures.file.TestNameTestDirectoryProvider
+import org.gradle.test.fixtures.AbstractProjectBuilderSpec
 import org.gradle.util.TestUtil
-import spock.lang.Specification
 
-class CCompileTest extends Specification {
-    def testDir = new TestNameTestDirectoryProvider().testDirectory
-    CCompile cCompile = TestUtil.createTask(CCompile)
+class CCompileTest extends AbstractProjectBuilderSpec {
+
+    CCompile cCompile
     def toolChain = Mock(NativeToolChainInternal)
     def platform = Mock(NativePlatformInternal)
     def platformToolChain = Mock(PlatformToolProvider)
-    Compiler<CppCompileSpec> cCompiler = Mock(Compiler)
+    Compiler<CCompileSpec> cCompiler = Mock(Compiler)
+    def pch = Mock(PreCompiledHeader)
+
+    def setup() {
+        cCompile = TestUtil.createTask(CCompile, project)
+    }
 
     def "executes using the C Compiler"() {
-        def sourceFile = testDir.createFile("sourceFile")
+        def sourceFile = temporaryFolder.createFile("sourceFile")
         def result = Mock(WorkResult)
+
         when:
         cCompile.toolChain = toolChain
         cCompile.targetPlatform = platform
         cCompile.compilerArgs = ["arg"]
         cCompile.macros = [def: "value"]
-        cCompile.objectFileDir = testDir.file("outputFile")
+        cCompile.objectFileDir = temporaryFolder.file("outputFile")
         cCompile.source sourceFile
-        cCompile.execute()
+        cCompile.setPreCompiledHeader pch
+        execute(cCompile)
 
         then:
         _ * toolChain.outputType >> "c"
+        platform.getName() >> "testPlatform"
         platform.getArchitecture() >> Mock(ArchitectureInternal) { getName() >> "arch" }
         platform.getOperatingSystem() >> Mock(OperatingSystemInternal) { getName() >> "os" }
-        1 * toolChain.select(platform) >> platformToolChain
-        1 * platformToolChain.newCompiler({CCompileSpec.class.isAssignableFrom(it)}) >> cCompiler
+        9 * toolChain.select(platform) >> platformToolChain
+        9 * platformToolChain.newCompiler({CCompileSpec.class.isAssignableFrom(it)}) >> cCompiler
+        pch.objectFile >> temporaryFolder.file("pchObjectFile").createFile()
+        pch.name >> "testPch"
+        pch.projectPath >> ":"
+        pch.includeString >> "header"
+        pch.prefixHeaderFile >> temporaryFolder.file("prefixHeader").createFile()
+        pch.pchObjects >> new SimpleFileCollection()
         1 * cCompiler.execute({ CCompileSpec spec ->
             assert spec.sourceFiles*.name== ["sourceFile"]
             assert spec.args == ['arg']
             assert spec.allArgs == ['arg']
             assert spec.macros == [def: 'value']
             assert spec.objectFileDir.name == "outputFile"
+            assert spec.preCompiledHeader == "header"
+            assert spec.prefixHeaderFile.name == "prefixHeader"
+            assert spec.preCompiledHeaderObjectFile.name == "pchObjectFile"
             true
         }) >> result
         1 * result.didWork >> true

@@ -19,16 +19,18 @@ package org.gradle.internal.resolve.result;
 import org.gradle.api.artifacts.ModuleVersionIdentifier;
 import org.gradle.api.artifacts.component.ComponentIdentifier;
 import org.gradle.api.artifacts.result.ComponentSelectionReason;
+import org.gradle.api.internal.artifacts.ResolvedVersionConstraint;
 import org.gradle.api.internal.artifacts.ivyservice.resolveengine.result.VersionSelectionReasons;
-import org.gradle.internal.component.model.ComponentResolveMetaData;
+import org.gradle.internal.component.model.ComponentResolveMetadata;
 import org.gradle.internal.resolve.ModuleVersionResolveException;
 
 public class DefaultBuildableComponentIdResolveResult extends DefaultResourceAwareResolveResult implements BuildableComponentIdResolveResult {
     private ModuleVersionResolveException failure;
-    private ComponentResolveMetaData metaData;
+    private ComponentResolveMetadata metaData;
     private ComponentIdentifier id;
     private ModuleVersionIdentifier moduleVersionId;
     private ComponentSelectionReason selectionReason;
+    private ResolvedVersionConstraint versionConstraint;
 
     public boolean hasResult() {
         return id != null || failure != null;
@@ -56,7 +58,7 @@ public class DefaultBuildableComponentIdResolveResult extends DefaultResourceAwa
         this.selectionReason = reason;
     }
 
-    public ComponentResolveMetaData getMetaData() {
+    public ComponentResolveMetadata getMetaData() {
         assertResolved();
         return metaData;
     }
@@ -67,7 +69,7 @@ public class DefaultBuildableComponentIdResolveResult extends DefaultResourceAwa
         this.moduleVersionId = moduleVersionIdentifier;
     }
 
-    public void resolved(ComponentResolveMetaData metaData) {
+    public void resolved(ComponentResolveMetadata metaData) {
         resolved(metaData.getComponentId(), metaData.getId());
         this.metaData = metaData;
     }
@@ -92,5 +94,16 @@ public class DefaultBuildableComponentIdResolveResult extends DefaultResourceAwa
         id = null;
         moduleVersionId = null;
         selectionReason = VersionSelectionReasons.REQUESTED;
+        versionConstraint = null;
+    }
+
+    @Override
+    public ResolvedVersionConstraint getResolvedVersionConstraint() {
+        return versionConstraint;
+    }
+
+    @Override
+    public void setResolvedVersionConstraint(ResolvedVersionConstraint versionConstraint) {
+        this.versionConstraint = versionConstraint;
     }
 }

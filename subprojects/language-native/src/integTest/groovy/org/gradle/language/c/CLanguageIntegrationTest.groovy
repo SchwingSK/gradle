@@ -14,6 +14,7 @@
  * limitations under the License.
  */
 package org.gradle.language.c
+
 import org.gradle.language.AbstractNativeLanguageIntegrationTest
 import org.gradle.nativeplatform.fixtures.app.CCompilerDetectingTestApp
 import org.gradle.nativeplatform.fixtures.app.CHelloWorldApp
@@ -22,7 +23,7 @@ import spock.lang.Issue
 import spock.lang.Unroll
 
 import static org.gradle.util.Matchers.containsText
-// TODO:DAZ Some of these tests should apply to all single-language integration tests
+
 class CLanguageIntegrationTest extends AbstractNativeLanguageIntegrationTest {
 
     HelloWorldApp helloWorldApp = new CHelloWorldApp()
@@ -44,12 +45,12 @@ class CLanguageIntegrationTest extends AbstractNativeLanguageIntegrationTest {
 
         expect:
         succeeds "mainExecutable"
-        executable("build/binaries/mainExecutable/main").exec().out == app.expectedOutput(toolChain)
+        executable("build/exe/main/main").exec().out == app.expectedOutput(toolChain)
     }
 
     def "can manually define C source sets"() {
         given:
-        helloWorldApp.getLibraryHeader().writeToDir(file("src/shared"))
+        helloWorldApp.library.headerFiles.each { it.writeToDir(file("src/shared")) }
 
         file("src/main/c/main.c") << helloWorldApp.mainSource.content
         file("src/main/c2/hello.c") << helloWorldApp.librarySources[0].content
@@ -89,7 +90,7 @@ class CLanguageIntegrationTest extends AbstractNativeLanguageIntegrationTest {
         run "mainExecutable"
 
         then:
-        def mainExecutable = executable("build/binaries/mainExecutable/main")
+        def mainExecutable = executable("build/exe/main/main")
         mainExecutable.assertExists()
         mainExecutable.exec().out == helloWorldApp.englishOutput
     }
@@ -97,7 +98,7 @@ class CLanguageIntegrationTest extends AbstractNativeLanguageIntegrationTest {
     def "uses headers co-located with sources"() {
         given:
         // Write headers so they sit with sources
-        helloWorldApp.allFiles.each {
+        helloWorldApp.files.each {
             it.writeToFile(file("src/main/c/${it.name}"))
         }
         buildFile << """
@@ -116,7 +117,7 @@ model {
         run "mainExecutable"
 
         then:
-        def mainExecutable = executable("build/binaries/mainExecutable/main")
+        def mainExecutable = executable("build/exe/main/main")
         mainExecutable.assertExists()
         mainExecutable.exec().out == helloWorldApp.englishOutput
     }
@@ -144,7 +145,7 @@ model {
         run "mainExecutable"
 
         then:
-        def mainExecutable = executable("build/binaries/mainExecutable/main")
+        def mainExecutable = executable("build/exe/main/main")
         mainExecutable.assertExists()
         mainExecutable.exec().out == helloWorldApp.getCustomOutput(output)
 
@@ -207,7 +208,7 @@ model {
 """
         expect:
         fails "mainExecutable"
-        failure.assertHasDescription("Execution failed for task ':compileMainExecutableMainC'.");
+        failure.assertHasDescription("Execution failed for task ':compileMainExecutableMainC'.")
         failure.assertHasCause("A build operation failed.")
         failure.assertThatCause(containsText("C compiler failed while compiling broken.c"))
     }
@@ -234,7 +235,7 @@ model {
 
         expect:
         fails "mainExecutable"
-        failure.assertHasDescription("Execution failed for task ':compileMainExecutableMainC'.");
+        failure.assertHasDescription("Execution failed for task ':compileMainExecutableMainC'.")
         failure.assertHasCause("Multiple build operations failed.")
         (1..brokenFileCount).each {
             failure.assertThatCause(containsText("C compiler failed while compiling broken${it}.c"))

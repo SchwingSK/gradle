@@ -24,17 +24,17 @@ import org.gradle.api.artifacts.Dependency;
 import org.gradle.api.artifacts.ResolveException;
 import org.gradle.api.artifacts.dsl.DependencyHandler;
 import org.gradle.api.internal.file.FileResolver;
-import org.gradle.api.internal.tasks.compile.daemon.CompilerDaemonManager;
-import org.gradle.internal.Factory;
 import org.gradle.internal.text.TreeFormatter;
-import org.gradle.language.base.internal.compile.*;
+import org.gradle.language.base.internal.compile.CompileSpec;
 import org.gradle.play.internal.javascript.GoogleClosureCompiler;
 import org.gradle.play.internal.routes.RoutesCompilerFactory;
 import org.gradle.play.internal.twirl.TwirlCompilerFactory;
 import org.gradle.play.platform.PlayPlatform;
-import org.gradle.process.internal.WorkerProcessBuilder;
+import org.gradle.process.internal.worker.WorkerProcessFactory;
+import org.gradle.process.internal.worker.child.WorkerDirectoryProvider;
 import org.gradle.util.CollectionUtils;
 import org.gradle.util.TreeVisitor;
+import org.gradle.workers.internal.WorkerDaemonFactory;
 
 import java.io.File;
 import java.util.List;
@@ -42,33 +42,38 @@ import java.util.Set;
 
 public class DefaultPlayToolChain implements PlayToolChainInternal {
     private FileResolver fileResolver;
-    private CompilerDaemonManager compilerDaemonManager;
+    private WorkerDaemonFactory workerDaemonFactory;
     private final ConfigurationContainer configurationContainer;
     private final DependencyHandler dependencyHandler;
-    private final Factory<WorkerProcessBuilder> workerProcessBuilderFactory;
+    private final WorkerProcessFactory workerProcessBuilderFactory;
+    private final WorkerDirectoryProvider workerDirectoryProvider;
 
-    public DefaultPlayToolChain(FileResolver fileResolver, CompilerDaemonManager compilerDaemonManager, ConfigurationContainer configurationContainer, DependencyHandler dependencyHandler, Factory<WorkerProcessBuilder> workerProcessBuilderFactory) {
+    public DefaultPlayToolChain(FileResolver fileResolver, WorkerDaemonFactory workerDaemonFactory, ConfigurationContainer configurationContainer, DependencyHandler dependencyHandler, WorkerProcessFactory workerProcessBuilderFactory, WorkerDirectoryProvider workerDirectoryProvider) {
         this.fileResolver = fileResolver;
-        this.compilerDaemonManager = compilerDaemonManager;
+        this.workerDaemonFactory = workerDaemonFactory;
         this.configurationContainer = configurationContainer;
         this.dependencyHandler = dependencyHandler;
         this.workerProcessBuilderFactory = workerProcessBuilderFactory;
+        this.workerDirectoryProvider = workerDirectoryProvider;
     }
 
+    @Override
     public String getName() {
-        return String.format("PlayToolchain");
+        return "PlayToolchain";
     }
 
+    @Override
     public String getDisplayName() {
-        return String.format("Default Play Toolchain");
+        return "Default Play Toolchain";
     }
 
+    @Override
     public PlayToolProvider select(PlayPlatform targetPlatform) {
         try {
-            Set<File> twirlClasspath = resolveToolClasspath(TwirlCompilerFactory.createAdapter(targetPlatform).getDependencyNotation()).resolve();
+            Set<File> twirlClasspath = resolveToolClasspath(TwirlCompilerFactory.createAdapter(targetPlatform).getDependencyNotation().toArray()).resolve();
             Set<File> routesClasspath = resolveToolClasspath(RoutesCompilerFactory.createAdapter(targetPlatform).getDependencyNotation()).resolve();
             Set<File> javascriptClasspath = resolveToolClasspath(GoogleClosureCompiler.getDependencyNotation()).resolve();
-            return new DefaultPlayToolProvider(fileResolver, compilerDaemonManager, configurationContainer, dependencyHandler, workerProcessBuilderFactory, targetPlatform, twirlClasspath, routesClasspath, javascriptClasspath);
+            return new DefaultPlayToolProvider(fileResolver, workerDirectoryProvider.getIdleWorkingDirectory(), workerDaemonFactory, workerProcessBuilderFactory, targetPlatform, twirlClasspath, routesClasspath, javascriptClasspath);
         } catch (ResolveException e) {
             return new UnavailablePlayToolProvider(e);
         }
@@ -80,7 +85,7 @@ public class DefaultPlayToolChain implements PlayToolChainInternal {
                 return dependencyHandler.create(dependencyNotation);
             }
         });
-        Dependency[] dependenciesArray = dependencies.toArray(new Dependency[dependencies.size()]);
+        Dependency[] dependenciesArray = dependencies.toArray(new Dependency[0]);
         return configurationContainer.detachedConfiguration(dependenciesArray);
     }
 

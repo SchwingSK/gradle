@@ -22,11 +22,12 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 
 public class WindowsConsoleDetector implements ConsoleDetector {
+    @Override
     public ConsoleMetaData getConsole() {
         // Use Jansi's detection mechanism
         try {
             new WindowsAnsiOutputStream(new ByteArrayOutputStream());
-            return new FallbackConsoleMetaData();
+            return FallbackConsoleMetaData.INSTANCE;
         } catch (IOException ignore) {
             // Not attached to a console
             return null;

@@ -15,198 +15,201 @@
  */
 package org.gradle.integtests.resolve.maven
 
-import org.gradle.integtests.fixtures.AbstractDependencyResolutionTest
-import org.gradle.util.Requires
-import org.gradle.util.TestPrecondition
+import org.gradle.integtests.fixtures.GradleMetadataResolveRunner
+import org.gradle.integtests.fixtures.RequiredFeature
+import org.gradle.integtests.fixtures.RequiredFeatures
+import org.gradle.integtests.resolve.AbstractModuleDependencyResolveTest
 
-class MavenDependencyResolveIntegrationTest extends AbstractDependencyResolutionTest {
+@RequiredFeatures(
+    @RequiredFeature(feature = GradleMetadataResolveRunner.REPOSITORY_TYPE, value = "maven")
+)
+class MavenDependencyResolveIntegrationTest extends AbstractModuleDependencyResolveTest {
+
+    String getRootProjectName() { 'testproject' }
+
     def "dependency includes main artifact and runtime dependencies of referenced module"() {
         given:
-        def module = mavenRepo().module("org.gradle", "test", "1.45")
-        module.dependsOn("org.gradle", "other", "preview-1")
-        module.artifact(classifier: 'classifier')
-        module.publish()
-        mavenRepo().module("org.gradle", "other", "preview-1").publish()
+        repository {
+            'org.gradle:other:preview-1'()
+            'org.gradle:test:1.45' {
+                dependsOn 'org.gradle:other:preview-1'
+                withModule {
+                    artifact(classifier: 'classifier') // ignored
+                }
+            }
+        }
 
         and:
-        settingsFile << """
-rootProject.name = 'testproject'
-"""
-
         buildFile << """
 group = 'org.gradle'
 version = '1.0'
-repositories { maven { url "${mavenRepo().uri}" } }
-configurations { compile }
 dependencies {
-    compile "org.gradle:test:1.45"
-}
-
-task check << {
-    assert configurations.compile.collect { it.name } == ['test-1.45.jar', 'other-preview-1.jar']
-    def result = configurations.compile.incoming.resolutionResult
-
-    // Check root component
-    def rootId = result.root.id
-    assert rootId instanceof ProjectComponentIdentifier
-    def rootPublishedAs = result.root.moduleVersion
-    assert rootPublishedAs.group == 'org.gradle'
-    assert rootPublishedAs.name == 'testproject'
-    assert rootPublishedAs.version == '1.0'
-
-    // Check external module components
-    def externalComponents = result.root.dependencies.selected.findAll { it.id instanceof ModuleComponentIdentifier }
-    assert externalComponents.size() == 1
-    def selectedExternalComponent = externalComponents[0]
-    assert selectedExternalComponent.id.group == 'org.gradle'
-    assert selectedExternalComponent.id.module == 'test'
-    assert selectedExternalComponent.id.version == '1.45'
-    assert selectedExternalComponent.moduleVersion.group == 'org.gradle'
-    assert selectedExternalComponent.moduleVersion.name == 'test'
-    assert selectedExternalComponent.moduleVersion.version == '1.45'
-
-    // Check external dependencies
-    def externalDependencies = result.root.dependencies.requested.findAll { it instanceof ModuleComponentSelector }
-    assert externalDependencies.size() == 1
-    def requestedExternalDependency = externalDependencies[0]
-    assert requestedExternalDependency.group == 'org.gradle'
-    assert requestedExternalDependency.module == 'test'
-    assert requestedExternalDependency.version == '1.45'
+    conf "org.gradle:test:1.45"
 }
 """
 
+        repositoryInteractions {
+            'org.gradle:test:1.45' {
+                expectGetMetadata()
+                expectGetArtifact()
+            }
+            'org.gradle:other:preview-1' {
+                expectGetMetadata()
+                expectGetArtifact()
+            }
+        }
+
         expect:
-        succeeds "check"
+        succeeds "checkDep"
+        resolve.expectGraph {
+            root(':', 'org.gradle:testproject:1.0') {
+                module("org.gradle:test:1.45") {
+                    module("org.gradle:other:preview-1")
+                }
+            }
+        }
     }
 
     def "dependency that references a classifier includes the matching artifact only plus the runtime dependencies of referenced module"() {
         given:
-        def module = mavenRepo().module("org.gradle", "test", "1.45")
-        module.dependsOn("org.gradle", "other", "preview-1")
-        module.artifact(classifier: 'classifier')
-        module.artifact(classifier: 'some-other')
-        module.publish()
-        mavenRepo().module("org.gradle", "other", "preview-1").publish()
+        repository {
+            'org.gradle' {
+                'other' {
+                    'preview-1'()
+                }
+                'test' {
+                    '1.45' {
+                        dependsOn 'org.gradle:other:preview-1'
+                        withModule {
+                            artifact(classifier: 'classifier')
+                            artifact(classifier: 'some-other') // ignored
+                        }
+                    }
+                }
+            }
+        }
 
         and:
         buildFile << """
-repositories { maven { url "${mavenRepo().uri}" } }
-configurations { compile }
+group = 'org.gradle'
+version = '1.0'
 dependencies {
-    compile "org.gradle:test:1.45:classifier"
-}
-
-task check << {
-    assert configurations.compile.collect { it.name } == ['test-1.45-classifier.jar', 'other-preview-1.jar']
+    conf "org.gradle:test:1.45:classifier"
 }
 """
 
+        repositoryInteractions {
+            'org.gradle:test:1.45' {
+                expectGetMetadata()
+                expectGetArtifact(classifier: 'classifier')
+            }
+            'org.gradle:other:preview-1' {
+                expectGetMetadata()
+                expectGetArtifact()
+            }
+        }
+
         expect:
-        succeeds "check"
+        succeeds "checkDep"
+        resolve.expectGraph {
+            root(':', 'org.gradle:testproject:1.0') {
+                module("org.gradle:test:1.45") {
+                    artifact(classifier: 'classifier')
+                    module("org.gradle:other:preview-1")
+                }
+            }
+        }
     }
 
     def "dependency that references an artifact includes the matching artifact only plus the runtime dependencies of referenced module"() {
         given:
-        def module = mavenRepo().module("org.gradle", "test", "1.45")
-        module.dependsOn("org.gradle", "other", "preview-1")
-        module.artifact(classifier: 'classifier')
-        module.publish()
-        mavenRepo().module("org.gradle", "other", "preview-1").publish()
+        repository {
+            'org.gradle' {
+                'other' {
+                    'preview-1'()
+                }
+                'test' {
+                    '1.45' {
+                        dependsOn 'org.gradle:other:preview-1'
+                        withModule {
+                            artifact(type: 'aar', classifier: 'classifier')
+                        }
+                    }
+                }
+            }
+        }
 
         and:
         buildFile << """
-repositories { maven { url "${mavenRepo().uri}" } }
-configurations { compile }
+group = 'org.gradle'
+version = '1.0'
 dependencies {
-    compile ("org.gradle:test:1.45") {
+    conf ("org.gradle:test:1.45") {
         artifact {
             name = 'test'
-            type = 'jar'
+            type = 'aar'
             classifier = 'classifier'
         }
     }
 }
-
-task check << {
-    assert configurations.compile.collect { it.name } == ['test-1.45-classifier.jar', 'other-preview-1.jar']
-}
 """
+        repositoryInteractions {
+            'org.gradle:test:1.45' {
+                expectGetMetadata()
+                expectGetArtifact(type: 'aar', classifier: 'classifier')
+            }
+            'org.gradle:other:preview-1' {
+                expectGetMetadata()
+                expectGetArtifact()
+            }
+        }
 
         expect:
-        succeeds "check"
+        succeeds "checkDep"
+        resolve.expectGraph {
+            root(':', 'org.gradle:testproject:1.0') {
+                module("org.gradle:test:1.45") {
+                    artifact(type: 'aar', classifier: 'classifier')
+                    module("org.gradle:other:preview-1")
+                }
+            }
+        }
     }
 
-    @Requires(TestPrecondition.ONLINE)
-    def "resolves dependencies on real projects"() {
-        // Hibernate core brings in conflicts, exclusions and root poms
-        // Add a direct dependency on an earlier version of commons-collection than required by hibernate core
-        // Logback classic depends on a later version of slf4j-api than required by hibernate core
-
+    @RequiredFeatures(
+        // only available with Maven metadata: Gradle metadata does not support "optional"
+        @RequiredFeature(feature = GradleMetadataResolveRunner.GRADLE_METADATA, value = "false")
+    )
+    def "does not include optional dependencies of maven module"() {
         given:
+        repository {
+            'org.gradle:test:1.45' {
+                dependsOn group:'org.gradle', artifact:'i-do-not-exist', version:'1.45', optional: 'true'
+                dependsOn group:'org.gradle', artifact:'i-do-not-exist', version:'1.45', optional: 'true', scope: 'runtime'
+            }
+        }
+        and:
+
         buildFile << """
-repositories {
-    mavenCentral()
-}
-
-configurations {
-    compile
-}
-
 dependencies {
-    compile "commons-collections:commons-collections:3.0"
-    compile "ch.qos.logback:logback-classic:0.9.30"
-    compile "org.hibernate:hibernate-core:3.6.7.Final"
-}
-
-task check << {
-    def compile = configurations.compile
-    assert compile.resolvedConfiguration.firstLevelModuleDependencies.collect { it.name } == [
-        'ch.qos.logback:logback-classic:0.9.30',
-        'org.hibernate:hibernate-core:3.6.7.Final',
-        'commons-collections:commons-collections:3.1'
-    ]
-
-    def filteredDependencies = compile.resolvedConfiguration.getFirstLevelModuleDependencies({ it.name == 'logback-classic' } as Spec)
-    assert filteredDependencies.collect { it.name } == [
-        'ch.qos.logback:logback-classic:0.9.30'
-    ]
-
-    def filteredFiles = compile.resolvedConfiguration.getFiles({ it.name == 'logback-classic' } as Spec)
-    assert filteredFiles.collect { it.name } == [
-        'logback-classic-0.9.30.jar',
-         'logback-core-0.9.30.jar',
-          'slf4j-api-1.6.2.jar'
-    ]
-
-    assert compile.collect { it.name } == [
-        'logback-classic-0.9.30.jar',
-        'hibernate-core-3.6.7.Final.jar',
-        'logback-core-0.9.30.jar',
-        'slf4j-api-1.6.2.jar',
-        'antlr-2.7.6.jar',
-        'dom4j-1.6.1.jar',
-        'hibernate-commons-annotations-3.2.0.Final.jar',
-        'hibernate-jpa-2.0-api-1.0.1.Final.jar',
-        'jta-1.1.jar',
-        'commons-collections-3.1.jar'
-    ]
-
-    assert compile.resolvedConfiguration.resolvedArtifacts.collect { it.file.name } == [
-        'logback-classic-0.9.30.jar',
-        'hibernate-core-3.6.7.Final.jar',
-        'logback-core-0.9.30.jar',
-        'slf4j-api-1.6.2.jar',
-        'antlr-2.7.6.jar',
-        'dom4j-1.6.1.jar',
-        'hibernate-commons-annotations-3.2.0.Final.jar',
-        'hibernate-jpa-2.0-api-1.0.1.Final.jar',
-        'jta-1.1.jar',
-        'commons-collections-3.1.jar'
-    ]
+    conf "org.gradle:test:1.45"
 }
 """
 
+        repositoryInteractions {
+            'org.gradle:test:1.45' {
+                expectGetMetadata()
+                expectGetArtifact()
+            }
+        }
+
         expect:
-        succeeds "check"
+        succeeds "checkDep"
+        resolve.expectGraph {
+            root(':', ':testproject:') {
+                module("org.gradle:test:1.45")
+            }
+        }
     }
+
 }

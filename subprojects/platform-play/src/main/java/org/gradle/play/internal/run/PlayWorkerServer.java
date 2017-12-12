@@ -17,67 +17,131 @@
 package org.gradle.play.internal.run;
 
 import org.gradle.api.Action;
+import org.gradle.api.logging.Logger;
 import org.gradle.api.logging.Logging;
 import org.gradle.internal.UncheckedException;
-import org.gradle.process.internal.WorkerProcessContext;
-import org.gradle.scala.internal.reflect.ScalaMethod;
+import org.gradle.internal.classloader.ClassLoaderUtils;
+import org.gradle.internal.classpath.DefaultClassPath;
+import org.gradle.process.internal.worker.WorkerProcessContext;
 
 import java.io.Serializable;
-import java.util.concurrent.CountDownLatch;
+import java.net.InetSocketAddress;
+import java.net.URLClassLoader;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.SynchronousQueue;
+import java.util.concurrent.locks.Condition;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
 
-public class PlayWorkerServer implements Action<WorkerProcessContext>, PlayRunWorkerServerProtocol, Serializable {
+public class PlayWorkerServer implements Action<WorkerProcessContext>, PlayRunWorkerServerProtocol, Reloader, Serializable {
+    private static final Logger LOGGER = Logging.getLogger(PlayWorkerServer.class);
 
-    private PlayRunSpec runSpec;
-    private VersionedPlayRunAdapter spec;
+    private final PlayRunSpec runSpec;
+    private final VersionedPlayRunAdapter runAdapter;
 
-    private volatile CountDownLatch stop;
+    private final Lock lock = new ReentrantLock();
+    private final Condition signal = lock.newCondition();
 
-    public PlayWorkerServer(PlayRunSpec runSpec, VersionedPlayRunAdapter spec) {
+    private final BlockingQueue<PlayAppLifecycleUpdate> events = new SynchronousQueue<PlayAppLifecycleUpdate>();
+
+    private boolean stopRequested;
+    private Reloader.Result latestStatus;
+
+    public PlayWorkerServer(PlayRunSpec runSpec, VersionedPlayRunAdapter runAdapter) {
         this.runSpec = runSpec;
-        this.spec = spec;
+        this.runAdapter = runAdapter;
     }
 
+    @Override
     public void execute(WorkerProcessContext context) {
-        stop = new CountDownLatch(1);
         final PlayRunWorkerClientProtocol clientProtocol = context.getServerConnection().addOutgoing(PlayRunWorkerClientProtocol.class);
         context.getServerConnection().addIncoming(PlayRunWorkerServerProtocol.class, this);
         context.getServerConnection().connect();
-        final PlayAppLifecycleUpdate result = startServer();
+        final PlayAppLifecycleUpdate result = start();
         try {
             clientProtocol.update(result);
-            stop.await();
+            while (!stopRequested) {
+                PlayAppLifecycleUpdate update = events.take();
+                clientProtocol.update(update);
+            }
+            LOGGER.debug("Play App stopping");
+            events.clear();
         } catch (InterruptedException e) {
             throw UncheckedException.throwAsUncheckedException(e);
-        } finally {
-            clientProtocol.update(PlayAppLifecycleUpdate.stopped());
         }
     }
 
-    private PlayAppLifecycleUpdate startServer() {
+    private PlayAppLifecycleUpdate start() {
         try {
-            run();
-            return PlayAppLifecycleUpdate.running();
+            InetSocketAddress address = startServer();
+            return PlayAppLifecycleUpdate.running(address);
         } catch (Exception e) {
             Logging.getLogger(this.getClass()).error("Failed to run Play", e);
             return PlayAppLifecycleUpdate.failed(e);
         }
     }
 
-    private void run() {
+    private InetSocketAddress startServer() {
+        ClassLoaderUtils.disableUrlConnectionCaching();
+        final Thread thread = Thread.currentThread();
+        final ClassLoader previousContextClassLoader = thread.getContextClassLoader();
+        final ClassLoader classLoader = new URLClassLoader(new DefaultClassPath(runSpec.getClasspath()).getAsURLArray(), null);
+        thread.setContextClassLoader(classLoader);
         try {
-            ClassLoader classLoader = getClass().getClassLoader();
-            ClassLoader docsClassLoader = getClass().getClassLoader();
-
-            Object buildDocHandler = spec.getBuildDocHandler(docsClassLoader, runSpec.getClasspath());
-            ScalaMethod runMethod = spec.getNettyServerDevHttpMethod(classLoader, docsClassLoader);
-            Object buildLink = spec.getBuildLink(classLoader, runSpec.getProjectPath(), runSpec.getClasspath());
-            runMethod.invoke(buildLink, buildDocHandler, runSpec.getHttpPort());
+            Object buildDocHandler = runAdapter.getBuildDocHandler(classLoader, runSpec.getClasspath());
+            Object buildLink = runAdapter.getBuildLink(classLoader, this, runSpec.getProjectPath(), runSpec.getApplicationJar(), runSpec.getChangingClasspath(), runSpec.getAssetsJar(), runSpec.getAssetsDirs());
+            return runAdapter.runDevHttpServer(classLoader, classLoader, buildLink, buildDocHandler, runSpec.getHttpPort());
         } catch (Exception e) {
             throw UncheckedException.throwAsUncheckedException(e);
+        } finally {
+            thread.setContextClassLoader(previousContextClassLoader);
         }
     }
 
+    @Override
     public void stop() {
-        stop.countDown();
+        lock.lock();
+        try {
+            stopRequested = true;
+            events.put(PlayAppLifecycleUpdate.stopped());
+        } catch (InterruptedException e) {
+            throw UncheckedException.throwAsUncheckedException(e);
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    @Override
+    public void currentStatus(Boolean hasChanged, Throwable throwable) {
+        lock.lock();
+        try {
+            latestStatus = new Result(hasChanged, throwable);
+            LOGGER.debug("notify currentStatus");
+            signal.signalAll();
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    @Override
+    public Result requireUpToDate() throws InterruptedException {
+        lock.lock();
+        try {
+            if (!stopRequested) {
+                LOGGER.debug("requireUpToDate");
+                events.put(PlayAppLifecycleUpdate.reloadRequested());
+                LOGGER.debug("waiting for block to clear");
+                Result oldStatus = latestStatus;
+                while (latestStatus == oldStatus && !stopRequested) {
+                    signal.await();
+                }
+                LOGGER.debug("block cleared {}", latestStatus);
+                return latestStatus;
+            }
+        } finally {
+            lock.unlock();
+        }
+        // Stopping, so result doesn't really matter.
+        return new Result(false, null);
     }
 }

@@ -19,8 +19,8 @@ import com.google.common.collect.Sets;
 import org.gradle.api.artifacts.component.ComponentIdentifier;
 import org.gradle.api.artifacts.component.ModuleComponentIdentifier;
 import org.gradle.api.artifacts.component.ProjectComponentIdentifier;
-import org.gradle.api.artifacts.query.ArtifactResolutionQuery;
 import org.gradle.api.artifacts.dsl.RepositoryHandler;
+import org.gradle.api.artifacts.query.ArtifactResolutionQuery;
 import org.gradle.api.artifacts.result.ArtifactResolutionResult;
 import org.gradle.api.artifacts.result.ComponentArtifactsResult;
 import org.gradle.api.artifacts.result.ComponentResult;
@@ -28,25 +28,39 @@ import org.gradle.api.component.Artifact;
 import org.gradle.api.component.Component;
 import org.gradle.api.internal.artifacts.GlobalDependencyResolutionRules;
 import org.gradle.api.internal.artifacts.configurations.ConfigurationContainerInternal;
-import org.gradle.api.internal.artifacts.configurations.ConfigurationInternal;
-import org.gradle.api.internal.artifacts.ivyservice.*;
+import org.gradle.api.internal.artifacts.configurations.ResolutionStrategyInternal;
+import org.gradle.api.internal.artifacts.ivyservice.CacheLockingManager;
+import org.gradle.api.internal.artifacts.ivyservice.ivyresolve.ComponentResolvers;
 import org.gradle.api.internal.artifacts.ivyservice.ivyresolve.ErrorHandlingArtifactResolver;
-import org.gradle.api.internal.artifacts.ivyservice.ivyresolve.RepositoryChain;
 import org.gradle.api.internal.artifacts.ivyservice.ivyresolve.ResolveIvyFactory;
-import org.gradle.internal.component.model.ComponentArtifactMetaData;
-import org.gradle.internal.component.model.ComponentResolveMetaData;
-import org.gradle.internal.component.model.DefaultDependencyMetaData;
 import org.gradle.api.internal.artifacts.repositories.ResolutionAwareRepository;
-import org.gradle.api.internal.artifacts.result.*;
+import org.gradle.api.internal.artifacts.result.DefaultArtifactResolutionResult;
+import org.gradle.api.internal.artifacts.result.DefaultComponentArtifactsResult;
+import org.gradle.api.internal.artifacts.result.DefaultResolvedArtifactResult;
+import org.gradle.api.internal.artifacts.result.DefaultUnresolvedArtifactResult;
+import org.gradle.api.internal.artifacts.result.DefaultUnresolvedComponentResult;
+import org.gradle.api.internal.attributes.ImmutableAttributes;
 import org.gradle.api.internal.component.ArtifactType;
 import org.gradle.api.internal.component.ComponentTypeRegistry;
 import org.gradle.internal.Factory;
 import org.gradle.internal.Transformers;
+import org.gradle.internal.component.external.model.DefaultModuleComponentIdentifier;
+import org.gradle.internal.component.model.ComponentArtifactMetadata;
+import org.gradle.internal.component.model.ComponentResolveMetadata;
+import org.gradle.internal.component.model.DefaultComponentOverrideMetadata;
 import org.gradle.internal.resolve.resolver.ArtifactResolver;
-import org.gradle.internal.resolve.result.*;
+import org.gradle.internal.resolve.resolver.ComponentMetaDataResolver;
+import org.gradle.internal.resolve.result.BuildableArtifactResolveResult;
+import org.gradle.internal.resolve.result.BuildableArtifactSetResolveResult;
+import org.gradle.internal.resolve.result.BuildableComponentResolveResult;
+import org.gradle.internal.resolve.result.DefaultBuildableArtifactResolveResult;
+import org.gradle.internal.resolve.result.DefaultBuildableArtifactSetResolveResult;
+import org.gradle.internal.resolve.result.DefaultBuildableComponentResolveResult;
 import org.gradle.util.CollectionUtils;
 
+import javax.annotation.Nonnull;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.List;
 import java.util.Set;
 
@@ -83,33 +97,42 @@ public class DefaultArtifactResolutionQuery implements ArtifactResolutionQuery {
         return this;
     }
 
+    public ArtifactResolutionQuery forModule(@Nonnull String group, @Nonnull String name, @Nonnull String version) {
+        componentIds.add(DefaultModuleComponentIdentifier.newId(group, name, version));
+        return this;
+    }
+
     public ArtifactResolutionQuery withArtifacts(Class<? extends Component> componentType, Class<? extends Artifact>... artifactTypes) {
+        return withArtifacts(componentType, Arrays.asList(artifactTypes));
+    }
+
+    public ArtifactResolutionQuery withArtifacts(Class<? extends Component> componentType, Collection<Class<? extends Artifact>> artifactTypes) {
         if (this.componentType != null) {
             throw new IllegalStateException("Cannot specify component type multiple times.");
         }
         this.componentType = componentType;
-        this.artifactTypes.addAll(Arrays.asList(artifactTypes));
+        this.artifactTypes.addAll(artifactTypes);
         return this;
     }
 
-    // TODO:DAZ This is ugly and needs a major cleanup and unit tests
     public ArtifactResolutionResult execute() {
         if (componentType == null) {
             throw new IllegalStateException("Must specify component type and artifacts to query.");
         }
         List<ResolutionAwareRepository> repositories = CollectionUtils.collect(repositoryHandler, Transformers.cast(ResolutionAwareRepository.class));
-        ConfigurationInternal configuration = configurationContainer.detachedConfiguration();
-        final RepositoryChain repositoryChain = ivyFactory.create(configuration, repositories, metadataHandler.getComponentMetadataProcessor());
-        final ArtifactResolver artifactResolver = new ErrorHandlingArtifactResolver(repositoryChain.getArtifactResolver());
+        ResolutionStrategyInternal resolutionStrategy = configurationContainer.detachedConfiguration().getResolutionStrategy();
+        final ComponentResolvers componentResolvers = ivyFactory.create(resolutionStrategy, repositories, metadataHandler.getComponentMetadataProcessor());
+        final ComponentMetaDataResolver componentMetaDataResolver = componentResolvers.getComponentResolver();
+        final ArtifactResolver artifactResolver = new ErrorHandlingArtifactResolver(componentResolvers.getArtifactResolver());
 
-        return lockingManager.useCache("resolve artifacts", new Factory<ArtifactResolutionResult>() {
+        return lockingManager.useCache(new Factory<ArtifactResolutionResult>() {
             public ArtifactResolutionResult create() {
                 Set<ComponentResult> componentResults = Sets.newHashSet();
 
                 for (ComponentIdentifier componentId : componentIds) {
                     try {
-                        ModuleComponentIdentifier moduleComponentId = validateComponentIdentifier(componentId);
-                        componentResults.add(buildComponentResult(moduleComponentId, repositoryChain, artifactResolver));
+                        ComponentIdentifier validId = validateComponentIdentifier(componentId);
+                        componentResults.add(buildComponentResult(validId, componentMetaDataResolver, artifactResolver));
                     } catch (Throwable t) {
                         componentResults.add(new DefaultUnresolvedComponentResult(componentId, t));
                     }
@@ -118,9 +141,9 @@ public class DefaultArtifactResolutionQuery implements ArtifactResolutionQuery {
                 return new DefaultArtifactResolutionResult(componentResults);
             }
 
-            private ModuleComponentIdentifier validateComponentIdentifier(ComponentIdentifier componentId) {
+            private ComponentIdentifier validateComponentIdentifier(ComponentIdentifier componentId) {
                 if (componentId instanceof ModuleComponentIdentifier) {
-                    return (ModuleComponentIdentifier) componentId;
+                    return componentId;
                 }
                 if(componentId instanceof ProjectComponentIdentifier) {
                     throw new IllegalArgumentException(String.format("Cannot query artifacts for a project component (%s).", componentId.getDisplayName()));
@@ -131,10 +154,10 @@ public class DefaultArtifactResolutionQuery implements ArtifactResolutionQuery {
         });
     }
 
-    private ComponentArtifactsResult buildComponentResult(ModuleComponentIdentifier moduleComponentId, RepositoryChain repositoryChain, ArtifactResolver artifactResolver) {
+    private ComponentArtifactsResult buildComponentResult(ComponentIdentifier componentId, ComponentMetaDataResolver componentMetaDataResolver, ArtifactResolver artifactResolver) {
         BuildableComponentResolveResult moduleResolveResult = new DefaultBuildableComponentResolveResult();
-        repositoryChain.getDependencyResolver().resolve(new DefaultDependencyMetaData(moduleComponentId), moduleResolveResult);
-        ComponentResolveMetaData component = moduleResolveResult.getMetaData();
+        componentMetaDataResolver.resolve(componentId, new DefaultComponentOverrideMetadata(), moduleResolveResult);
+        ComponentResolveMetadata component = moduleResolveResult.getMetaData();
         DefaultComponentArtifactsResult componentResult = new DefaultComponentArtifactsResult(component.getComponentId());
         for (Class<? extends Artifact> artifactType : artifactTypes) {
             addArtifacts(componentResult, artifactType, component, artifactResolver);
@@ -142,17 +165,17 @@ public class DefaultArtifactResolutionQuery implements ArtifactResolutionQuery {
         return componentResult;
     }
 
-    private <T extends Artifact> void addArtifacts(DefaultComponentArtifactsResult artifacts, Class<T> type, ComponentResolveMetaData component, ArtifactResolver artifactResolver) {
+    private <T extends Artifact> void addArtifacts(DefaultComponentArtifactsResult artifacts, Class<T> type, ComponentResolveMetadata component, ArtifactResolver artifactResolver) {
         BuildableArtifactSetResolveResult artifactSetResolveResult = new DefaultBuildableArtifactSetResolveResult();
-        artifactResolver.resolveModuleArtifacts(component, convertType(type), artifactSetResolveResult);
+        artifactResolver.resolveArtifactsWithType(component, convertType(type), artifactSetResolveResult);
 
-        for (ComponentArtifactMetaData artifactMetaData : artifactSetResolveResult.getArtifacts()) {
+        for (ComponentArtifactMetadata artifactMetaData : artifactSetResolveResult.getResult()) {
             BuildableArtifactResolveResult resolveResult = new DefaultBuildableArtifactResolveResult();
             artifactResolver.resolveArtifact(artifactMetaData, component.getSource(), resolveResult);
             if (resolveResult.getFailure() != null) {
-                artifacts.addArtifact(new DefaultUnresolvedArtifactResult(type, resolveResult.getFailure()));
+                artifacts.addArtifact(new DefaultUnresolvedArtifactResult(artifactMetaData.getId(), type, resolveResult.getFailure()));
             } else {
-                artifacts.addArtifact(new DefaultResolvedArtifactResult(type, resolveResult.getFile()));
+                artifacts.addArtifact(new DefaultResolvedArtifactResult(artifactMetaData.getId(), ImmutableAttributes.EMPTY, type, resolveResult.getResult()));
             }
         }
     }

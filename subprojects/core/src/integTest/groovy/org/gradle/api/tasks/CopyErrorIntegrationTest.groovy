@@ -21,6 +21,7 @@ import org.gradle.test.fixtures.file.TestFile
 import org.gradle.util.PreconditionVerifier
 import org.gradle.util.Requires
 import org.gradle.util.TestPrecondition
+import org.hamcrest.Matchers
 import org.junit.Assert
 import org.junit.Rule
 import org.junit.Test
@@ -42,7 +43,7 @@ class CopyErrorIntegrationTest extends AbstractIntegrationTest {
 '''
 
         ExecutionFailure failure = inTestDirectory().withTasks('copy').runWithFailure()
-        failure.assertHasCause("""Cannot convert the provided notation to a String: [].
+        failure.assertHasCause("""Cannot convert the provided notation to a String: repository container.
 The following types/formats are supported:
   - String or CharSequence instances, for example 'some/path'.
   - Boolean values, for example true, Boolean.TRUE.
@@ -94,7 +95,10 @@ The following types/formats are supported:
     '''
 
             ExecutionFailure failure = inTestDirectory().withTasks('copy').runWithFailure()
-            failure.assertHasDescription("Could not list contents of directory '${dir}' as it is not readable.")
+            failure.assertThatDescription(Matchers.anyOf(
+                Matchers.startsWith("Could not list contents of directory '${dir}' as it is not readable."),
+                Matchers.startsWith("Could not read path '${dir}'.")
+            ))
         } finally {
             dir.permissions = oldPermissions
         }

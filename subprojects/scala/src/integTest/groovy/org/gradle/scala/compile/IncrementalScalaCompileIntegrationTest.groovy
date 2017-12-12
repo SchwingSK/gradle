@@ -16,16 +16,15 @@
 package org.gradle.scala.compile
 
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
-import org.gradle.integtests.fixtures.ForkScalaCompileInDaemonModeFixture
 import org.gradle.integtests.fixtures.TestResources
+import org.gradle.integtests.fixtures.ZincScalaCompileFixture
 import org.junit.Rule
-import spock.lang.Ignore
 import spock.lang.Issue
 
 class IncrementalScalaCompileIntegrationTest extends AbstractIntegrationSpec {
 
     @Rule TestResources resources = new TestResources(temporaryFolder)
-    @Rule public final ForkScalaCompileInDaemonModeFixture daemonModeFixture = new ForkScalaCompileInDaemonModeFixture(executer, temporaryFolder)
+    @Rule public final ZincScalaCompileFixture zincScalaCompileFixture = new ZincScalaCompileFixture(executer, temporaryFolder)
 
     def recompilesSourceWhenPropertiesChange() {
         expect:
@@ -37,7 +36,6 @@ class IncrementalScalaCompileIntegrationTest extends AbstractIntegrationSpec {
 '''
         then:
         run('compileScala').assertTasksSkipped(':compileJava')
-
         run('compileScala').assertTasksSkipped(':compileJava', ':compileScala')
     }
 
@@ -53,14 +51,11 @@ class IncrementalScalaCompileIntegrationTest extends AbstractIntegrationSpec {
     }
 
     @Issue("GRADLE-2548")
-    @Ignore
     def recompilesScalaWhenJavaChanges() {
         file("build.gradle") << """
             apply plugin: 'scala'
 
-            repositories {
-                mavenCentral()
-            }
+            ${mavenCentralRepository()}
 
             dependencies {
                 compile 'org.scala-lang:scala-library:2.11.1'
@@ -82,4 +77,5 @@ class IncrementalScalaCompileIntegrationTest extends AbstractIntegrationSpec {
         //the build should fail because the interface the scala class needs has changed
         runAndFail("classes").assertHasDescription("Execution failed for task ':compileScala'.")
     }
+
 }

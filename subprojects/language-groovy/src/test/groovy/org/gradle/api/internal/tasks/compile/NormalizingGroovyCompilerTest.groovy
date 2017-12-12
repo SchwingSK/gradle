@@ -14,23 +14,26 @@
  * limitations under the License.
  */
 package org.gradle.api.internal.tasks.compile
+
 import groovy.transform.InheritConstructors
 import org.gradle.api.internal.file.collections.SimpleFileCollection
 import org.gradle.api.tasks.compile.CompileOptions
 import org.gradle.api.tasks.compile.GroovyCompileOptions
+import org.gradle.util.TestUtil
 import spock.lang.Specification
+import spock.lang.Unroll
 
 class NormalizingGroovyCompilerTest extends Specification {
     org.gradle.language.base.internal.compile.Compiler<GroovyJavaJointCompileSpec> target = Mock()
     DefaultGroovyJavaJointCompileSpec spec = new DefaultGroovyJavaJointCompileSpec()
     NormalizingGroovyCompiler compiler = new NormalizingGroovyCompiler(target)
-    
+
     def setup() {
-        spec.classpath = files('Dep1.jar', 'Dep2.jar', 'Dep3.jar')
-        spec.groovyClasspath = spec.classpath
+        spec.compileClasspath = [new File('Dep1.jar'), new File('Dep2.jar'), new File('Dep3.jar')]
+        spec.groovyClasspath = spec.compileClasspath
         spec.source = files('House.scala', 'Person1.java', 'package.html', 'Person2.groovy')
         spec.destinationDir = new File("destinationDir")
-        spec.compileOptions = new CompileOptions()
+        spec.compileOptions = new CompileOptions(TestUtil.objectFactory())
         spec.groovyCompileOptions = new GroovyCompileOptions()
     }
 
@@ -56,11 +59,43 @@ class NormalizingGroovyCompilerTest extends Specification {
         }
     }
 
+    def "propagates compile failure when both compileOptions.failOnError and groovyCompileOptions.failOnError are true"() {
+        def failure
+        target.execute(spec) >> { throw failure = new CompilationFailedException() }
+
+        spec.compileOptions.failOnError = true
+        spec.groovyCompileOptions.failOnError = true
+
+        when:
+        compiler.execute(spec)
+
+        then:
+        CompilationFailedException e = thrown()
+        e == failure
+    }
+
+    @Unroll
+    def "ignores compile failure when one of #options dot failOnError is false"() {
+        target.execute(spec) >> { throw new CompilationFailedException() }
+
+        spec[options].failOnError = false
+
+        when:
+        def result = compiler.execute(spec)
+
+        then:
+        noExceptionThrown()
+        !result.didWork
+
+        where:
+        options << ['compileOptions', 'groovyCompileOptions']
+    }
+
     private files(String... paths) {
         new TestFileCollection(paths.collect { new File(it) })
     }
 
     // file collection whose type is distinguishable from SimpleFileCollection
     @InheritConstructors
-    static class TestFileCollection extends SimpleFileCollection {} 
+    static class TestFileCollection extends SimpleFileCollection {}
 }

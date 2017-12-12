@@ -16,16 +16,16 @@
 package org.gradle.api.internal.artifacts.ivyservice.ivyresolve;
 
 import org.gradle.api.artifacts.component.ModuleComponentIdentifier;
-import org.gradle.internal.component.model.ComponentResolveMetaData;
-import org.gradle.internal.component.model.DependencyMetaData;
-import org.gradle.internal.resolve.result.BuildableComponentSelectionResult;
+import org.gradle.api.internal.artifacts.ivyservice.ivyresolve.strategy.VersionSelector;
+import org.gradle.internal.component.model.ComponentResolveMetadata;
+import org.gradle.internal.resolve.result.ComponentSelectionContext;
 
 import java.util.Collection;
 
 public interface VersionedComponentChooser {
-    ComponentResolveMetaData selectNewestComponent(ComponentResolveMetaData one, ComponentResolveMetaData two);
+    ComponentResolveMetadata selectNewestComponent(ComponentResolveMetadata one, ComponentResolveMetadata two);
 
-    void selectNewestMatchingComponent(Collection<? extends ModuleComponentResolveState> versions, DependencyMetaData dependency, BuildableComponentSelectionResult result);
+    void selectNewestMatchingComponent(Collection<? extends ModuleComponentResolveState> versions, ComponentSelectionContext result, VersionSelector versionSelector, VersionSelector rejectedVersionSelector);
 
     boolean isRejectedComponent(ModuleComponentIdentifier candidateIdentifier, MetadataProvider metadataProvider);
 }

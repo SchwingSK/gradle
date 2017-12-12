@@ -37,6 +37,14 @@ dependencies {
     conf someDependency
     conf "org.mockito:mockito-core:1.8"
     conf group: 'org.spockframework', name: 'spock-core', version: '1.0'
+    conf('org.test:configured') {
+        version {
+           prefer '1.1'
+        }
+        transitive = false
+        force = true
+    }
+
     conf module('org.foo:moduleOne:1.0'), module('org.foo:moduleTwo:1.0')
 
     gradleStuff gradleApi()
@@ -44,21 +52,28 @@ dependencies {
     allowsCollections "org.mockito:mockito-core:1.8", someDependency
 }
 
-task checkDeps << {
-    def deps = configurations.conf.incoming.dependencies
-    assert deps.contains(someDependency)
-    assert deps.find { it instanceof ExternalDependency && it.group == 'org.mockito' && it.name == 'mockito-core' && it.version == '1.8'  }
-    assert deps.find { it instanceof ExternalDependency && it.group == 'org.spockframework' && it.name == 'spock-core' && it.version == '1.0'  }
-    assert deps.find { it instanceof ClientModule && it.name == 'moduleOne' && it.group == 'org.foo' }
-    assert deps.find { it instanceof ClientModule && it.name == 'moduleTwo' && it.version == '1.0' }
+task checkDeps {
+    doLast {
+        def deps = configurations.conf.incoming.dependencies
+        assert deps.contains(someDependency)
+        assert deps.find { it instanceof ExternalDependency && it.group == 'org.mockito' && it.name == 'mockito-core' && it.version == '1.8'  }
+        assert deps.find { it instanceof ExternalDependency && it.group == 'org.spockframework' && it.name == 'spock-core' && it.version == '1.0'  }
+        def configuredDep = deps.find { it instanceof ExternalDependency && it.group == 'org.test' && it.name == 'configured' }
+        assert configuredDep.version == '1.1'
+        assert configuredDep.transitive == false
+        assert configuredDep.force == true
+        
+        assert deps.find { it instanceof ClientModule && it.name == 'moduleOne' && it.group == 'org.foo' }
+        assert deps.find { it instanceof ClientModule && it.name == 'moduleTwo' && it.version == '1.0' }
 
-    deps = configurations.gradleStuff.dependencies
-    assert deps.findAll { it instanceof SelfResolvingDependency }.size() > 0 : "should include gradle api jars"
+        deps = configurations.gradleStuff.dependencies
+        assert deps.findAll { it instanceof SelfResolvingDependency }.size() > 0 : "should include gradle api jars"
 
-    deps = configurations.allowsCollections.dependencies
-    assert deps.size() == 2
-    assert deps.find { it instanceof ExternalDependency && it.group == 'org.mockito' }
-    assert deps.contains(someDependency)
+        deps = configurations.allowsCollections.dependencies
+        assert deps.size() == 2
+        assert deps.find { it instanceof ExternalDependency && it.group == 'org.mockito' }
+        assert deps.contains(someDependency)
+    }
 }
 """
         then:
@@ -86,14 +101,16 @@ dependencies {
     confTwo project(path: ':otherProject', configuration: 'otherConf')
 }
 
-task checkDeps << {
-    def deps = configurations.conf.incoming.dependencies
-    assert deps.size() == 1
-    assert deps.find { it.dependencyProject.path == ':otherProject' }
+task checkDeps {
+    doLast {
+        def deps = configurations.conf.incoming.dependencies
+        assert deps.size() == 1
+        assert deps.find { it.dependencyProject.path == ':otherProject' && it.targetConfiguration == null }
 
-    deps = configurations.confTwo.incoming.dependencies
-    assert deps.size() == 1
-    assert deps.find { it.dependencyProject.path == ':otherProject' && it.projectConfiguration.name == 'otherConf' }
+        deps = configurations.confTwo.incoming.dependencies
+        assert deps.size() == 1
+        assert deps.find { it.dependencyProject.path == ':otherProject' && it.targetConfiguration == 'otherConf' }
+    }
 }
 """
         then:
@@ -112,19 +129,28 @@ dependencies {
         dependency 'org.foo:bar:1.0'
         dependencies ('org.foo:one:1', 'org.foo:two:1')
         dependency ('high:five:5') { transitive = false }
+        dependency('org.test:lateversion') { 
+               version {
+                  prefer '1.0' 
+                  strictly '1.1' // intentionally overriding "prefer" 
+               } 
+           }
     }
 }
 
-task checkDeps << {
-    def deps = configurations.conf.incoming.dependencies
-    assert deps.size() == 1
-    def dep = deps.find { it instanceof ClientModule && it.name == 'moduleOne' }
-    assert dep
-    assert dep.dependencies.size() == 4
-    assert dep.dependencies.find { it.group == 'org.foo' && it.name == 'bar' && it.version == '1.0' && it.transitive == true }
-    assert dep.dependencies.find { it.group == 'org.foo' && it.name == 'one' && it.version == '1' }
-    assert dep.dependencies.find { it.group == 'org.foo' && it.name == 'two' && it.version == '1' }
-    assert dep.dependencies.find { it.group == 'high' && it.name == 'five' && it.version == '5' && it.transitive == false }
+task checkDeps {
+    doLast {
+        def deps = configurations.conf.incoming.dependencies
+        assert deps.size() == 1
+        def dep = deps.find { it instanceof ClientModule && it.name == 'moduleOne' }
+        assert dep
+        assert dep.dependencies.size() == 5
+        assert dep.dependencies.find { it.group == 'org.foo' && it.name == 'bar' && it.version == '1.0' && it.transitive == true }
+        assert dep.dependencies.find { it.group == 'org.foo' && it.name == 'one' && it.version == '1' }
+        assert dep.dependencies.find { it.group == 'org.foo' && it.name == 'two' && it.version == '1' }
+        assert dep.dependencies.find { it.group == 'high' && it.name == 'five' && it.version == '5' && it.transitive == false }
+        assert dep.dependencies.find { it.group == 'org.test' && it.name == 'lateversion' && it.version == '1.1' }
+    }
 }
 """
         then:
@@ -146,7 +172,7 @@ task checkDeps
 """
         then:
         fails 'checkDeps'
-        failure.assertThatCause(Matchers.startsWith("Cannot convert the provided notation to an object of type Dependency: 100."))
+        failure.assertThatCause(Matchers.startsWith("Cannot convert the provided notation to an object of type DirectDependency: 100."))
     }
 
     def "fails gracefully for single null notation"() {
@@ -164,7 +190,7 @@ task checkDeps
 """
         then:
         fails 'checkDeps'
-        failure.assertThatCause(Matchers.startsWith("Cannot convert a null value to an object of type Dependency"))
+        failure.assertThatCause(Matchers.startsWith("Cannot convert a null value to an object of type DirectDependency"))
     }
 
     def "fails gracefully for null notation in list"() {
@@ -182,7 +208,7 @@ task checkDeps
 """
         then:
         fails 'checkDeps'
-        failure.assertThatCause(Matchers.startsWith("Cannot convert a null value to an object of type Dependency"))
+        failure.assertThatCause(Matchers.startsWith("Cannot convert a null value to an object of type DirectDependency"))
     }
 
     @Issue("https://issues.gradle.org/browse/GRADLE-3271")
@@ -197,11 +223,13 @@ task checkDeps
               conf gradleApi()
             }
 
-            task check << {
-              assert dependencies.gradleApi().contentEquals(dependencies.gradleApi())
-              assert dependencies.gradleApi().is(dependencies.gradleApi())
-              assert dependencies.gradleApi() == dependencies.gradleApi()
-              assert configurations.conf.dependencies.contains(dependencies.gradleApi())
+            task check {
+                doLast {
+                    assert dependencies.gradleApi().contentEquals(dependencies.gradleApi())
+                    assert dependencies.gradleApi().is(dependencies.gradleApi())
+                    assert dependencies.gradleApi() == dependencies.gradleApi()
+                    assert configurations.conf.dependencies.contains(dependencies.gradleApi())
+                }
             }
         """
 

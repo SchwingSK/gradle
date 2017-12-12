@@ -15,71 +15,41 @@
  */
 package org.gradle.language.nativeplatform.internal.incremental;
 
-import org.gradle.api.internal.TaskInternal;
-import org.gradle.api.internal.changedetection.state.FileSnapshotter;
-import org.gradle.api.internal.changedetection.state.TaskArtifactStateCacheAccess;
-import org.gradle.api.internal.tasks.SimpleWorkResult;
+import org.gradle.api.NonNullApi;
+import org.gradle.api.internal.TaskOutputsInternal;
 import org.gradle.api.tasks.WorkResult;
+import org.gradle.api.tasks.WorkResults;
 import org.gradle.cache.PersistentStateCache;
-import org.gradle.internal.Factory;
 import org.gradle.language.base.internal.compile.Compiler;
 import org.gradle.language.base.internal.tasks.SimpleStaleClassCleaner;
-import org.gradle.language.nativeplatform.internal.incremental.sourceparser.CSourceParser;
-import org.gradle.language.nativeplatform.internal.incremental.sourceparser.RegexBackedCSourceParser;
-import org.gradle.nativeplatform.toolchain.Clang;
-import org.gradle.nativeplatform.toolchain.Gcc;
-import org.gradle.nativeplatform.toolchain.NativeToolChain;
 import org.gradle.nativeplatform.toolchain.internal.NativeCompileSpec;
-import org.gradle.util.CollectionUtils;
 
-import java.io.File;
-
+@NonNullApi
 public class IncrementalNativeCompiler<T extends NativeCompileSpec> implements Compiler<T> {
     private final Compiler<T> delegateCompiler;
-    private final boolean importsAreIncludes;
-    private final TaskInternal task;
-    private final TaskArtifactStateCacheAccess cacheAccess;
-    private final FileSnapshotter fileSnapshotter;
-    private final CompilationStateCacheFactory compilationStateCacheFactory;
+    private final TaskOutputsInternal outputs;
+    private final PersistentStateCache<CompilationState> compileStateCache;
+    private final IncrementalCompilation incrementalCompilation;
 
-    private final CSourceParser sourceParser = new RegexBackedCSourceParser();
-
-    public IncrementalNativeCompiler(TaskInternal task, TaskArtifactStateCacheAccess cacheAccess, FileSnapshotter fileSnapshotter, CompilationStateCacheFactory compilationStateCacheFactory,
-                                     Compiler<T> delegateCompiler, NativeToolChain toolChain) {
-        this.task = task;
-        this.cacheAccess = cacheAccess;
-        this.fileSnapshotter = fileSnapshotter;
-        this.compilationStateCacheFactory = compilationStateCacheFactory;
+    public IncrementalNativeCompiler(TaskOutputsInternal outputs, Compiler<T> delegateCompiler, PersistentStateCache<CompilationState> compileStateCache, IncrementalCompilation incrementalCompilation) {
+        this.outputs = outputs;
         this.delegateCompiler = delegateCompiler;
-        this.importsAreIncludes = Clang.class.isAssignableFrom(toolChain.getClass()) || Gcc.class.isAssignableFrom(toolChain.getClass());
+        this.compileStateCache = compileStateCache;
+        this.incrementalCompilation = incrementalCompilation;
     }
 
+    @Override
     public WorkResult execute(final T spec) {
-        final PersistentStateCache<CompilationState> compileStateCache = compilationStateCacheFactory.create(task.getPath());
-        final IncrementalCompilation compilation = cacheAccess.useCache("process source files", new Factory<IncrementalCompilation>() {
-            public IncrementalCompilation create() {
-                DefaultSourceIncludesParser sourceIncludesParser = new DefaultSourceIncludesParser(sourceParser, importsAreIncludes);
-                IncrementalCompileProcessor processor = createProcessor(compileStateCache, sourceIncludesParser, spec.getIncludeRoots());
-                // TODO - do not hold the lock while processing the source files - this prevents other tasks from executing concurrently
-                IncrementalCompilation incrementalCompilation = processor.processSourceFiles(spec.getSourceFiles());
-                spec.setSourceFileIncludes(incrementalCompilation.getSourceFileIncludes());
-                return incrementalCompilation;
-            }
-        });
+        spec.setSourceFileIncludeDirectives(incrementalCompilation.getSourceFileIncludeDirectives());
 
         WorkResult workResult;
         if (spec.isIncrementalCompile()) {
-            workResult = doIncrementalCompile(compilation, spec);
+            workResult = doIncrementalCompile(incrementalCompilation, spec);
         } else {
             workResult = doCleanIncrementalCompile(spec);
         }
 
-        cacheAccess.useCache("update compilation state", new Factory<Void>() {
-            public Void create() {
-                compileStateCache.set(compilation.getFinalState());
-                return null;
-            }
-        });
+        compileStateCache.set(incrementalCompilation.getFinalState());
 
         return workResult;
     }
@@ -95,25 +65,15 @@ public class IncrementalNativeCompiler<T extends NativeCompileSpec> implements C
         boolean deleted = cleanPreviousOutputs(spec);
         WorkResult compileResult = delegateCompiler.execute(spec);
         if (deleted && !compileResult.getDidWork()) {
-            return new SimpleWorkResult(deleted);
+            return WorkResults.didWork(true);
         }
         return compileResult;
     }
 
     private boolean cleanPreviousOutputs(NativeCompileSpec spec) {
-        SimpleStaleClassCleaner cleaner = new SimpleStaleClassCleaner(getTask().getOutputs());
+        SimpleStaleClassCleaner cleaner = new SimpleStaleClassCleaner(outputs);
         cleaner.setDestinationDir(spec.getObjectFileDir());
         cleaner.execute();
         return cleaner.getDidWork();
-    }
-
-    protected TaskInternal getTask() {
-        return task;
-    }
-
-    private IncrementalCompileProcessor createProcessor(PersistentStateCache<CompilationState> compileStateCache, SourceIncludesParser sourceIncludesParser, Iterable<File> includes) {
-        DefaultSourceIncludesResolver dependencyParser = new DefaultSourceIncludesResolver(CollectionUtils.toList(includes));
-
-        return new IncrementalCompileProcessor(compileStateCache, dependencyParser, sourceIncludesParser, fileSnapshotter);
     }
 }

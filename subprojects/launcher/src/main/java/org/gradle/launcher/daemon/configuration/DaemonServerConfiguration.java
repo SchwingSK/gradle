@@ -25,7 +25,11 @@ public interface DaemonServerConfiguration {
 
     int getIdleTimeout();
 
+    int getPeriodicCheckIntervalMs();
+
     String getUid();
 
     List<String> getJvmOptions();
+
+    boolean isSingleUse();
 }

@@ -18,19 +18,17 @@ package org.gradle
 
 import groovy.io.FileType
 import org.gradle.test.fixtures.file.TestFile
+import spock.lang.Shared
 
 import static org.hamcrest.Matchers.containsString
 
 class AllDistributionIntegrationSpec extends DistributionIntegrationSpec {
 
+    @Shared String version = buildContext.distZipVersion.version
+
     @Override
     String getDistributionLabel() {
         "all"
-    }
-
-    @Override
-    int getLibJarsCount() {
-        171
     }
 
     def allZipContents() {
@@ -42,9 +40,7 @@ class AllDistributionIntegrationSpec extends DistributionIntegrationSpec {
 
         // Source
         contentsDir.file('src').eachFile { TestFile file -> file.assertIsDir() }
-        contentsDir.file('src/core/org/gradle/api/Project.java').assertIsFile()
-        contentsDir.file('src/core/org/gradle/initialization/buildsrc/defaultBuildSourceScript.txt').assertIsFile()
-        contentsDir.file('src/ui/org/gradle/gradleplugin/userinterface/swing/standalone/BlockingApplication.java').assertIsFile()
+        contentsDir.file('src/core-api/org/gradle/api/Project.java').assertIsFile()
         contentsDir.file('src/wrapper/org/gradle/wrapper/WrapperExecutor.java').assertIsFile()
 
         // Samples
@@ -56,17 +52,12 @@ class AllDistributionIntegrationSpec extends DistributionIntegrationSpec {
                 buildAndGradleDirs << it
             }
         }
-        buildAndGradleDirs.empty
+        buildAndGradleDirs == []
 
         // Javadoc
         contentsDir.file('docs/javadoc/index.html').assertIsFile()
         contentsDir.file('docs/javadoc/index.html').assertContents(containsString("Gradle API ${version}"))
         contentsDir.file('docs/javadoc/org/gradle/api/Project.html').assertIsFile()
-
-        // Groovydoc
-        contentsDir.file('docs/groovydoc/index.html').assertIsFile()
-        contentsDir.file('docs/groovydoc/org/gradle/api/Project.html').assertIsFile()
-        contentsDir.file('docs/groovydoc/org/gradle/api/tasks/bundling/Zip.html').assertIsFile()
 
         // Userguide
         contentsDir.file('docs/userguide/userguide.html').assertIsFile()

@@ -17,11 +17,14 @@
 package org.gradle.tooling.internal.consumer;
 
 import org.gradle.api.JavaVersion;
+import org.gradle.initialization.layout.BuildLayoutFactory;
 import org.gradle.internal.Factory;
 import org.gradle.internal.concurrent.DefaultExecutorFactory;
 import org.gradle.internal.concurrent.ExecutorFactory;
 import org.gradle.internal.jvm.UnsupportedJavaRuntimeException;
 import org.gradle.internal.service.DefaultServiceRegistry;
+import org.gradle.internal.time.Clock;
+import org.gradle.internal.time.Time;
 import org.gradle.tooling.CancellationTokenSource;
 import org.gradle.tooling.internal.consumer.loader.CachingToolingImplementationLoader;
 import org.gradle.tooling.internal.consumer.loader.DefaultToolingImplementationLoader;
@@ -29,20 +32,22 @@ import org.gradle.tooling.internal.consumer.loader.SynchronizedToolingImplementa
 import org.gradle.tooling.internal.consumer.loader.ToolingImplementationLoader;
 
 public class ConnectorServices {
-    private static DefaultServiceRegistry singletonRegistry = new ConnectorServiceRegistry();
+    private static DefaultServiceRegistry singletonRegistry;
+
+    static {
+        checkJavaVersion();
+        singletonRegistry = new ConnectorServiceRegistry();
+    }
 
     public static DefaultGradleConnector createConnector() {
-        assertJava6();
         return singletonRegistry.getFactory(DefaultGradleConnector.class).create();
     }
 
     public static CancellationTokenSource createCancellationTokenSource() {
-        assertJava6();
         return new DefaultCancellationTokenSource();
     }
 
     public static void close() {
-        assertJava6();
         singletonRegistry.close();
     }
 
@@ -54,11 +59,9 @@ public class ConnectorServices {
         singletonRegistry = new ConnectorServiceRegistry();
     }
 
-    private static void assertJava6() {
-        JavaVersion javaVersion = JavaVersion.current();
-        if (!javaVersion.isJava6Compatible()) {
-            throw UnsupportedJavaRuntimeException.usingUnsupportedVersion("Gradle Tooling API", JavaVersion.VERSION_1_6);
-        }
+    private static void checkJavaVersion() {
+        UnsupportedJavaRuntimeException.javaDeprecationWarning();
+        UnsupportedJavaRuntimeException.assertUsingVersion("Gradle Tooling API", JavaVersion.VERSION_1_7);
     }
 
     private static class ConnectorServiceRegistry extends DefaultServiceRegistry {
@@ -78,16 +81,20 @@ public class ConnectorServices {
             return new DefaultExecutorServiceFactory();
         }
 
-        protected DistributionFactory createDistributionFactory(ExecutorServiceFactory executorFactory) {
-            return new DistributionFactory(executorFactory);
+        protected Clock createTimeProvider() {
+            return Time.clock();
+        }
+
+        protected DistributionFactory createDistributionFactory(Clock clock) {
+            return new DistributionFactory(clock, BuildLayoutFactory.forDefaultScriptingLanguages());
         }
 
         protected ToolingImplementationLoader createToolingImplementationLoader() {
             return new SynchronizedToolingImplementationLoader(new CachingToolingImplementationLoader(new DefaultToolingImplementationLoader()));
         }
 
-        protected LoggingProvider createLoggingProvider() {
-            return new SynchronizedLogging();
+        protected LoggingProvider createLoggingProvider(Clock clock) {
+            return new SynchronizedLogging(clock);
         }
 
         protected ConnectionFactory createConnectionFactory(ToolingImplementationLoader toolingImplementationLoader, ExecutorFactory executorFactory, LoggingProvider loggingProvider) {

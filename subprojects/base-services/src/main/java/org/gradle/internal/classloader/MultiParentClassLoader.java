@@ -15,12 +15,18 @@
  */
 package org.gradle.internal.classloader;
 
+import com.google.common.collect.ImmutableList;
 import org.gradle.internal.reflect.JavaMethod;
-import org.gradle.internal.reflect.JavaReflectionUtil;
 
 import java.io.IOException;
 import java.net.URL;
-import java.util.*;
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.Enumeration;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Set;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 /**
@@ -31,10 +37,19 @@ import java.util.concurrent.CopyOnWriteArrayList;
  */
 public class MultiParentClassLoader extends ClassLoader implements ClassLoaderHierarchy {
 
-    private static final JavaMethod<ClassLoader, Package[]> GET_PACKAGES_METHOD = JavaReflectionUtil.method(ClassLoader.class, Package[].class, "getPackages");
-    private static final JavaMethod<ClassLoader, Package> GET_PACKAGE_METHOD = JavaReflectionUtil.method(ClassLoader.class, Package.class, "getPackage", String.class);
+    private static final JavaMethod<ClassLoader, Package[]> GET_PACKAGES_METHOD = ClassLoaderUtils.getPackagesMethod();
+    private static final JavaMethod<ClassLoader, Package> GET_PACKAGE_METHOD =  ClassLoaderUtils.getPackageMethod();
 
     private final List<ClassLoader> parents;
+
+    static {
+        try {
+            //noinspection Since15
+            ClassLoader.registerAsParallelCapable();
+        } catch (NoSuchMethodError ignore) {
+            // Not supported on Java 6
+        }
+    }
 
     public MultiParentClassLoader(ClassLoader... parents) {
         this(Arrays.asList(parents));
@@ -47,6 +62,10 @@ public class MultiParentClassLoader extends ClassLoader implements ClassLoaderHi
 
     public void addParent(ClassLoader parent) {
         parents.add(parent);
+    }
+
+    public List<ClassLoader> getParents() {
+        return ImmutableList.copyOf(parents);
     }
 
     public void visit(ClassLoaderVisitor visitor) {
@@ -86,7 +105,7 @@ public class MultiParentClassLoader extends ClassLoader implements ClassLoaderHi
             Package[] parentPackages = GET_PACKAGES_METHOD.invoke(parent);
             packages.addAll(Arrays.asList(parentPackages));
         }
-        return packages.toArray(new Package[packages.size()]);
+        return packages.toArray(new Package[0]);
     }
 
     @Override

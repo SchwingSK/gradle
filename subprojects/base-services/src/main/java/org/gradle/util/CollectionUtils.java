@@ -15,27 +15,73 @@
  */
 package org.gradle.util;
 
-import com.google.common.base.Equivalence;
-import com.google.common.base.Function;
+import com.google.common.base.Joiner;
+import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableListMultimap;
-import com.google.common.collect.ImmutableSet;
-import com.google.common.collect.Iterables;
 import org.gradle.api.Action;
-import org.gradle.api.Nullable;
 import org.gradle.api.Transformer;
 import org.gradle.api.specs.Spec;
+import org.gradle.internal.Cast;
 import org.gradle.internal.Factory;
 import org.gradle.internal.Pair;
 import org.gradle.internal.Transformers;
 
+import javax.annotation.Nullable;
 import java.lang.reflect.Array;
-import java.util.*;
+import java.util.AbstractList;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.Enumeration;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Iterator;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.Map;
+import java.util.NoSuchElementException;
+import java.util.Set;
 
 import static org.gradle.internal.Cast.cast;
 
 public abstract class CollectionUtils {
 
+    /**
+     * Returns null if the collection is empty otherwise expects a {@link #single(Iterable)} element to be found.
+     */
+    @Nullable
+    public static <T> T findSingle(Collection<T> source) {
+        return source.isEmpty() ? null : single(source);
+    }
+
+    /**
+     * Returns the single element in the collection or throws.
+     */
+    public static <T> T single(Iterable<? extends T> source) {
+        Iterator<? extends T> iterator = source.iterator();
+        if (!iterator.hasNext()) {
+            throw new NoSuchElementException("Expecting collection with single element, got none.");
+        }
+        T element = iterator.next();
+        if (iterator.hasNext()) {
+            throw new IllegalArgumentException("Expecting collection with single element, got multiple.");
+        }
+        return element;
+    }
+
+    public static <T> Collection<? extends T> checkedCast(Class<T> type, Collection<?> input) {
+        for (Object o : input) {
+            cast(type, o);
+        }
+        return Cast.uncheckedCast(input);
+    }
+
+    @Nullable
     public static <T> T findFirst(Iterable<? extends T> source, Spec<? super T> filter) {
         for (T item : source) {
             if (filter.isSatisfiedBy(item)) {
@@ -46,6 +92,7 @@ public abstract class CollectionUtils {
         return null;
     }
 
+    @Nullable
     public static <T> T findFirst(T[] source, Spec<? super T> filter) {
         for (T thing : source) {
             if (filter.isSatisfiedBy(thing)) {
@@ -54,6 +101,10 @@ public abstract class CollectionUtils {
         }
 
         return null;
+    }
+
+    public static <T> T first(Iterable<? extends T> source) {
+        return source.iterator().next();
     }
 
     public static <T> boolean any(Iterable<? extends T> source, Spec<? super T> filter) {
@@ -343,9 +394,27 @@ public abstract class CollectionUtils {
         }
     }
 
+    /**
+     * Given a set of values, derive a set of keys and return a map
+     */
     public static <K, V> Map<K, V> collectMap(Iterable<? extends V> items, Transformer<? extends K, ? super V> keyGenerator) {
         Map<K, V> map = new LinkedHashMap<K, V>();
         collectMap(map, items, keyGenerator);
+        return map;
+    }
+
+    public static <K, V> void collectMapValues(Map<K, V> destination, Iterable<? extends K> keys, Transformer<? extends V, ? super K> keyGenerator) {
+        for (K item : keys) {
+            destination.put(item, keyGenerator.transform(item));
+        }
+    }
+
+    /**
+     * Given a set of keys, derive a set of values and return a map
+     */
+    public static <K, V> Map<K, V> collectMapValues(Iterable<? extends K> keys, Transformer<? extends V, ? super K> keyGenerator) {
+        Map<K, V> map = new LinkedHashMap<K, V>();
+        collectMapValues(map, keys, keyGenerator);
         return map;
     }
 
@@ -498,6 +567,30 @@ public abstract class CollectionUtils {
         return string.toString();
     }
 
+    /**
+     * Partition given Collection into a Pair of Collections.
+     *
+     * <pre>Left</pre> Collection containing entries that satisfy the given predicate
+     * <pre>Right</pre> Collection containing entries that do NOT satisfy the given predicate
+     */
+    public static <T> Pair<Collection<T>, Collection<T>> partition(Iterable<T> items, Spec<? super T> predicate) {
+        Preconditions.checkNotNull(items, "Cannot partition null Collection");
+        Preconditions.checkNotNull(predicate, "Cannot apply null Spec when partitioning");
+
+        Collection<T> left = new LinkedList<T>();
+        Collection<T> right = new LinkedList<T>();
+
+        for (T item : items) {
+            if (predicate.isSatisfiedBy(item)) {
+                left.add(item);
+            } else {
+                right.add(item);
+            }
+        }
+
+        return Pair.of(left, right);
+    }
+
     public static class InjectionStep<T, I> {
         private final T target;
         private final I item;
@@ -533,7 +626,7 @@ public abstract class CollectionUtils {
         return target;
     }
 
-    public static <K, V> ImmutableListMultimap<K, V> groupBy(Iterable<? extends V> iterable, Transformer<? extends K, V> grouper) {
+    public static <K, V> Map<K, Collection<V>> groupBy(Iterable<? extends V> iterable, Transformer<? extends K, V> grouper) {
         ImmutableListMultimap.Builder<K, V> builder = ImmutableListMultimap.builder();
 
         for (V element : iterable) {
@@ -541,7 +634,7 @@ public abstract class CollectionUtils {
             builder.put(key, element);
         }
 
-        return builder.build();
+        return builder.build().asMap();
     }
 
     public static <T> Iterable<? extends T> unpack(final Iterable<? extends Factory<? extends T>> factories) {
@@ -572,18 +665,7 @@ public abstract class CollectionUtils {
         return list.isEmpty() ? null : list;
     }
 
-    public static <T> List<T> dedup(Iterable<T> source, final Equivalence<T> equivalence) {
-        Iterable<Equivalence.Wrapper<T>> wrappers = Iterables.transform(source, new Function<T, Equivalence.Wrapper<T>>() {
-            public Equivalence.Wrapper<T> apply(@Nullable T input) {
-                return equivalence.wrap(input);
-            }
-        });
-        Set<Equivalence.Wrapper<T>> deduped = ImmutableSet.copyOf(wrappers);
-        return ImmutableList.copyOf(Iterables.transform(deduped, new Function<Equivalence.Wrapper<T>, T>() {
-            public T apply(Equivalence.Wrapper<T> input) {
-                return input.get();
-            }
-        }));
+    public static String asCommandLine(Iterable<String> arguments) {
+        return Joiner.on(" ").join(collect(arguments, Transformers.asSafeCommandLineArgument()));
     }
-
 }

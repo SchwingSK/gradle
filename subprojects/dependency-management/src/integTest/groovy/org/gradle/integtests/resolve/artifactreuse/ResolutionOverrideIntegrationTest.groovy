@@ -79,7 +79,7 @@ configurations { missing }
 dependencies {
     missing 'org.name:projectA:1.2'
 }
-task showMissing << { println configurations.missing.files }
+task showMissing { doLast { println configurations.missing.files } }
 """
 
         when:
@@ -92,7 +92,7 @@ task showMissing << { println configurations.missing.files }
         when:
         server.resetExpectations()
         module.pom.expectGet()
-        module.getArtifact().expectGet()
+        module.artifact.expectGet()
 
         then:
         executer.withArguments("--refresh-dependencies")
@@ -193,8 +193,10 @@ repositories {
 }
 configurations { compile }
 dependencies { compile 'org.name:projectA:1.2' }
-task listJars << {
-    assert configurations.compile.collect { it.name } == ['projectA-1.2.jar']
+task listJars {
+    doLast {
+        assert configurations.compile.collect { it.name } == ['projectA-1.2.jar']
+    }
 }
 """
 

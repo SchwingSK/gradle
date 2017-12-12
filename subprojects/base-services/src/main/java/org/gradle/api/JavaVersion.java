@@ -15,6 +15,8 @@
  */
 package org.gradle.api;
 
+import com.google.common.annotations.VisibleForTesting;
+
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -22,12 +24,18 @@ import java.util.regex.Pattern;
  * An enumeration of Java versions.
  */
 public enum JavaVersion {
-    VERSION_1_1(false), VERSION_1_2(false), VERSION_1_3(false), VERSION_1_4(false), VERSION_1_5(true), VERSION_1_6(true), VERSION_1_7(true), VERSION_1_8(true), VERSION_1_9(true);
-
+    VERSION_1_1(false), VERSION_1_2(false), VERSION_1_3(false), VERSION_1_4(false),
+    // starting from here versions are 1_ but their official name is "Java 6", "Java 7", ...
+    VERSION_1_5(true), VERSION_1_6(true), VERSION_1_7(true), VERSION_1_8(true), VERSION_1_9(true), VERSION_1_10(true);
+    private static JavaVersion currentJavaVersion;
     private final boolean hasMajorVersion;
+    private final String versionName;
+    private final String majorVersion;
 
-    private JavaVersion(boolean hasMajorVersion) {
+    JavaVersion(boolean hasMajorVersion) {
         this.hasMajorVersion = hasMajorVersion;
+        this.versionName = name().substring("VERSION_".length()).replace('_', '.');
+        this.majorVersion = name().substring(10);
     }
 
     /**
@@ -46,14 +54,15 @@ public enum JavaVersion {
         }
 
         String name = value.toString();
-        if (name.matches("\\d")) {
-            int index = Integer.parseInt(name) - 1;
-            if (index < values().length && values()[index].hasMajorVersion) {
+        Matcher matcher = Pattern.compile("(\\d{1,2})(\\D.+)?").matcher(name);
+        if (matcher.matches()) {
+            int index = Integer.parseInt(matcher.group(1)) - 1;
+            if (index > 0 && index < values().length && values()[index].hasMajorVersion) {
                 return values()[index];
             }
         }
 
-        Matcher matcher = Pattern.compile("1\\.(\\d)(\\D.*)?").matcher(name);
+        matcher = Pattern.compile("1\\.(\\d{1,2})(\\D.+)?").matcher(name);
         if (matcher.matches()) {
             int versionIdx = Integer.parseInt(matcher.group(1)) - 1;
             if (versionIdx >= 0 && versionIdx < values().length) {
@@ -69,15 +78,30 @@ public enum JavaVersion {
      * @return The version of the current JVM.
      */
     public static JavaVersion current() {
-        return toVersion(System.getProperty("java.version"));
+        if (currentJavaVersion == null) {
+            currentJavaVersion = toVersion(System.getProperty("java.version"));
+        }
+        return currentJavaVersion;
+    }
+
+    @VisibleForTesting
+    static void resetCurrent() {
+        currentJavaVersion = null;
     }
 
     public static JavaVersion forClassVersion(int classVersion) {
         int index = classVersion - 45; //class file versions: 1.1 == 45, 1.2 == 46...
-        if (index > 0 && index < values().length && values()[index].hasMajorVersion) {
+        if (index >= 0 && index < values().length) {
             return values()[index];
         }
         throw new IllegalArgumentException(String.format("Could not determine java version from '%d'.", classVersion));
+    }
+
+    public static JavaVersion forClass(byte[] classData) {
+        if (classData.length < 8) {
+            throw new IllegalArgumentException("Invalid class format. Should contain at least 8 bytes");
+        }
+        return forClassVersion(classData[7] & 0xFF);
     }
 
     public boolean isJava5() {
@@ -100,6 +124,10 @@ public enum JavaVersion {
         return this == VERSION_1_9;
     }
 
+    private boolean isJava10() {
+        return this == VERSION_1_10;
+    }
+
     public boolean isJava5Compatible() {
         return this.compareTo(VERSION_1_5) >= 0;
     }
@@ -120,16 +148,21 @@ public enum JavaVersion {
         return this.compareTo(VERSION_1_9) >= 0;
     }
 
+    @Incubating
+    public boolean isJava10Compatible() {
+        return this.compareTo(VERSION_1_10) >= 0;
+    }
+
     @Override
     public String toString() {
         return getName();
     }
 
     private String getName() {
-        return name().substring("VERSION_".length()).replace('_', '.');
+        return versionName;
     }
 
     public String getMajorVersion() {
-        return name().substring(10);
+        return majorVersion;
     }
 }

@@ -17,29 +17,49 @@ package org.gradle.integtests.fixtures
 
 import org.gradle.integtests.fixtures.executer.GradleDistribution
 import org.gradle.integtests.fixtures.executer.GradleExecuter
+import org.gradle.integtests.fixtures.executer.IntegrationTestBuildContext
 import org.gradle.integtests.fixtures.executer.UnderDevelopmentGradleDistribution
-import org.gradle.test.fixtures.file.TestDirectoryProvider
 import org.gradle.test.fixtures.file.TestFile
 import org.gradle.test.fixtures.file.TestNameTestDirectoryProvider
 import org.gradle.test.fixtures.maven.MavenFileRepository
+import org.gradle.testing.internal.util.RetryRule
 import org.junit.Rule
 import org.junit.runner.RunWith
 import spock.lang.Specification
 
 @RunWith(CrossVersionTestRunner)
-abstract class CrossVersionIntegrationSpec extends Specification implements TestDirectoryProvider {
+abstract class CrossVersionIntegrationSpec extends Specification {
     @Rule TestNameTestDirectoryProvider temporaryFolder = new TestNameTestDirectoryProvider()
+    private final List<GradleExecuter> executers = []
     final GradleDistribution current = new UnderDevelopmentGradleDistribution()
     static GradleDistribution previous
     private MavenFileRepository mavenRepo
     private TestFile gradleUserHomeDir
 
+    @Rule
+    RetryRule retryRule = RetryRuleUtil.retryCrossVersionTestOnIssueWithReleasedGradleVersion(this)
+
+    boolean retryWithCleanProjectDir() {
+        temporaryFolder.testDirectory.listFiles().each {
+            it.deleteDir()
+        }
+        true
+    }
+
+    def cleanup() {
+        executers.each { it.cleanup() }
+    }
+
     void requireOwnGradleUserHomeDir() {
-        gradleUserHomeDir = file("user-home-dir")
+        gradleUserHomeDir = file("user-home")
     }
 
     GradleDistribution getPrevious() {
         return previous
+    }
+
+    String getReleasedGradleVersion() {
+        return previous.version.baseVersion.version
     }
 
     protected TestFile getBuildFile() {
@@ -66,11 +86,12 @@ abstract class CrossVersionIntegrationSpec extends Specification implements Test
     }
 
     GradleExecuter version(GradleDistribution dist) {
-        def executer = dist.executer(temporaryFolder)
+        def executer = dist.executer(temporaryFolder, IntegrationTestBuildContext.INSTANCE)
         if (gradleUserHomeDir) {
             executer.withGradleUserHomeDir(gradleUserHomeDir)
         }
-        executer.withDeprecationChecksDisabled()
         executer.inDirectory(testDirectory)
+        executers << executer
+        return executer
     }
 }

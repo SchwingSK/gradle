@@ -18,12 +18,23 @@ package org.gradle.internal.classloader;
 
 import com.google.common.collect.MapMaker;
 
+import java.io.Closeable;
+import java.io.IOException;
 import java.util.concurrent.ConcurrentMap;
 
-public class CachingClassLoader extends ClassLoader implements ClassLoaderHierarchy {
+public class CachingClassLoader extends ClassLoader implements ClassLoaderHierarchy, Closeable {
     private static final Object MISSING_CLASS = new Object();
     private final ConcurrentMap<String, Object> loadedClasses = new MapMaker().weakValues().makeMap();
     private final ClassLoader parent;
+
+    static {
+        try {
+            //noinspection Since15
+            ClassLoader.registerAsParallelCapable();
+        } catch (NoSuchMethodError ignore) {
+            // Not supported on Java 6
+        }
+    }
 
     public CachingClassLoader(ClassLoader parent) {
         super(parent);
@@ -52,6 +63,11 @@ public class CachingClassLoader extends ClassLoader implements ClassLoaderHierar
     public void visit(ClassLoaderVisitor visitor) {
         visitor.visitSpec(new Spec());
         visitor.visitParent(getParent());
+    }
+
+    @Override
+    public void close() throws IOException {
+        loadedClasses.clear();
     }
 
     public static class Spec extends ClassLoaderSpec {

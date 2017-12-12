@@ -25,9 +25,7 @@ import java.util.Collection;
 import java.util.Iterator;
 import java.util.Set;
 
-@SuppressWarnings("rawtypes")
 public class BinaryTasksCollectionWrapper implements BinaryTasksCollection {
-
     private final BinaryTasksCollection delegate;
 
     public BinaryTasksCollectionWrapper(BinaryTasksCollection delegate) {
@@ -46,8 +44,23 @@ public class BinaryTasksCollectionWrapper implements BinaryTasksCollection {
     }
 
     @Override
+    public String taskName(String verb) {
+        return delegate.taskName(verb);
+    }
+
+    @Override
+    public String taskName(String verb, String object) {
+        return delegate.taskName(verb, object);
+    }
+
+    @Override
     public Task getBuild() {
         return delegate.getBuild();
+    }
+
+    @Override
+    public Task getCheck() {
+        return delegate.getCheck();
     }
 
     @Override
@@ -65,11 +78,13 @@ public class BinaryTasksCollectionWrapper implements BinaryTasksCollection {
         return delegate.matching(spec);
     }
 
+    @SuppressWarnings("rawtypes")
     @Override
     public DomainObjectSet<Task> matching(Closure spec) {
         return delegate.matching(spec);
     }
 
+    @SuppressWarnings("rawtypes")
     @Override
     public Set<Task> findAll(Closure spec) {
         return delegate.findAll(spec);
@@ -80,6 +95,7 @@ public class BinaryTasksCollectionWrapper implements BinaryTasksCollection {
         return delegate.withType(type, configureAction);
     }
 
+    @SuppressWarnings("rawtypes")
     @Override
     public <S extends Task> DomainObjectCollection<S> withType(Class<S> type, Closure configureClosure) {
         return delegate.withType(type, configureClosure);
@@ -90,6 +106,7 @@ public class BinaryTasksCollectionWrapper implements BinaryTasksCollection {
         return delegate.whenObjectAdded(action);
     }
 
+    @SuppressWarnings("rawtypes")
     @Override
     public void whenObjectAdded(Closure action) {
         delegate.whenObjectAdded(action);
@@ -100,6 +117,7 @@ public class BinaryTasksCollectionWrapper implements BinaryTasksCollection {
         return delegate.whenObjectRemoved(action);
     }
 
+    @SuppressWarnings("rawtypes")
     @Override
     public void whenObjectRemoved(Closure action) {
         delegate.whenObjectRemoved(action);
@@ -110,6 +128,7 @@ public class BinaryTasksCollectionWrapper implements BinaryTasksCollection {
         delegate.all(action);
     }
 
+    @SuppressWarnings("rawtypes")
     @Override
     public void all(Closure action) {
         delegate.all(action);

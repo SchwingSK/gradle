@@ -26,8 +26,8 @@ class BuildLogLevelMixInTest extends Specification {
 
     def "knows build log level for mixed set of arguments"() {
         when:
-        parameters.getArguments([]) >> args
-        parameters.getVerboseLogging(false) >> false
+        parameters.getArguments() >> args
+        parameters.getVerboseLogging() >> false
 
         then:
         mixin.getBuildLogLevel() == logLevel
@@ -36,6 +36,7 @@ class BuildLogLevelMixInTest extends Specification {
         args                     | logLevel
         ['-i']                   | LogLevel.INFO
         ['-q']                   | LogLevel.QUIET
+        ['-w']                   | LogLevel.WARN
         ['foo', '--info', 'bar'] | LogLevel.INFO
         ['-i', 'foo', 'bar']     | LogLevel.INFO
         ['foo', 'bar', '-i']     | LogLevel.INFO
@@ -43,23 +44,25 @@ class BuildLogLevelMixInTest extends Specification {
 
     def "verbose flag is only used when no log level arguments"() {
         when:
-        parameters.getArguments([]) >> args
-        parameters.getVerboseLogging(false) >> verbose
+        parameters.getArguments() >> args
+        parameters.getVerboseLogging() >> verbose
 
         then:
         mixin.getBuildLogLevel() == logLevel
 
         where:
-        args                     | verbose | logLevel
-        ['-q']                   | false   | LogLevel.QUIET
-        ['-q']                   | true    | LogLevel.QUIET
-        ['noLogLevelArguments']  | true    | LogLevel.DEBUG
+        args                    | verbose | logLevel
+        ['-q']                  | false   | LogLevel.QUIET
+        ['-q']                  | true    | LogLevel.QUIET
+        ['noLogLevelArguments'] | true    | LogLevel.DEBUG
+        null                    | false   | LogLevel.LIFECYCLE
+        null                    | true    | LogLevel.DEBUG
     }
 
     def "default log level is lifecycle"() {
         when:
-        parameters.getArguments([]) >> ['no log level arguments']
-        parameters.getVerboseLogging(false) >> false
+        parameters.getArguments() >> ['no log level arguments']
+        parameters.getVerboseLogging() >> false
 
         then:
         mixin.getBuildLogLevel() == LogLevel.LIFECYCLE

@@ -20,7 +20,6 @@ package org.gradle.integtests.resolve.caching
 
 import org.gradle.integtests.fixtures.AbstractDependencyResolutionTest
 import org.gradle.test.fixtures.ivy.IvyFileRepository
-import spock.lang.Ignore
 
 class CachingDependencyMetadataInMemoryIntegrationTest extends AbstractDependencyResolutionTest {
 
@@ -41,16 +40,20 @@ class CachingDependencyMetadataInMemoryIntegrationTest extends AbstractDependenc
                 two 'org:lib:1.+'
             }
             //runs first and resolves
-            task resolveOne << {
-                configurations.one.files
+            task resolveOne {
+                doLast {
+                    configurations.one.files
+                }
             }
             //runs second, purges repo
             task purgeRepo(type: Delete, dependsOn: resolveOne) {
                 delete "${mavenRepo.uri}"
             }
             //runs last, still works even thoug local repo is empty
-            task resolveTwo(dependsOn: purgeRepo) << {
-                println "Resolved " + configurations.two.files*.name
+            task resolveTwo(dependsOn: purgeRepo) {
+                doLast {
+                    println "Resolved " + configurations.two.files*.name
+                }
             }
         """
 
@@ -72,7 +75,7 @@ class CachingDependencyMetadataInMemoryIntegrationTest extends AbstractDependenc
                 configurations { conf }
                 repositories { ivy { url "${ivyRepo.uri}" } }
                 dependencies { conf 'org:lib:1.0' }
-                task resolveConf << { println path + " " + configurations.conf.files*.name }
+                task resolveConf { doLast { println path + " " + configurations.conf.files*.name } }
             }
             task purgeRepo(type: Delete, dependsOn: ':impl:resolveConf') {
                 delete "${ivyRepo.uri}"
@@ -100,7 +103,7 @@ class CachingDependencyMetadataInMemoryIntegrationTest extends AbstractDependenc
             allprojects {
                 configurations { conf }
                 dependencies { conf 'org:lib:1.0' }
-                task resolveConf << { println "\$path " + configurations.conf.files*.name }
+                task resolveConf { doLast { println "\$path " + configurations.conf.files*.name } }
             }
             repositories { ivy { url "${ivyRepo.uri}" } }
             project(":impl") {
@@ -116,56 +119,6 @@ class CachingDependencyMetadataInMemoryIntegrationTest extends AbstractDependenc
         output.contains ':resolveConf [lib-1.0.jar]'
         //uses different repo that does not contain this dependency
         failure.assertResolutionFailure(":impl:conf").assertHasCause("Could not find org:lib:1.0")
-    }
-
-    @Ignore //TODO SF rework or remove this test
-    def "snapshot artifacts are only cached per build"() {
-        given:
-        file("provider/build.gradle") << """
-            apply plugin: 'java'
-            apply plugin: 'maven'
-            group = 'org'
-            archivesBaseName = 'provider'
-            version = '1.0-SNAPSHOT'
-            repositories { maven { url "$mavenRepo.uri" } }
-        """
-        file("provider/src/main/java/Name.java") << """public class Name {
-            public String toString() { return "foo"; }
-        }"""
-
-        when:
-        inDirectory "provider"; run "install"
-
-        then:
-        noExceptionThrown()
-
-        when:
-        file("consumer/build.gradle") << """
-            buildscript {
-                repositories { mavenLocal() }
-                dependencies { classpath 'org:provider:1.0-SNAPSHOT' }
-            }
-            task printName << { println "Name: " + new Name() }
-        """
-
-        inDirectory("consumer"); run "printName"
-
-        then:
-        output.contains "Name: foo"
-
-        when:
-        //change the class
-        file("provider/src/main/java/Name.java").text = """public class Name {
-            public String toString() { return "updated"; }
-        }"""
-
-        inDirectory("provider"); run "install"
-
-        and:
-        inDirectory("consumer"); run "printName"
-
-        then:
-        output.contains "Name: updated" //uses updated artifact
     }
 
     def "cache expires at the end of build"() {

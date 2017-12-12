@@ -15,21 +15,62 @@
  */
 package org.gradle.language.rc
 
+import net.rubygrapefruit.platform.WindowsRegistry
 import org.apache.commons.lang.RandomStringUtils
+import org.gradle.internal.os.OperatingSystem
 import org.gradle.language.AbstractNativeLanguageIntegrationTest
 import org.gradle.nativeplatform.fixtures.RequiresInstalledToolChain
 import org.gradle.nativeplatform.fixtures.app.HelloWorldApp
 import org.gradle.nativeplatform.fixtures.app.WindowsResourceHelloWorldApp
+import org.gradle.nativeplatform.toolchain.internal.msvcpp.DefaultWindowsSdkLocator
+import org.gradle.nativeplatform.toolchain.internal.msvcpp.WindowsSdk
+import org.gradle.nativeplatform.toolchain.internal.msvcpp.WindowsSdkLocator
 import org.gradle.test.fixtures.file.TestFile
+import org.gradle.testfixtures.internal.NativeServicesTestFixture
+import org.gradle.util.TextUtil
 import spock.lang.Ignore
+import spock.lang.Unroll
 
-import static org.gradle.nativeplatform.fixtures.ToolChainRequirement.VisualCpp
+import static org.gradle.nativeplatform.fixtures.ToolChainRequirement.VISUALCPP
 import static org.gradle.util.Matchers.containsText
 
-@RequiresInstalledToolChain(VisualCpp)
+@RequiresInstalledToolChain(VISUALCPP)
 class WindowsResourcesIntegrationTest extends AbstractNativeLanguageIntegrationTest {
-
+    static final List<WindowsSdk> NON_DEFAULT_SDKS = getNonDefaultSdks()
     HelloWorldApp helloWorldApp = new WindowsResourceHelloWorldApp()
+
+    @Unroll
+    def "compile and link executable with #sdk.name (#sdk.version.toString()) [#tc.displayName]"() {
+        given:
+        buildFile << """
+            model {
+                components {
+                    main(NativeExecutableSpec)
+                }
+            
+                toolChains {
+                    ${toolChain.id} {
+                        windowsSdkDir "${TextUtil.normaliseFileSeparators(sdk.getBaseDir().absolutePath)}"
+                    }
+                }
+            }
+        """
+
+        and:
+        helloWorldApp.writeSources(file("src/main"))
+
+        when:
+        run "mainExecutable"
+
+        then:
+        def mainExecutable = executable("build/exe/main/main")
+        mainExecutable.assertExists()
+        mainExecutable.exec().out == helloWorldApp.englishOutput
+
+        where:
+        sdk << NON_DEFAULT_SDKS
+        tc = toolChain
+    }
 
     def "user receives a reasonable error message when resource compilation fails"() {
         given:
@@ -50,7 +91,7 @@ model {
 
         expect:
         fails "mainExecutable"
-        failure.assertHasDescription("Execution failed for task ':compileMainExecutableMainRc'.");
+        failure.assertHasDescription("Execution failed for task ':compileMainExecutableMainRc'.")
         failure.assertHasCause("A build operation failed.")
         failure.assertThatCause(containsText("Windows resource compiler failed while compiling broken.rc"))
     }
@@ -116,8 +157,8 @@ model {
         run "installMainExecutable"
 
         then:
-        resourceOnlyLibrary("build/binaries/resourcesSharedLibrary/resources").assertExists()
-        installation("build/install/mainExecutable").exec().out == "Hello!"
+        resourceOnlyLibrary("build/libs/resources/shared/resources").assertExists()
+        installation("build/install/main").exec().out == "Hello!"
     }
 
     @Ignore
@@ -126,7 +167,7 @@ model {
         // we create a project path that is ~180 characters to end up
         // with a path for the compiled resources.res > 260 chars
         def projectPathOffset = 180 - testDirectory.getAbsolutePath().length()
-        def nestedProjectPath = RandomStringUtils.randomAlphanumeric(projectPathOffset-10) + "/123456789"
+        def nestedProjectPath = RandomStringUtils.randomAlphanumeric(projectPathOffset - 10) + "/123456789"
 
         setup:
         def deepNestedProjectFolder = file(nestedProjectPath)
@@ -143,11 +184,17 @@ model {
         """
 
         and:
-        helloWorldApp.writeSources(file("$nestedProjectPath/src/main"));
+        helloWorldApp.writeSources(file("$nestedProjectPath/src/main"))
 
         expect:
         // this test is just for verifying explicitly the behaviour of the windows resource compiler
         // that's why we explicitly trigger this task instead of main.
         succeeds "mainExecutable"
+    }
+
+    static List<WindowsSdk> getNonDefaultSdks() {
+        WindowsSdkLocator locator = new DefaultWindowsSdkLocator(OperatingSystem.current(), NativeServicesTestFixture.getInstance().get(WindowsRegistry.class))
+        WindowsSdk defaultSdk = locator.locateWindowsSdks(null).sdk
+        return locator.locateAllWindowsSdks() - defaultSdk
     }
 }

@@ -23,7 +23,7 @@ import org.hamcrest.Matcher
 class TestNGExecutionResult implements TestExecutionResult {
     private final TestFile projectDir
     private GPathResult resultsXml
-    public static final String DEFAULT_TESTNG_REPORT = "build/reports/tests"
+    public static final String DEFAULT_TESTNG_REPORT = "build/reports/tests/test"
     private final String outputDirectory
 
     TestNGExecutionResult(projectDir, String outputDirectory = DEFAULT_TESTNG_REPORT) {
@@ -45,11 +45,16 @@ class TestNGExecutionResult implements TestExecutionResult {
     }
 
     TestExecutionResult assertTestClassesExecuted(String... testClasses) {
+        Set actualTestClasses = getExecutedTestClasses()
+        assert actualTestClasses == testClasses as Set
+        this
+    }
+
+    private Set getExecutedTestClasses() {
         parseResults()
         htmlReportFile().assertIsFile()
         def actualTestClasses = findTestClasses().keySet()
-        assert actualTestClasses == testClasses as Set
-        this
+        actualTestClasses
     }
 
     private TestFile htmlReportFile() {
@@ -59,6 +64,17 @@ class TestNGExecutionResult implements TestExecutionResult {
     TestClassExecutionResult testClass(String testClass) {
         parseResults()
         return new TestNgTestClassExecutionResult(testClass, findTestClass(testClass))
+    }
+
+    @Override
+    TestClassExecutionResult testClassStartsWith(String testClass) {
+        def matching = findTestClassStartsWith(testClass)
+        return new TestNgTestClassExecutionResult(matching.key, matching.value)
+    }
+
+    @Override
+    int getTotalNumberOfTestClassesExecuted() {
+        return getExecutedTestClasses().size()
     }
 
     private void parseResults() {
@@ -75,6 +91,15 @@ class TestNGExecutionResult implements TestExecutionResult {
             throw new AssertionError("Could not find test class ${testClass}. Found ${testClasses.keySet()}")
         }
         testClasses[testClass]
+    }
+
+    private def findTestClassStartsWith(String testClass) {
+        def testClasses = findTestClasses()
+        def matching = testClasses.find { it.key.startsWith(testClass) }
+        if (!matching) {
+            throw new AssertionError("Could not find test class matching ${testClass}. Found ${testClasses.keySet()}")
+        }
+        matching
     }
 
     private def findTestClasses() {

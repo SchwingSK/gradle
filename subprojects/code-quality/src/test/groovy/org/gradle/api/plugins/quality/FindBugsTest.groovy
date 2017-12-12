@@ -80,7 +80,7 @@ class FindBugsTest extends Specification {
         findbugs.reports {
             xml {
                 enabled = true
-                destination "build/findbugs.xml"
+                destination = project.file("build/findbugs.xml")
             }
         }
 
@@ -125,5 +125,39 @@ class FindBugsTest extends Specification {
         expect:
         findbugs.excludeBugsFilter == project.file("config/file.txt")
         findbugs.excludeBugsFilterConfig.inputFiles.singleFile == project.file("config/file.txt")
+    }
+
+    def "can add extra args"() {
+        given:
+        findbugs.extraArgs = [ 'abc' ]
+        expect:
+        findbugs.extraArgs == [ 'abc' ]
+
+        when:
+        findbugs.extraArgs 'def'
+        then:
+        findbugs.extraArgs == [ 'abc', 'def' ]
+
+        when:
+        findbugs.extraArgs([ 'ghi', 'jkl' ])
+        then:
+        findbugs.extraArgs == [ 'abc', 'def', 'ghi', 'jkl' ]
+    }
+
+    def "can add jvm args"() {
+        given:
+        findbugs.jvmArgs = [ '-Dabc' ]
+        expect:
+        findbugs.jvmArgs == [ '-Dabc' ]
+
+        when:
+        findbugs.jvmArgs '-Ddef'
+        then:
+        findbugs.jvmArgs == [ '-Dabc', '-Ddef' ]
+
+        when:
+        findbugs.jvmArgs([ '-Dghi', '-Djkl' ])
+        then:
+        findbugs.jvmArgs == [ '-Dabc', '-Ddef', '-Dghi', '-Djkl' ]
     }
 }

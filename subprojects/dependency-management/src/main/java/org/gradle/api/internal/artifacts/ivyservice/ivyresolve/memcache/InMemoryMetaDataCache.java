@@ -16,27 +16,25 @@
 
 package org.gradle.api.internal.artifacts.ivyservice.ivyresolve.memcache;
 
-import org.gradle.api.artifacts.ModuleVersionSelector;
+import com.google.common.collect.Maps;
 import org.gradle.api.artifacts.component.ModuleComponentIdentifier;
+import org.gradle.api.artifacts.component.ModuleComponentSelector;
+import org.gradle.api.internal.artifacts.repositories.resolver.MetadataFetchingCost;
+import org.gradle.internal.Factory;
 import org.gradle.internal.resolve.result.BuildableModuleComponentMetaDataResolveResult;
 import org.gradle.internal.resolve.result.BuildableModuleVersionListingResolveResult;
 
-import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
 
 import static org.gradle.internal.resolve.result.BuildableModuleVersionListingResolveResult.State.Listed;
 
 class InMemoryMetaDataCache {
-    private final Map<ModuleVersionSelector, Set<String>> moduleVersionListing = new HashMap<ModuleVersionSelector, Set<String>>();
-    private final Map<ModuleComponentIdentifier, CachedModuleVersionResult> metaData = new HashMap<ModuleComponentIdentifier, CachedModuleVersionResult>();
-    private InMemoryCacheStats stats;
+    private final Map<ModuleComponentSelector, Set<String>> moduleVersionListing = Maps.newConcurrentMap();
+    private final Map<ModuleComponentIdentifier, CachedModuleVersionResult> metaData = Maps.newConcurrentMap();
+    private final Map<ModuleComponentIdentifier, MetadataFetchingCost> fetchingCosts = Maps.newConcurrentMap();
 
-    InMemoryMetaDataCache(InMemoryCacheStats stats) {
-        this.stats = stats;
-    }
-
-    public boolean supplyModuleVersions(ModuleVersionSelector requested, BuildableModuleVersionListingResolveResult result) {
+    public boolean supplyModuleVersions(ModuleComponentSelector requested, BuildableModuleVersionListingResolveResult result) {
         Set<String> versions = moduleVersionListing.get(requested);
         if (versions == null) {
             return false;
@@ -45,7 +43,7 @@ class InMemoryMetaDataCache {
         return true;
     }
 
-    public void newModuleVersions(ModuleVersionSelector requested, BuildableModuleVersionListingResolveResult result) {
+    public void newModuleVersions(ModuleComponentSelector requested, BuildableModuleVersionListingResolveResult result) {
         if (result.getState() == Listed) {
             moduleVersionListing.put(requested, result.getVersions());
         }
@@ -57,7 +55,6 @@ class InMemoryMetaDataCache {
             return false;
         }
         fromCache.supply(result);
-        stats.metadataServed++;
         return true;
     }
 
@@ -66,5 +63,18 @@ class InMemoryMetaDataCache {
         if (cachedResult.isCacheable()) {
             metaData.put(requested, cachedResult);
         }
+    }
+
+    MetadataFetchingCost getOrCacheFetchingCost(ModuleComponentIdentifier id, Factory<MetadataFetchingCost> costFactory) {
+        MetadataFetchingCost cost = fetchingCosts.get(id);
+        if (cost == null) {
+            cost = costFactory.create();
+            fetchingCosts.put(id, cost);
+        }
+        return cost;
+    }
+
+    void cacheFetchingCost(ModuleComponentIdentifier id, MetadataFetchingCost cost) {
+        fetchingCosts.put(id, cost);
     }
 }

@@ -15,6 +15,7 @@
  */
 
 package org.gradle.api.publish.maven
+
 import org.gradle.integtests.fixtures.publish.maven.AbstractMavenPublishIntegTest
 import org.gradle.test.fixtures.keystore.TestKeyStore
 import org.gradle.test.fixtures.server.http.HttpServer
@@ -36,6 +37,10 @@ class MavenPublishHttpsIntegTest extends AbstractMavenPublishIntegTest {
 
         mavenRemoteRepo = new MavenHttpRepository(server, "/repo", mavenRepo)
         module = mavenRemoteRepo.module('org.gradle', 'publish', '2')
+    }
+
+    def cleanup() {
+        server.stop()
     }
 
     def "publish with server certificate"() {
@@ -77,12 +82,10 @@ class MavenPublishHttpsIntegTest extends AbstractMavenPublishIntegTest {
 
         then:
         failure.assertHasCause("Failed to publish publication 'maven' to repository 'maven'")
-        failure.assertHasCause("Error deploying artifact 'org.gradle:publish:jar': Error deploying artifact: Could not write to resource 'org/gradle/publish/2/publish-2.jar'")
-        // TODO:DAZ Get this exception into the cause
-        failure.error.contains("peer not authenticated")
+        failure.assertHasCause("Could not write to resource '${module.artifact.uri}")
     }
 
-    def "decent error message when server can't authenticate client"() {
+    def "build fails when server can't authenticate client"() {
         keyStore.enableSslWithServerAndBadClientCert(server)
         initBuild()
 
@@ -94,22 +97,15 @@ class MavenPublishHttpsIntegTest extends AbstractMavenPublishIntegTest {
 
         then:
         failure.assertHasCause("Failed to publish publication 'maven' to repository 'maven'")
-        failure.assertHasCause("Error deploying artifact 'org.gradle:publish:jar': Error deploying artifact: Could not write to resource 'org/gradle/publish/2/publish-2.jar'")
-        // TODO:DAZ Get this exception into the cause
-        failure.error.contains("peer not authenticated")
+        failure.assertHasCause("Could not write to resource '${module.artifact.uri}")
     }
 
     def expectPublication() {
-        module.artifact.expectPut()
-        module.artifact.sha1.expectPut()
-        module.artifact.md5.expectPut()
+        module.artifact.expectPublish()
         module.rootMetaData.expectGetMissing()
-        module.rootMetaData.expectPut()
-        module.rootMetaData.sha1.expectPut()
-        module.rootMetaData.md5.expectPut()
-        module.pom.expectPut()
-        module.pom.sha1.expectPut()
-        module.pom.md5.expectPut()
+        module.rootMetaData.expectPublish()
+        module.pom.expectPublish()
+        module.moduleMetadata.expectPublish()
     }
 
     def verifyPublications() {

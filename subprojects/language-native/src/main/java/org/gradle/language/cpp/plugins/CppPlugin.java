@@ -26,13 +26,15 @@ import org.gradle.nativeplatform.plugins.NativeComponentPlugin;
  *
  * <p>Automatically includes the {@link CppLangPlugin} for core C++ support and the {@link NativeComponentPlugin} for native component support.</p>
  *
+ * <ul>
  * <li>Creates a {@link org.gradle.language.cpp.tasks.CppCompile} task for each {@link org.gradle.language.cpp.CppSourceSet} to compile the C++ sources.</li>
+ * </ul>
  */
 @Incubating
 public class CppPlugin implements Plugin<Project> {
+    @Override
     public void apply(Project project) {
         project.getPluginManager().apply(NativeComponentPlugin.class);
         project.getPluginManager().apply(CppLangPlugin.class);
-        project.getPluginManager().apply(CppLangPCHPlugin.class);
     }
 }

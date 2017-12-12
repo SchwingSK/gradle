@@ -18,7 +18,7 @@ package org.gradle.api.internal.artifacts.ivyservice.ivyresolve.strategy
 import org.gradle.api.artifacts.ComponentMetadata
 import org.gradle.api.artifacts.ModuleVersionIdentifier
 
-class SubVersionSelectorTest extends AbstractVersionSelectorTest {
+class SubVersionSelectorTest extends AbstractStringVersionSelectorTest {
     def "all handled selectors are dynamic"() {
         expect:
         isDynamic("1+")
@@ -39,6 +39,16 @@ class SubVersionSelectorTest extends AbstractVersionSelectorTest {
         !accept("1+", "2")
         !accept("1.+", "11")
         !accept("1.2.3+", "1.2")
+    }
+
+    def "'+' is a valid selector which accepts everything"() {
+        expect:
+        accept("+", "11")
+        accept("+", "1.2")
+        accept("+", "1.2.3.11")
+        accept("+", "2")
+        accept("+", "11")
+        accept("+", "1.2")
     }
 
     def "metadata-aware accept method delivers same results"() {

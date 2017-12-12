@@ -16,12 +16,10 @@
 package org.gradle.api.internal.artifacts.ivyservice.ivyresolve;
 
 import org.gradle.api.artifacts.component.ModuleComponentIdentifier;
-import org.gradle.internal.component.external.model.MutableModuleComponentResolveMetaData;
-import org.gradle.internal.component.model.DependencyMetaData;
+import org.gradle.internal.component.external.model.IvyModuleResolveMetadata;
+import org.gradle.internal.component.external.model.ModuleComponentResolveMetadata;
+import org.gradle.internal.component.model.ComponentOverrideMetadata;
 import org.gradle.internal.resolve.result.BuildableModuleComponentMetaDataResolveResult;
-
-import java.util.ArrayList;
-import java.util.List;
 
 class IvyDynamicResolveModuleComponentRepositoryAccess extends BaseModuleComponentRepositoryAccess {
 
@@ -50,19 +48,19 @@ class IvyDynamicResolveModuleComponentRepositoryAccess extends BaseModuleCompone
         return "Ivy dynamic resolve > " + getDelegate().toString();
     }
 
-    public void resolveComponentMetaData(DependencyMetaData dependency, ModuleComponentIdentifier moduleComponentIdentifier, BuildableModuleComponentMetaDataResolveResult result) {
-        super.resolveComponentMetaData(dependency, moduleComponentIdentifier, result);
+    @Override
+    public void resolveComponentMetaData(ModuleComponentIdentifier moduleComponentIdentifier, ComponentOverrideMetadata requestMetaData, BuildableModuleComponentMetaDataResolveResult result) {
+        super.resolveComponentMetaData(moduleComponentIdentifier, requestMetaData, result);
         if (result.getState() == BuildableModuleComponentMetaDataResolveResult.State.Resolved) {
             transformDependencies(result);
         }
     }
 
     private void transformDependencies(BuildableModuleComponentMetaDataResolveResult result) {
-        MutableModuleComponentResolveMetaData metaData = result.getMetaData();
-        List<DependencyMetaData> transformed = new ArrayList<DependencyMetaData>();
-        for (DependencyMetaData dependency : metaData.getDependencies()) {
-            transformed.add(dependency.withRequestedVersion(dependency.getDescriptor().getDynamicConstraintDependencyRevisionId().getRevision()));
+        ModuleComponentResolveMetadata metadata = result.getMetaData();
+        if (metadata instanceof IvyModuleResolveMetadata) {
+            IvyModuleResolveMetadata transformedMetadata = ((IvyModuleResolveMetadata) metadata).withDynamicConstraintVersions();
+            result.setMetadata(transformedMetadata);
         }
-        metaData.setDependencies(transformed);
     }
 }

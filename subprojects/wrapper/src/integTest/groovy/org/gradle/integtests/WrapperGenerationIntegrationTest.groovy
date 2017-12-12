@@ -17,6 +17,7 @@
 package org.gradle.integtests
 
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
+import org.gradle.test.fixtures.ConcurrentTestUtil
 import org.gradle.util.TextUtil
 
 class WrapperGenerationIntegrationTest extends AbstractIntegrationSpec {
@@ -48,7 +49,7 @@ class WrapperGenerationIntegrationTest extends AbstractIntegrationSpec {
 
         then:
         // wrapper needs to be small. Let's check it's smaller than some arbitrary 'small' limit
-        file("gradle/wrapper/gradle-wrapper.jar").length() < 52 * 1024
+        file("gradle/wrapper/gradle-wrapper.jar").length() < 54 * 1024
     }
 
     def "generated wrapper scripts for given version from command-line"() {
@@ -59,11 +60,58 @@ class WrapperGenerationIntegrationTest extends AbstractIntegrationSpec {
         file("gradle/wrapper/gradle-wrapper.properties").text.contains("distributionUrl=https\\://services.gradle.org/distributions/gradle-2.2.1-bin.zip")
     }
 
+    def "generated wrapper does not change unnecessarily"() {
+        def wrapperJar = file("gradle/wrapper/gradle-wrapper.jar")
+        def wrapperProperties = file("gradle/wrapper/gradle-wrapper.properties")
+        run "wrapper", "--gradle-version", "2.2.1"
+        def testFile = file("modtime").touch()
+        def originalTime = testFile.lastModified()
+        when:
+        // Zip file time resolution is 2 seconds
+        ConcurrentTestUtil.poll {
+            testFile.touch()
+            assert (testFile.lastModified() - originalTime) >= 2000L
+        }
+        run "wrapper", "--gradle-version", "2.2.1", "--rerun-tasks"
+
+        then:
+        result.assertTasksExecuted(":wrapper")
+        wrapperJar.md5Hash == old(wrapperJar.md5Hash)
+        wrapperProperties.text == old(wrapperProperties.text)
+    }
+
+    def "generated wrapper scripts for valid distribution types from command-line"() {
+        when:
+        run "wrapper", "--gradle-version", "2.13", "--distribution-type", distributionType
+
+        then:
+        file("gradle/wrapper/gradle-wrapper.properties").text.contains("distributionUrl=https\\://services.gradle.org/distributions/gradle-2.13-${distributionType}.zip")
+
+        where:
+        distributionType << ["bin", "all"]
+    }
+
+    def "no generated wrapper scripts for invalid distribution type from command-line"() {
+        when:
+        fails "wrapper", "--gradle-version", "2.13", "--distribution-type", "invalid-distribution-type"
+
+        then:
+        failure.assertHasCause("Cannot convert string value 'invalid-distribution-type' to an enum value of type 'org.gradle.api.tasks.wrapper.Wrapper\$DistributionType' (valid case insensitive values: BIN, ALL)")
+    }
+
     def "generated wrapper scripts for given distribution URL from command-line"() {
         when:
         run "wrapper", "--gradle-distribution-url", "http://localhost:8080/gradlew/dist"
 
         then:
         file("gradle/wrapper/gradle-wrapper.properties").text.contains("distributionUrl=http\\://localhost\\:8080/gradlew/dist")
+    }
+
+    def "generated wrapper scripts for given distribution SHA-256 hash sum from command-line"() {
+        when:
+        run "wrapper", "--gradle-distribution-sha256-sum", "somehash"
+
+        then:
+        file("gradle/wrapper/gradle-wrapper.properties").text.contains("distributionSha256Sum=somehash")
     }
 }

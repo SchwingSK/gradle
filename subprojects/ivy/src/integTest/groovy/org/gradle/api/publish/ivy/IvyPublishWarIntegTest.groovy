@@ -17,7 +17,7 @@ package org.gradle.api.publish.ivy
 
 class IvyPublishWarIntegTest extends AbstractIvyPublishIntegTest {
 
-    public void "can publish WAR only for mixed java and WAR project"() {
+    void "can publish WAR only for mixed java and WAR project"() {
         given:
         file("settings.gradle") << "rootProject.name = 'publishTest' "
 
@@ -30,12 +30,10 @@ class IvyPublishWarIntegTest extends AbstractIvyPublishIntegTest {
             group = 'org.gradle.test'
             version = '1.9'
 
-            repositories {
-                mavenCentral()
-            }
+            ${mavenCentralRepository()}
 
             dependencies {
-                compile "commons-collections:commons-collections:3.2.1"
+                compile "commons-collections:commons-collections:3.2.2"
                 runtime "commons-io:commons-io:1.4"
                 providedCompile "commons-lang:commons-lang:2.6"
                 providedRuntime "commons-cli:commons-cli:1.2"
@@ -60,7 +58,7 @@ class IvyPublishWarIntegTest extends AbstractIvyPublishIntegTest {
         run "publish"
 
         then: "module is published with artifacts"
-        def ivyModule = ivyRepo.module("org.gradle.test", "publishTest", "1.9")
+        def ivyModule = javaLibrary(ivyRepo.module("org.gradle.test", "publishTest", "1.9"))
         ivyModule.assertPublishedAsWebModule()
 
         and: "correct configurations and depdendencies declared"
@@ -73,6 +71,6 @@ class IvyPublishWarIntegTest extends AbstractIvyPublishIntegTest {
         }
 
         and: "can resolve warfile"
-        resolveArtifacts(ivyModule) == ["publishTest-1.9.war"]
+        resolveArtifacts(ivyModule) { expectFiles "publishTest-1.9.war" }
     }
 }

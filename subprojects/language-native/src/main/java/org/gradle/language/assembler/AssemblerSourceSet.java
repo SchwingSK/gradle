@@ -17,11 +17,12 @@ package org.gradle.language.assembler;
 
 import org.gradle.api.Incubating;
 import org.gradle.language.base.LanguageSourceSet;
+import org.gradle.model.Managed;
 
 /**
  * A set of assembly language sources.
  *
- * <pre autoTested="true">
+ * <pre class='autoTested'>
  * apply plugin: "assembler"
  *
  * model {
@@ -40,6 +41,6 @@ import org.gradle.language.base.LanguageSourceSet;
  * }
  * </pre>
  */
-@Incubating
+@Incubating @Managed
 public interface AssemblerSourceSet extends LanguageSourceSet {
 }

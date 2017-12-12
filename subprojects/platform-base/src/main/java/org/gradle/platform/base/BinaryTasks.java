@@ -29,13 +29,9 @@ import java.lang.annotation.Target;
  * The following example demonstrates how to register multiple tasks for custom binary using a plugin with a
  * {@link org.gradle.platform.base.BinaryTasks} annotation.
  *
- * <pre autoTested='true'>
- * import org.gradle.model.*
- * import org.gradle.model.collection.*
- *
- * interface SampleComponent extends ComponentSpec {}
- * interface SampleBinary extends BinarySpec {}
- * class DefaultSampleBinary extends BaseBinarySpec implements SampleBinary {}
+ * <pre class='autoTested'>
+ * {@literal @}Managed interface SampleComponent extends ComponentSpec {}
+ * {@literal @}Managed interface SampleBinary extends BinarySpec {}
  *
  * apply plugin: MyCustomBinariesPlugin
  *
@@ -46,13 +42,11 @@ import java.lang.annotation.Target;
  * }
  *
  * class MyCustomBinariesPlugin extends RuleSource {
- *     {@literal @}BinaryType
- *     void register(BinaryTypeBuilder<SampleBinary> builder) {
- *         builder.defaultImplementation(DefaultSampleBinary)
- *     }
+ *     {@literal @}ComponentType
+ *     void register(TypeBuilder&lt;SampleBinary&gt; builder) {}
  *
  *     {@literal @}BinaryTasks
- *     void createBinaryTasks(CollectionBuilder<Task> tasks, SampleBinary binary) {
+ *     void createBinaryTasks(ModelMap&lt;Task&gt; tasks, SampleBinary binary) {
  *         tasks.create("${binary.name}Task1", MyCustomBinaryCreationTask)
  *         tasks.create("${binary.name}Task2") {
  *             dependsOn "${binary.name}Task1"

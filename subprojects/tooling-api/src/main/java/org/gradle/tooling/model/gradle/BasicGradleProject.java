@@ -17,10 +17,12 @@
 package org.gradle.tooling.model.gradle;
 
 import org.gradle.api.Incubating;
-import org.gradle.api.Nullable;
 import org.gradle.tooling.model.DomainObjectSet;
 import org.gradle.tooling.model.Model;
+import org.gradle.tooling.model.ProjectIdentifier;
+import org.gradle.tooling.model.ProjectModel;
 
+import javax.annotation.Nullable;
 import java.io.File;
 
 /**
@@ -29,7 +31,15 @@ import java.io.File;
  * @since 1.8
  */
 @Incubating
-public interface BasicGradleProject extends Model {
+public interface BasicGradleProject extends Model, ProjectModel {
+    /**
+     * Returns the identifier for this Gradle project.
+     *
+     * @since 2.13
+     */
+    @Incubating
+    ProjectIdentifier getProjectIdentifier();
+
     /**
      * Returns the name of this project. Note that the name is not a unique identifier for the project.
      *

@@ -15,25 +15,42 @@
  */
 package org.gradle.api.internal.artifacts.ivyservice.ivyresolve
 
+import org.gradle.api.artifacts.ComponentMetadataSupplier
+import org.gradle.api.internal.artifacts.ImmutableModuleIdentifierFactory
+import org.gradle.api.internal.artifacts.repositories.metadata.ImmutableMetadataSources
+import org.gradle.api.internal.artifacts.repositories.metadata.MetadataArtifactProvider
 import org.gradle.api.internal.artifacts.repositories.resolver.ExternalResourceResolver
+import org.gradle.api.internal.artifacts.repositories.resolver.ResourcePattern
+import org.gradle.api.internal.artifacts.repositories.resolver.VersionLister
+import org.gradle.api.internal.component.ArtifactType
+import org.gradle.caching.internal.BuildCacheHasher
+import org.gradle.internal.resource.ExternalResourceRepository
+import org.gradle.internal.resource.local.FileStore
+import org.gradle.internal.resource.local.LocallyAvailableResourceFinder
+import org.gradle.internal.resource.transfer.CacheAwareExternalResourceAccessor
 import spock.lang.Specification
 
-public class DependencyResolverIdentifierTest extends Specification {
+import java.lang.reflect.Field
+
+class DependencyResolverIdentifierTest extends Specification {
+    private final static Field IVY = ExternalResourceResolver.getDeclaredField('ivyPatterns')
+    private final static Field ARTIFACT = ExternalResourceResolver.getDeclaredField('artifactPatterns')
+
     def "dependency resolvers of type ExternalResourceResolver are differentiated by their patterns"() {
         given:
-        ExternalResourceResolver resolver1 = Mock()
-        ExternalResourceResolver resolver1a = Mock()
-        ExternalResourceResolver resolver2 = Mock()
-        ExternalResourceResolver resolver2a = Mock()
+        ExternalResourceResolver resolver1 = resolver()
+        ExternalResourceResolver resolver1a = resolver()
+        ExternalResourceResolver resolver2 = resolver()
+        ExternalResourceResolver resolver2a = resolver()
 
-        resolver1.ivyPatterns >> ['ivy1', 'ivy2']
-        resolver1.artifactPatterns >> ['artifact1', 'artifact2']
-        resolver1a.ivyPatterns >> ['ivy1', 'ivy2']
-        resolver1a.artifactPatterns >> ['artifact1', 'artifact2']
-        resolver2.ivyPatterns >> ['ivy1', 'different']
-        resolver2.artifactPatterns >> ['artifact1', 'artifact2']
-        resolver2a.ivyPatterns >> ['ivy1', 'ivy2']
-        resolver2a.artifactPatterns >> ['artifact1', 'different']
+        patterns(resolver1, IVY, ['ivy1', 'ivy2'])
+        patterns(resolver1, ARTIFACT, ['artifact1', 'artifact2'])
+        patterns(resolver1a, IVY, ['ivy1', 'ivy2'])
+        patterns(resolver1a, ARTIFACT, ['artifact1', 'artifact2'])
+        patterns(resolver2, IVY, ['ivy1', 'different'])
+        patterns(resolver2, ARTIFACT, ['artifact1', 'artifact2'])
+        patterns(resolver2a, IVY, ['ivy1', 'ivy2'])
+        patterns(resolver2a, ARTIFACT, ['artifact1', 'different'])
 
         expect:
         id(resolver1) == id(resolver1a)
@@ -42,22 +59,55 @@ public class DependencyResolverIdentifierTest extends Specification {
         id(resolver2) != id(resolver2a)
     }
 
-    def "dependency resolvers of type ExternalResourceResolver are differentiated by m2compatible flag"() {
-        given:
-        ExternalResourceResolver resolver1 = Mock()
-        ExternalResourceResolver resolver2 = Mock()
-
-        resolver1.ivyPatterns >> ['ivy1']
-        resolver1.artifactPatterns >> ['artifact1']
-        resolver2.ivyPatterns >> ['ivy1']
-        resolver2.artifactPatterns >> ['artifact1']
-        resolver2.m2compatible >> true
-
-        expect:
-        id(resolver1) != id(resolver2)
+    def patterns(ExternalResourceResolver resolver, Field field, List<String> patterns) {
+        field.accessible = true
+        field.set(resolver, patterns.collect { p -> Mock(ResourcePattern) {
+            getPattern() >> p
+        }})
     }
 
     def id(ExternalResourceResolver resolver) {
-        return DependencyResolverIdentifier.forExternalResourceResolver(resolver)
+        resolver.getId()
+    }
+
+    def resolver() {
+        return new TestResolver("repo", false, Stub(ExternalResourceRepository), Stub(CacheAwareExternalResourceAccessor), Stub(VersionLister), Stub(LocallyAvailableResourceFinder), Stub(FileStore), Stub(ImmutableModuleIdentifierFactory), Stub(ImmutableMetadataSources), Stub(MetadataArtifactProvider))
+    }
+
+    static class TestResolver extends ExternalResourceResolver {
+
+        protected TestResolver(String name, boolean local, ExternalResourceRepository repository, CacheAwareExternalResourceAccessor cachingResourceAccessor, VersionLister versionLister, LocallyAvailableResourceFinder locallyAvailableResourceFinder, FileStore artifactFileStore, ImmutableModuleIdentifierFactory moduleIdentifierFactory, ImmutableMetadataSources metadataSources, MetadataArtifactProvider metadataArtifactProvider) {
+            super(name, local, repository, cachingResourceAccessor, versionLister, locallyAvailableResourceFinder, artifactFileStore, moduleIdentifierFactory, metadataSources, metadataArtifactProvider)
+        }
+
+        @Override
+        protected void appendId(BuildCacheHasher hasher) {
+            super.appendId(hasher)
+        }
+
+        @Override
+        protected Class getSupportedMetadataType() {
+            throw new UnsupportedOperationException()
+        }
+
+        @Override
+        protected boolean isMetaDataArtifact(ArtifactType artifactType) {
+            throw new UnsupportedOperationException()
+        }
+
+        @Override
+        ModuleComponentRepositoryAccess getLocalAccess() {
+            throw new UnsupportedOperationException()
+        }
+
+        @Override
+        ModuleComponentRepositoryAccess getRemoteAccess() {
+            throw new UnsupportedOperationException()
+        }
+
+        @Override
+        ComponentMetadataSupplier createMetadataSupplier() {
+            throw new UnsupportedOperationException()
+        }
     }
 }

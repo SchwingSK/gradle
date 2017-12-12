@@ -15,27 +15,34 @@
  */
 package org.gradle.language.nativeplatform.internal.incremental;
 
+import com.google.common.collect.ImmutableMap;
+
 import java.io.File;
-import java.io.Serializable;
-import java.util.*;
+import java.util.Set;
 
-public class CompilationState implements Serializable {
-    List<File> sourceInputs = new ArrayList<File>();
-    Map<File, CompilationFileState> fileStates = new HashMap<File, CompilationFileState>();
+/**
+ * An immutable snapshot of compilation state.
+ */
+public class CompilationState {
+    private final ImmutableMap<File, SourceFileState> fileStates;
 
-    public List<File> getSourceInputs() {
-        return sourceInputs;
+    public CompilationState(ImmutableMap<File, SourceFileState> fileStates) {
+        this.fileStates = fileStates;
     }
 
-    public void addSourceInput(File file) {
-        sourceInputs.add(file);
+    public CompilationState() {
+        fileStates = ImmutableMap.of();
     }
 
-    public CompilationFileState getState(File file) {
+    public Set<File> getSourceInputs() {
+        return fileStates.keySet();
+    }
+
+    public ImmutableMap<File, SourceFileState> getFileStates() {
+        return fileStates;
+    }
+
+    public SourceFileState getState(File file) {
         return fileStates.get(file);
-    }
-
-    public void setState(File file, CompilationFileState compilationFileState) {
-        fileStates.put(file, compilationFileState);
     }
 }

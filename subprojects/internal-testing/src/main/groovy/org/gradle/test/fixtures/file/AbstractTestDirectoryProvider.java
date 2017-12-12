@@ -16,27 +16,35 @@
 
 package org.gradle.test.fixtures.file;
 
+import groovy.lang.Closure;
+import org.apache.commons.io.FileUtils;
 import org.apache.commons.lang.StringUtils;
-import org.junit.rules.MethodRule;
+import org.gradle.api.GradleException;
+import org.gradle.test.fixtures.ConcurrentTestUtil;
 import org.junit.rules.TestRule;
 import org.junit.runner.Description;
-import org.junit.runners.model.FrameworkMethod;
 import org.junit.runners.model.Statement;
 
-import java.io.File;
+import java.io.IOException;
 import java.util.Random;
+import java.util.regex.Pattern;
 
 
 /**
  * A JUnit rule which provides a unique temporary folder for the test.
  */
-abstract class AbstractTestDirectoryProvider implements MethodRule, TestRule, TestDirectoryProvider {
+abstract class AbstractTestDirectoryProvider implements TestRule, TestDirectoryProvider {
+    protected TestFile root;
+
+    private static final Random RANDOM = new Random();
+    private static final int ALL_DIGITS_AND_LETTERS_RADIX = 36;
+    private static final int MAX_RANDOM_PART_VALUE = Integer.valueOf("zzzzz", ALL_DIGITS_AND_LETTERS_RADIX);
+    private static final Pattern WINDOWS_RESERVED_NAMES = Pattern.compile("(con)|(prn)|(aux)|(nul)|(com\\d)|(lpt\\d)", Pattern.CASE_INSENSITIVE);
+
     private TestFile dir;
     private String prefix;
-    protected static TestFile root;
-    private static final Random RANDOM = new Random();
-    public static final int ALL_DIGITS_AND_LETTERS_RADIX = 36;
-    private static final int MAX_RANDOM_PART_VALUE = Integer.valueOf("zzzzz", ALL_DIGITS_AND_LETTERS_RADIX);
+    private boolean cleanup = true;
+    private boolean suppressCleanupErrors;
 
     private String determinePrefix() {
         StackTraceElement[] stackTrace = new RuntimeException().getStackTrace();
@@ -48,28 +56,59 @@ abstract class AbstractTestDirectoryProvider implements MethodRule, TestRule, Te
         return "unknown-test-class";
     }
 
-    protected Statement doApply(final Statement base, FrameworkMethod method, Object target) {
-        init(method.getName(), target.getClass().getSimpleName());
-        return new Statement() {
-            @Override
-            public void evaluate() throws Throwable {
-                base.evaluate();
-                getTestDirectory().maybeDeleteDir();
-                // Don't delete on failure
-            }
-        };
+    @Override
+    public void suppressCleanup() {
+        cleanup = false;
+    }
+
+    public boolean isCleanup() {
+        return cleanup;
     }
 
     public Statement apply(final Statement base, Description description) {
-        init(description.getMethodName(), description.getTestClass().getSimpleName());
-        return new Statement() {
-            @Override
-            public void evaluate() throws Throwable {
-                base.evaluate();
-                getTestDirectory().deleteDir();
-                // Don't delete on failure
+        Class<?> testClass = description.getTestClass();
+        init(description.getMethodName(), testClass.getSimpleName());
+
+        suppressCleanupErrors = testClass.getAnnotation(LeaksFileHandles.class) != null
+            || description.getAnnotation(LeaksFileHandles.class) != null;
+
+        return new TestDirectoryCleaningStatement(base, description.getDisplayName());
+    }
+
+    private class TestDirectoryCleaningStatement extends Statement {
+        private final Statement base;
+        private final String displayName;
+
+        public TestDirectoryCleaningStatement(Statement base, String displayName) {
+            this.base = base;
+            this.displayName = displayName;
+        }
+
+        @Override
+        public void evaluate() throws Throwable {
+            // implicitly don't clean up if this throws
+            base.evaluate();
+
+            try {
+                if (cleanup && dir != null && dir.exists()) {
+                    ConcurrentTestUtil.poll(new Closure(null, null) {
+                        @SuppressWarnings("UnusedDeclaration")
+                        void doCall() throws IOException {
+                            FileUtils.forceDelete(dir);
+                        }
+                    });
+                }
+            } catch (Exception e) {
+                String message = "Couldn't delete test dir for " + displayName + " (test is holding files open). "
+                    + "In order to find out which files are held open you may find http://file-leak-detector.kohsuke.org/ useful.";
+                if (suppressCleanupErrors) {
+                    System.err.println(message);
+                    e.printStackTrace(System.err);
+                } else {
+                    throw new GradleException(message, e);
+                }
             }
-        };
+        }
     }
 
     protected void init(String methodName, String className) {
@@ -78,9 +117,9 @@ abstract class AbstractTestDirectoryProvider implements MethodRule, TestRule, Te
             methodName = getClass().getSimpleName();
         }
         if (prefix == null) {
-            String safeMethodName = methodName.replaceAll("\\s", "_").replace(File.pathSeparator, "_").replace(":", "_").replace('"', '_');
-            if (safeMethodName.length() > 60) {
-                safeMethodName = safeMethodName.substring(0, 29) + "..." + safeMethodName.substring(safeMethodName.length() - 29);
+            String safeMethodName = methodName.replaceAll("[^\\w]", "_");
+            if (safeMethodName.length() > 30) {
+                safeMethodName = safeMethodName.substring(0, 19) + "..." + safeMethodName.substring(safeMethodName.length() - 9);
             }
             prefix = String.format("%s/%s", className, safeMethodName);
         }
@@ -88,20 +127,32 @@ abstract class AbstractTestDirectoryProvider implements MethodRule, TestRule, Te
 
     public TestFile getTestDirectory() {
         if (dir == null) {
-            if (prefix == null) {
-                // This can happen if this is used in a constructor or a @Before method. It also happens when using
-                // @RunWith(SomeRunner) when the runner does not support rules.
-                prefix = determinePrefix();
-            }
-            while (true) {
-                // Use a random prefix to avoid reusing test directories
-                dir = root.file(prefix, Integer.toString(RANDOM.nextInt(MAX_RANDOM_PART_VALUE), ALL_DIGITS_AND_LETTERS_RADIX));
-                if (dir.mkdirs()) {
-                    break;
-                }
-            }
+           dir = createUniqueTestDirectory();
         }
         return dir;
+    }
+
+    private TestFile createUniqueTestDirectory() {
+        while (true) {
+            // Use a random prefix to avoid reusing test directories
+            String randomPrefix = Integer.toString(RANDOM.nextInt(MAX_RANDOM_PART_VALUE), ALL_DIGITS_AND_LETTERS_RADIX);
+            if (WINDOWS_RESERVED_NAMES.matcher(randomPrefix).matches()) {
+                continue;
+            }
+            TestFile dir = root.file(getPrefix(), randomPrefix);
+            if (dir.mkdirs()) {
+                return dir;
+            }
+        }
+    }
+
+    private String getPrefix() {
+        if (prefix == null) {
+            // This can happen if this is used in a constructor or a @Before method. It also happens when using
+            // @RunWith(SomeRunner) when the runner does not support rules.
+            prefix = determinePrefix();
+        }
+        return prefix;
     }
 
     public TestFile file(Object... path) {

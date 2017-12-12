@@ -18,10 +18,10 @@ package org.gradle.launcher.daemon.client;
 import org.gradle.internal.UncheckedException;
 import org.gradle.internal.concurrent.ExecutorFactory;
 import org.gradle.internal.concurrent.Stoppable;
-import org.gradle.internal.concurrent.StoppableExecutor;
+import org.gradle.internal.concurrent.ManagedExecutor;
 import org.gradle.internal.io.TextStream;
 import org.gradle.util.DisconnectableInputStream;
-import org.gradle.util.LineBufferingOutputStream;
+import org.gradle.internal.io.LineBufferingOutputStream;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -41,7 +41,7 @@ public class InputForwarder implements Stoppable {
     private final TextStream handler;
     private final ExecutorFactory executorFactory;
     private final int bufferSize;
-    private StoppableExecutor forwardingExecuter;
+    private ManagedExecutor forwardingExecuter;
     private DisconnectableInputStream disconnectableInput;
     private LineBufferingOutputStream outputBuffer;
     private final Lock lifecycleLock = new ReentrantLock();
@@ -65,7 +65,7 @@ public class InputForwarder implements Stoppable {
             disconnectableInput = new DisconnectableInputStream(input, bufferSize);
             outputBuffer = new LineBufferingOutputStream(handler, bufferSize);
 
-            forwardingExecuter = executorFactory.create("forward input");
+            forwardingExecuter = executorFactory.create("Forward input");
             forwardingExecuter.execute(new Runnable() {
                 public void run() {
                     byte[] buffer = new byte[bufferSize];
@@ -101,7 +101,7 @@ public class InputForwarder implements Stoppable {
         } finally {
             lifecycleLock.unlock();
         }
-        
+
         return this;
     }
 
@@ -114,7 +114,7 @@ public class InputForwarder implements Stoppable {
                 } catch (IOException e) {
                     throw UncheckedException.throwAsUncheckedException(e);
                 }
-                
+
                 forwardingExecuter.stop();
                 stopped = true;
             }

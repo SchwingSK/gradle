@@ -16,8 +16,11 @@
 
 package org.gradle.internal.resource.transport.http;
 
-import com.google.common.collect.Sets;
-import org.gradle.internal.resource.PasswordCredentials;
+import com.google.common.collect.ImmutableSet;
+import org.gradle.authentication.Authentication;
+import org.gradle.authentication.http.BasicAuthentication;
+import org.gradle.authentication.http.DigestAuthentication;
+import org.gradle.internal.authentication.AllSchemesAuthentication;
 import org.gradle.internal.resource.connector.ResourceConnectorFactory;
 import org.gradle.internal.resource.connector.ResourceConnectorSpecification;
 import org.gradle.internal.resource.transfer.DefaultExternalResourceConnector;
@@ -26,14 +29,36 @@ import org.gradle.internal.resource.transfer.ExternalResourceConnector;
 import java.util.Set;
 
 public class HttpConnectorFactory implements ResourceConnectorFactory {
+    private final static Set<String> SUPPORTED_PROTOCOLS = ImmutableSet.of("http", "https");
+    private final static Set<Class<? extends Authentication>> SUPPORTED_AUTHENTICATION = ImmutableSet.of(
+        BasicAuthentication.class,
+        DigestAuthentication.class,
+        AllSchemesAuthentication.class
+    );
+
+    private SslContextFactory sslContextFactory;
+
+    public HttpConnectorFactory(SslContextFactory sslContextFactory) {
+        this.sslContextFactory = sslContextFactory;
+    }
+
     @Override
     public Set<String> getSupportedProtocols() {
-        return Sets.newHashSet("http", "https");
+        return SUPPORTED_PROTOCOLS;
+    }
+
+    @Override
+    public Set<Class<? extends Authentication>> getSupportedAuthentication() {
+        return SUPPORTED_AUTHENTICATION;
     }
 
     @Override
     public ExternalResourceConnector createResourceConnector(ResourceConnectorSpecification connectionDetails) {
-        HttpClientHelper http = new HttpClientHelper(new DefaultHttpSettings(connectionDetails.getCredentials(PasswordCredentials.class)));
+        HttpClientHelper http = new HttpClientHelper(DefaultHttpSettings.builder()
+            .withAuthenticationSettings(connectionDetails.getAuthentications())
+            .withSslContextFactory(sslContextFactory)
+            .build()
+        );
         HttpResourceAccessor accessor = new HttpResourceAccessor(http);
         HttpResourceLister lister = new HttpResourceLister(accessor);
         HttpResourceUploader uploader = new HttpResourceUploader(http);

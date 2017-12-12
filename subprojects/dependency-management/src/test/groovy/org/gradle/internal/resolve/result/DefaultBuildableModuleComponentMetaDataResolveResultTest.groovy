@@ -16,7 +16,8 @@
 
 package org.gradle.internal.resolve.result
 
-import org.gradle.internal.component.external.model.MutableModuleComponentResolveMetaData
+import org.gradle.api.internal.artifacts.dependencies.DefaultMutableVersionConstraint
+import org.gradle.internal.component.external.model.ModuleComponentResolveMetadata
 import org.gradle.internal.resolve.ModuleVersionResolveException
 import spock.lang.Specification
 
@@ -43,7 +44,7 @@ class DefaultBuildableModuleComponentMetaDataResolveResultTest extends Specifica
     }
 
     def "can mark as failed"() {
-        def failure = new ModuleVersionResolveException(newSelector("a", "b", "c"), "broken")
+        def failure = new ModuleVersionResolveException(newSelector("a", "b", new DefaultMutableVersionConstraint("c")), "broken")
 
         when:
         descriptor.failed(failure)
@@ -56,7 +57,7 @@ class DefaultBuildableModuleComponentMetaDataResolveResultTest extends Specifica
     }
 
     def "can mark as resolved using meta-data"() {
-        def metaData = Stub(MutableModuleComponentResolveMetaData)
+        def metaData = Stub(ModuleComponentResolveMetadata)
 
         when:
         descriptor.resolved(metaData)
@@ -65,6 +66,23 @@ class DefaultBuildableModuleComponentMetaDataResolveResultTest extends Specifica
         descriptor.state == BuildableModuleComponentMetaDataResolveResult.State.Resolved
         descriptor.failure == null
         descriptor.metaData == metaData
+        descriptor.authoritative
+        descriptor.hasResult()
+    }
+
+    def "can replace meta-data when resolved"() {
+        def metaData = Stub(ModuleComponentResolveMetadata)
+        def metaData2 = Stub(ModuleComponentResolveMetadata)
+
+        descriptor.resolved(metaData)
+
+        when:
+        descriptor.setMetadata(metaData2)
+
+        then:
+        descriptor.state == BuildableModuleComponentMetaDataResolveResult.State.Resolved
+        descriptor.failure == null
+        descriptor.metaData == metaData2
         descriptor.authoritative
         descriptor.hasResult()
     }
@@ -95,7 +113,7 @@ class DefaultBuildableModuleComponentMetaDataResolveResultTest extends Specifica
 
     def "cannot get meta-data when failed"() {
         given:
-        def failure = new ModuleVersionResolveException(newSelector("a", "b", "c"), "broken")
+        def failure = new ModuleVersionResolveException(newSelector("a", "b", new DefaultMutableVersionConstraint("c")), "broken")
         descriptor.failed(failure)
 
         when:
@@ -104,5 +122,20 @@ class DefaultBuildableModuleComponentMetaDataResolveResultTest extends Specifica
         then:
         ModuleVersionResolveException e = thrown()
         e == failure
+    }
+
+    def "cannot set metadata when not resolved"() {
+        when:
+        descriptor.metadata = Stub(ModuleComponentResolveMetadata)
+
+        then:
+        thrown(IllegalStateException)
+
+        when:
+        descriptor.missing()
+        descriptor.metadata = Stub(ModuleComponentResolveMetadata)
+
+        then:
+        thrown(IllegalStateException)
     }
 }

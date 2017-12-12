@@ -15,19 +15,16 @@
  */
 package org.gradle.api.plugins.quality
 
-import org.gradle.api.internal.project.DefaultProject
 import org.gradle.api.plugins.JavaBasePlugin
 import org.gradle.api.plugins.ReportingBasePlugin
 import org.gradle.api.tasks.SourceSet
-import org.gradle.util.TestUtil
-import spock.lang.Specification
+import org.gradle.test.fixtures.AbstractProjectBuilderSpec
 
 import static org.gradle.api.tasks.TaskDependencyMatchers.dependsOn
 import static org.hamcrest.Matchers.*
 import static spock.util.matcher.HamcrestSupport.that
 
-class JDependPluginTest extends Specification {
-    DefaultProject project = TestUtil.createRootProject()
+class JDependPluginTest extends AbstractProjectBuilderSpec {
 
     def setup() {
         project.pluginManager.apply(JDependPlugin)
@@ -75,7 +72,7 @@ class JDependPluginTest extends Specification {
         task.with {
             assert description == "Run JDepend analysis for ${sourceSet.name} classes"
             assert jdependClasspath == project.configurations.jdepend
-            assert classesDir == sourceSet.output.classesDir
+            assert classesDirs == sourceSet.output.classesDirs
             assert reports.xml.destination == project.file("build/reports/jdepend/${sourceSet.name}.xml")
         }
     }
@@ -85,7 +82,7 @@ class JDependPluginTest extends Specification {
 
         expect:
         task.description == null
-        task.classesDir == null
+        task.classesDirs == null
         task.jdependClasspath == project.configurations.jdepend
         task.reports.xml.destination == project.file("build/reports/jdepend/custom.xml")
     }
@@ -132,7 +129,7 @@ class JDependPluginTest extends Specification {
 
         expect:
         task.description == null
-        task.classesDir == null
+        task.classesDirs == null
         task.jdependClasspath == project.configurations.jdepend
         task.reports.xml.destination == project.file("jdepend-reports/custom.xml")
     }
@@ -149,7 +146,7 @@ class JDependPluginTest extends Specification {
             text {
                 enabled true
             }
-            xml.destination "foo"
+            xml.destination project.file("foo")
         }
 
         then:
@@ -162,7 +159,7 @@ class JDependPluginTest extends Specification {
         task.with {
             assert description == "Run JDepend analysis for ${sourceSet.name} classes"
             assert jdependClasspath == project.configurations.jdepend
-            assert classesDir == sourceSet.output.classesDir
+            assert classesDirs == sourceSet.output.classesDirs
             assert reports.xml.destination == project.file("jdepend-reports/${sourceSet.name}.xml")
         }
     }

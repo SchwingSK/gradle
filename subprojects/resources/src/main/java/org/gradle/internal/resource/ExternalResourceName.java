@@ -21,6 +21,8 @@ import org.gradle.internal.UncheckedException;
 
 import java.net.URI;
 import java.net.URISyntaxException;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * An immutable resource name. Resources are arranged in a hierarchy. Names may be relative, or absolute with some opaque root resource.
@@ -72,7 +74,7 @@ public class ExternalResourceName {
             builder.append(uri.getScheme());
             builder.append(":");
 
-            if(uri.getScheme().equals("file")) {
+            if (uri.getScheme().equals("file")) {
                 if (uri.getPath().startsWith("//")) {
                     builder.append("//");
                 }
@@ -91,6 +93,11 @@ public class ExternalResourceName {
 
     public String getDisplayName() {
         return getDecoded();
+    }
+
+    public String getShortDisplayName() {
+        int lastSlash = path.lastIndexOf('/');
+        return lastSlash == -1 ? getDecoded() : path.substring(lastSlash + 1);
     }
 
     @Override
@@ -119,8 +126,8 @@ public class ExternalResourceName {
             if (ch >= 'a' && ch <= 'z' || ch >= 'A' && ch <= 'Z' || ch >= '0' && ch <= '9') {
                 builder.append(ch);
             } else if (ch == '/' || ch == '@' || isPathSeg && ch == ':' || ch == '.' || ch == '-' || ch == '_' || ch == '~'
-                    || ch == '!' || ch == '$' || ch == '&' || ch == '\'' || ch == '(' || ch == ')' || ch == '*' || ch == '+'
-                    || ch == ',' || ch == ';' || ch == '=') {
+                || ch == '!' || ch == '$' || ch == '&' || ch == '\'' || ch == '(' || ch == ')' || ch == '*' || ch == '+'
+                || ch == ',' || ch == ';' || ch == '=') {
                 builder.append(ch);
             } else {
                 if (ch <= 0x7F) {
@@ -172,15 +179,65 @@ public class ExternalResourceName {
      * Resolves the given path relative to this name. The path can be a relative path or an absolute path. The '/' character is used to separate the elements of the path.
      */
     public ExternalResourceName resolve(String path) {
-        String newPath;
+        List<String> parts = new ArrayList<String>();
+        boolean leadingSlash;
+        boolean trailingSlash = path.endsWith("/");
         if (path.startsWith("/")) {
-            newPath = path;
-        } else if (this.path.endsWith("/") || this.path.length() == 0) {
-            newPath = this.path + path;
+            leadingSlash = true;
+            append(path, parts);
         } else {
-            newPath = this.path + "/" + path;
+            leadingSlash = this.path.startsWith("/");
+            append(this.path, parts);
+            append(path, parts);
         }
+        String newPath = join(leadingSlash, trailingSlash, parts);
         return new ExternalResourceName(encodedRoot, newPath);
+    }
+
+    private String join(boolean leadingSlash, boolean trailingSlash, List<String> parts) {
+        if (parts.isEmpty() && leadingSlash) {
+            return "/";
+        }
+        StringBuilder builder = new StringBuilder();
+        for (String part : parts) {
+            if (builder.length() > 0 || leadingSlash) {
+                builder.append("/");
+            }
+            builder.append(part);
+        }
+        if (trailingSlash) {
+            builder.append("/");
+        }
+        return builder.toString();
+    }
+
+    private void append(String path, List<String> parts) {
+        for (int pos = 0; pos < path.length();) {
+            int end = path.indexOf('/', pos);
+            String part;
+            if (end < 0) {
+                part = path.substring(pos);
+                pos = path.length();
+            } else {
+                part = path.substring(pos, end);
+                pos = end + 1;
+            }
+            if (part.length() == 0 || part.equals(".")) {
+                continue;
+            }
+            if (part.equals("..")) {
+                parts.remove(parts.size() - 1);
+                continue;
+            }
+            parts.add(part);
+        }
+    }
+
+    /**
+     * Appends the given text to the end of this path.
+     */
+    public ExternalResourceName append(String path) {
+        return new ExternalResourceName(encodedRoot, this.path + path);
     }
 
     @Override

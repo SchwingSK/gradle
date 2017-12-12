@@ -16,21 +16,21 @@
 
 package org.gradle.api.internal.artifacts.ivyservice.moduleconverter.dependencies;
 
-import org.apache.ivy.core.module.descriptor.DefaultExcludeRule;
+import org.apache.ivy.core.module.descriptor.Configuration;
 import org.apache.ivy.core.module.descriptor.DefaultModuleDescriptor;
-import org.apache.ivy.core.module.descriptor.DependencyArtifactDescriptor;
-import org.apache.ivy.core.module.descriptor.DependencyDescriptor;
-import org.apache.ivy.core.module.id.ArtifactId;
-import org.apache.ivy.plugins.matcher.ExactPatternMatcher;
-import org.apache.ivy.plugins.matcher.PatternMatcher;
+import org.apache.ivy.core.module.id.ModuleId;
+import org.apache.ivy.core.module.id.ModuleRevisionId;
 import org.gradle.api.artifacts.Dependency;
 import org.gradle.api.artifacts.DependencyArtifact;
 import org.gradle.api.artifacts.ExcludeRule;
 import org.gradle.api.artifacts.ModuleDependency;
+import org.gradle.api.internal.artifacts.DefaultModuleIdentifier;
 import org.gradle.api.internal.artifacts.dependencies.DefaultDependencyArtifact;
-import org.gradle.api.internal.artifacts.ivyservice.IvyUtil;
-import org.gradle.api.internal.artifacts.ivyservice.moduleconverter.ExcludeRuleConverter;
-import org.gradle.util.TestUtil;
+import org.gradle.internal.component.external.descriptor.DefaultExclude;
+import org.gradle.internal.component.model.DependencyMetadata;
+import org.gradle.internal.component.model.Exclude;
+import org.gradle.internal.component.model.IvyArtifactName;
+import org.gradle.internal.component.model.LocalOriginDependencyMetadata;
 import org.gradle.util.WrapUtil;
 import org.jmock.Expectations;
 import org.jmock.integration.junit4.JMock;
@@ -38,10 +38,8 @@ import org.jmock.integration.junit4.JUnit4Mockery;
 import org.junit.Before;
 import org.junit.runner.RunWith;
 
-import java.net.MalformedURLException;
-import java.net.URL;
-import java.util.HashMap;
 import java.util.List;
+import java.util.Set;
 
 import static org.hamcrest.Matchers.equalTo;
 import static org.junit.Assert.assertEquals;
@@ -49,15 +47,15 @@ import static org.junit.Assert.assertThat;
 
 @RunWith(JMock.class)
 public abstract class AbstractDependencyDescriptorFactoryInternalTest {
-    private JUnit4Mockery context = new JUnit4Mockery();
+    protected JUnit4Mockery context = new JUnit4Mockery();
 
     protected static final String TEST_CONF = "conf";
     protected static final String TEST_DEP_CONF = "depconf1";
 
     protected static final ExcludeRule TEST_EXCLUDE_RULE = new org.gradle.api.internal.artifacts.DefaultExcludeRule("testOrg", null);
-    protected static final org.apache.ivy.core.module.descriptor.ExcludeRule TEST_IVY_EXCLUDE_RULE = getTestExcludeRule();
+    protected static final Exclude TEST_IVY_EXCLUDE_RULE = getTestExcludeRule();
     protected ExcludeRuleConverter excludeRuleConverterStub = context.mock(ExcludeRuleConverter.class);
-    protected final DefaultModuleDescriptor moduleDescriptor = TestUtil.createModuleDescriptor(WrapUtil.toSet(TEST_CONF));
+    protected final DefaultModuleDescriptor moduleDescriptor = createModuleDescriptor(WrapUtil.toSet(TEST_CONF));
     private DefaultDependencyArtifact artifact = new DefaultDependencyArtifact("name", "type", null, null, null);
     private DefaultDependencyArtifact artifactWithClassifiers = new DefaultDependencyArtifact("name2", "type2", "ext2", "classifier2", "http://www.url2.com");
 
@@ -66,10 +64,18 @@ public abstract class AbstractDependencyDescriptorFactoryInternalTest {
         expectExcludeRuleConversion(TEST_EXCLUDE_RULE, TEST_IVY_EXCLUDE_RULE);
     }
 
-    protected void expectExcludeRuleConversion(final ExcludeRule excludeRule, final org.apache.ivy.core.module.descriptor.ExcludeRule ivyExcludeRule) {
+    static DefaultModuleDescriptor createModuleDescriptor(Set<String> confs) {
+        DefaultModuleDescriptor moduleDescriptor = new DefaultModuleDescriptor(new ModuleRevisionId(new ModuleId("org", "name"), "rev"), "status", null);
+        for (String conf : confs) {
+            moduleDescriptor.addConfiguration(new Configuration(conf));
+        }
+        return moduleDescriptor;
+    }
+
+    protected void expectExcludeRuleConversion(final ExcludeRule excludeRule, final Exclude exclude) {
         context.checking(new Expectations() {{
-            allowing(excludeRuleConverterStub).createExcludeRule(TEST_CONF, excludeRule);
-            will(returnValue(ivyExcludeRule));
+            allowing(excludeRuleConverterStub).convertExcludeRule(excludeRule);
+            will(returnValue(exclude));
         }});
     }
 
@@ -80,38 +86,31 @@ public abstract class AbstractDependencyDescriptorFactoryInternalTest {
                 setTransitive(true);
     }
 
-    protected void assertDependencyDescriptorHasCommonFixtureValues(DependencyDescriptor dependencyDescriptor) {
-        assertThat(dependencyDescriptor.getParentRevisionId(), equalTo(moduleDescriptor.getModuleRevisionId()));
-        assertEquals(TEST_IVY_EXCLUDE_RULE, dependencyDescriptor.getExcludeRules(TEST_CONF)[0]);
-        assertThat(dependencyDescriptor.getDependencyConfigurations(TEST_CONF), equalTo(WrapUtil.toArray(TEST_DEP_CONF)));
-        assertThat(dependencyDescriptor.isTransitive(), equalTo(true));
-        assertDependencyDescriptorHasArtifacts(dependencyDescriptor);
+    protected void assertDependencyDescriptorHasCommonFixtureValues(LocalOriginDependencyMetadata dependencyMetadata) {
+        assertEquals(TEST_IVY_EXCLUDE_RULE, dependencyMetadata.getExcludes().get(0));
+        assertThat(dependencyMetadata.getModuleConfiguration(), equalTo(TEST_CONF));
+        assertThat(dependencyMetadata.getDependencyConfiguration(), equalTo(TEST_DEP_CONF));
+        assertThat(dependencyMetadata.isTransitive(), equalTo(true));
+        assertDependencyDescriptorHasArtifacts(dependencyMetadata);
     }
 
-    private void assertDependencyDescriptorHasArtifacts(DependencyDescriptor dependencyDescriptor) {
-        List<DependencyArtifactDescriptor> artifactDescriptors = WrapUtil.toList(dependencyDescriptor.getDependencyArtifacts(TEST_CONF));
+    private void assertDependencyDescriptorHasArtifacts(DependencyMetadata dependencyMetadata) {
+        List<IvyArtifactName> artifactDescriptors = WrapUtil.toList(dependencyMetadata.getArtifacts());
         assertThat(artifactDescriptors.size(), equalTo(2));
 
-        
-        DependencyArtifactDescriptor artifactDescriptorWithoutClassifier = findDescriptor(artifactDescriptors, artifact);
-        assertEquals(new HashMap(), artifactDescriptorWithoutClassifier.getExtraAttributes());
-        assertEquals(null, artifactDescriptorWithoutClassifier.getUrl());
+        IvyArtifactName artifactDescriptorWithoutClassifier = findDescriptor(artifactDescriptors, artifact);
+        assertEquals(null, artifactDescriptorWithoutClassifier.getClassifier());
         compareArtifacts(artifact, artifactDescriptorWithoutClassifier);
-        assertEquals(artifact.getType(), artifactDescriptorWithoutClassifier.getExt());
+        assertEquals(artifact.getType(), artifactDescriptorWithoutClassifier.getExtension());
 
-        DependencyArtifactDescriptor artifactDescriptorWithClassifierAndConfs = findDescriptor(artifactDescriptors, artifactWithClassifiers);
-        assertEquals(WrapUtil.toMap(Dependency.CLASSIFIER, artifactWithClassifiers.getClassifier()), artifactDescriptorWithClassifierAndConfs.getQualifiedExtraAttributes());
+        IvyArtifactName artifactDescriptorWithClassifierAndConfs = findDescriptor(artifactDescriptors, artifactWithClassifiers);
+        assertEquals(artifactWithClassifiers.getClassifier(), artifactDescriptorWithClassifierAndConfs.getClassifier());
         compareArtifacts(artifactWithClassifiers, artifactDescriptorWithClassifierAndConfs);
-        assertEquals(artifactWithClassifiers.getExtension(), artifactDescriptorWithClassifierAndConfs.getExt());
-        try {
-            assertEquals(new URL(artifactWithClassifiers.getUrl()), artifactDescriptorWithClassifierAndConfs.getUrl());
-        } catch (MalformedURLException e) {
-            throw new RuntimeException(e);
-        }
+        assertEquals(artifactWithClassifiers.getExtension(), artifactDescriptorWithClassifierAndConfs.getExtension());
     }
 
-    private DependencyArtifactDescriptor findDescriptor(List<DependencyArtifactDescriptor> artifactDescriptors, DefaultDependencyArtifact dependencyArtifact) {
-        for (DependencyArtifactDescriptor artifactDescriptor : artifactDescriptors) {
+    private IvyArtifactName findDescriptor(List<IvyArtifactName> artifactDescriptors, DefaultDependencyArtifact dependencyArtifact) {
+        for (IvyArtifactName artifactDescriptor : artifactDescriptors) {
             if (artifactDescriptor.getName().equals(dependencyArtifact.getName())) {
                 return artifactDescriptor;
             }
@@ -119,17 +118,13 @@ public abstract class AbstractDependencyDescriptorFactoryInternalTest {
         throw new RuntimeException("Descriptor could not be found");
     }
 
-    private void compareArtifacts(DependencyArtifact artifact, DependencyArtifactDescriptor artifactDescriptor) {
+    private void compareArtifacts(DependencyArtifact artifact, IvyArtifactName artifactDescriptor) {
         assertEquals(artifact.getName(), artifactDescriptor.getName());
         assertEquals(artifact.getType(), artifactDescriptor.getType());
     }
 
-    private static DefaultExcludeRule getTestExcludeRule() {
-        return new DefaultExcludeRule(new ArtifactId(
-                IvyUtil.createModuleId("org", "testOrg"), PatternMatcher.ANY_EXPRESSION,
-                PatternMatcher.ANY_EXPRESSION,
-                PatternMatcher.ANY_EXPRESSION),
-                ExactPatternMatcher.INSTANCE, null);
+    private static DefaultExclude getTestExcludeRule() {
+        return new DefaultExclude(DefaultModuleIdentifier.newId("org", "testOrg"));
     }
 }
 

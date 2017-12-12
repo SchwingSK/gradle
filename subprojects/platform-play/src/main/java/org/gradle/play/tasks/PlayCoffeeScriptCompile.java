@@ -24,17 +24,12 @@ import org.gradle.language.base.internal.tasks.StaleClassCleaner;
 import org.gradle.plugins.javascript.coffeescript.CoffeeScriptCompile;
 
 /**
- * Task for compiling CoffeeScript sources
+ * Task for compiling CoffeeScript sources into JavaScript.
  */
 @Incubating
 public class PlayCoffeeScriptCompile extends CoffeeScriptCompile {
     public void setCoffeeScriptJsNotation(String notation) {
         super.setCoffeeScriptJs(getDetachedConfiguration(notation));
-    }
-
-    @Override
-    public void setCoffeeScriptJs(Object coffeeScriptJs) {
-        super.setCoffeeScriptJs(coffeeScriptJs);
     }
 
     public void setRhinoClasspathNotation(String notation) {

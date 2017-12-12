@@ -22,38 +22,46 @@ import org.gradle.api.InvalidUserDataException
 import org.gradle.api.PathValidation
 import org.gradle.api.file.ConfigurableFileCollection
 import org.gradle.api.file.FileTree
-import org.gradle.api.internal.AsmBackedClassGenerator
-import org.gradle.api.internal.ClassGeneratorBackedInstantiator
 import org.gradle.api.internal.file.archive.TarFileTree
 import org.gradle.api.internal.file.archive.ZipFileTree
 import org.gradle.api.internal.file.collections.DefaultConfigurableFileCollection
+import org.gradle.api.internal.file.collections.DefaultDirectoryFileTreeFactory
 import org.gradle.api.internal.file.collections.FileTreeAdapter
 import org.gradle.api.internal.file.copy.DefaultCopySpec
 import org.gradle.api.internal.tasks.TaskResolver
 import org.gradle.internal.classloader.ClasspathUtil
-import org.gradle.internal.reflect.DirectInstantiator
+import org.gradle.internal.hash.FileHasher
+import org.gradle.internal.hash.StreamHasher
 import org.gradle.internal.reflect.Instantiator
 import org.gradle.process.ExecResult
 import org.gradle.process.internal.ExecException
+import org.gradle.process.internal.ExecFactory
 import org.gradle.test.fixtures.file.TestFile
 import org.gradle.test.fixtures.file.TestNameTestDirectoryProvider
 import org.gradle.util.Requires
 import org.gradle.util.TestPrecondition
+import org.gradle.util.TestUtil
 import org.gradle.util.UsesNativeServices
 import org.junit.Rule
 import spock.lang.Specification
 
 @UsesNativeServices
-public class DefaultFileOperationsTest extends Specification {
-    private final FileResolver resolver = Mock()
+class DefaultFileOperationsTest extends Specification {
+    private final FileResolver resolver = Mock() {
+        getPatternSetFactory() >> TestFiles.getPatternSetFactory()
+    }
     private final TaskResolver taskResolver = Mock()
     private final TemporaryFileProvider temporaryFileProvider = Mock()
-    private final Instantiator instantiator = new ClassGeneratorBackedInstantiator(new AsmBackedClassGenerator(), DirectInstantiator.INSTANCE)
+    private final Instantiator instantiator = TestUtil.instantiatorFactory().decorate()
     private final FileLookup fileLookup = Mock()
+    private final DefaultDirectoryFileTreeFactory directoryFileTreeFactory = Mock()
+    private final StreamHasher streamHasher = Mock()
+    private final FileHasher fileHasher = Mock()
+    private final ExecFactory execFactory = TestFiles.execFactory()
     private DefaultFileOperations fileOperations = instance()
 
     private DefaultFileOperations instance(FileResolver resolver = resolver) {
-        instantiator.newInstance(DefaultFileOperations, resolver, taskResolver, temporaryFileProvider, instantiator, fileLookup)
+        instantiator.newInstance(DefaultFileOperations, resolver, taskResolver, temporaryFileProvider, instantiator, fileLookup, directoryFileTreeFactory, streamHasher, fileHasher, execFactory)
     }
 
     @Rule
@@ -83,15 +91,27 @@ public class DefaultFileOperationsTest extends Specification {
         fileOperations.uri('path') == uri
     }
 
-    def resolvesFiles() {
+    def resolvesFilesInOrder() {
         when:
-        def fileCollection = fileOperations.files('a', 'b')
+        def fileCollection = fileOperations.files('a', 'b', 'c')
 
         then:
         fileCollection instanceof DefaultConfigurableFileCollection
-        fileCollection.from == ['a', 'b'] as LinkedHashSet
+        fileCollection.from as List == ['a', 'b', 'c']
         fileCollection.resolver.is(resolver)
         fileCollection.buildDependency.resolver.is(taskResolver)
+
+        when:
+        def files = fileCollection.files
+        then:
+        1 * resolver.resolve('a') >> new File('a')
+        then:
+        1 * resolver.resolve('b') >> new File('b')
+        then:
+        1 * resolver.resolve('c') >> new File('c')
+        then:
+        files*.name as List == ['a', 'b', 'c']
+        0 * _
     }
 
     def createsFileTree() {
@@ -131,7 +151,7 @@ public class DefaultFileOperationsTest extends Specification {
 
     def createsTarFileTree() {
         TestFile file = tmpDir.file('path')
-        resolver.resolveResource('path') >> new FileResource(file)
+        resolver.resolve('path') >> file
 
         when:
         def tarTree = fileOperations.tarTree('path')
@@ -142,7 +162,7 @@ public class DefaultFileOperationsTest extends Specification {
     }
 
     def copiesFiles() {
-        FileTree fileTree = Mock(FileTree)
+        def fileTree = Mock(FileTreeInternal)
         resolver.resolveFilesAsTree(_) >> fileTree
         // todo we should make this work so that we can be more specific
 //        resolver.resolveFilesAsTree(['file'] as Object[]) >> fileTree
@@ -223,12 +243,12 @@ public class DefaultFileOperationsTest extends Specification {
     def javaexec() {
         File testFile = tmpDir.file("someFile")
         fileOperations = instance(resolver())
-        List files = ClasspathUtil.getClasspath(getClass().classLoader)
+        List files = ClasspathUtil.getClasspath(getClass().classLoader).asFiles
 
         when:
         ExecResult result = fileOperations.javaexec {
             classpath(files as Object[])
-            main = 'org.gradle.api.internal.file.SomeMain'
+            main = SomeMain.name
             args testFile.absolutePath
         }
 
@@ -313,10 +333,11 @@ public class DefaultFileOperationsTest extends Specification {
     def resolver() {
         return TestFiles.resolver(tmpDir.testDirectory)
     }
-}
 
-class SomeMain {
-    static void main(String[] args) {
-        FileUtils.touch(new File(args[0]))
+    class SomeMain {
+        static void main(String[] args) {
+            FileUtils.touch(new File(args[0]))
+        }
     }
 }
+

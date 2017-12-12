@@ -15,15 +15,23 @@
  */
 package org.gradle.api.internal.artifacts;
 
-import org.gradle.api.artifacts.ResolveException;
-import org.gradle.api.internal.artifacts.configurations.ConfigurationInternal;
+import org.gradle.api.internal.artifacts.ivyservice.resolveengine.artifact.DependencyArtifactsVisitor;
+import org.gradle.api.internal.artifacts.ivyservice.resolveengine.graph.DependencyGraphVisitor;
 import org.gradle.api.internal.artifacts.repositories.ResolutionAwareRepository;
+import org.gradle.api.internal.artifacts.type.ArtifactTypeRegistry;
+import org.gradle.api.internal.attributes.AttributesSchemaInternal;
+import org.gradle.api.specs.Spec;
+import org.gradle.internal.component.model.DependencyMetadata;
 
 import java.util.List;
 
 public interface ArtifactDependencyResolver {
-    void resolve(ConfigurationInternal configuration,
+    void resolve(ResolveContext resolveContext,
                  List<? extends ResolutionAwareRepository> repositories,
                  GlobalDependencyResolutionRules metadataHandler,
-                 ResolverResults results) throws ResolveException;
+                 Spec<? super DependencyMetadata> edgeFilter,
+                 DependencyGraphVisitor graphVisitor,
+                 DependencyArtifactsVisitor artifactsVisitor,
+                 AttributesSchemaInternal consumerSchema,
+                 ArtifactTypeRegistry artifactTypeRegistry);
 }

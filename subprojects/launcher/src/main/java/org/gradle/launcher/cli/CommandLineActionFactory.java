@@ -17,32 +17,52 @@ package org.gradle.launcher.cli;
 
 import groovy.lang.GroovySystem;
 import org.apache.tools.ant.Main;
-import org.gradle.BuildExceptionReporter;
 import org.gradle.api.Action;
+import org.gradle.api.internal.file.IdentityFileResolver;
+import org.gradle.api.logging.configuration.LoggingConfiguration;
 import org.gradle.cli.CommandLineArgumentException;
 import org.gradle.cli.CommandLineConverter;
 import org.gradle.cli.CommandLineParser;
 import org.gradle.cli.ParsedCommandLine;
+import org.gradle.cli.SystemPropertiesCommandLineConverter;
+import org.gradle.concurrent.ParallelismConfiguration;
 import org.gradle.configuration.GradleLauncherMetaData;
 import org.gradle.initialization.BuildLayoutParameters;
 import org.gradle.initialization.LayoutCommandLineConverter;
+import org.gradle.initialization.ParallelismConfigurationCommandLineConverter;
+import org.gradle.initialization.layout.BuildLayoutFactory;
 import org.gradle.internal.Actions;
+import org.gradle.internal.buildevents.BuildExceptionReporter;
+import org.gradle.internal.concurrent.DefaultParallelismConfiguration;
 import org.gradle.internal.jvm.Jvm;
+import org.gradle.internal.jvm.inspection.CachingJvmVersionDetector;
+import org.gradle.internal.jvm.inspection.DefaultJvmVersionDetector;
+import org.gradle.internal.logging.DefaultLoggingConfiguration;
+import org.gradle.internal.logging.LoggingCommandLineConverter;
+import org.gradle.internal.logging.LoggingManagerInternal;
+import org.gradle.internal.logging.services.LoggingServiceRegistry;
+import org.gradle.internal.logging.text.StyledTextOutputFactory;
 import org.gradle.internal.nativeintegration.services.NativeServices;
 import org.gradle.internal.os.OperatingSystem;
+import org.gradle.internal.scripts.DefaultScriptFileResolver;
+import org.gradle.internal.scripts.ScriptFileResolver;
+import org.gradle.internal.service.ServiceLookupException;
 import org.gradle.internal.service.ServiceRegistry;
 import org.gradle.launcher.bootstrap.ExecutionListener;
-import org.gradle.logging.LoggingConfiguration;
-import org.gradle.logging.LoggingManagerInternal;
-import org.gradle.logging.LoggingServiceRegistry;
-import org.gradle.logging.StyledTextOutputFactory;
-import org.gradle.logging.internal.LoggingCommandLineConverter;
+import org.gradle.launcher.cli.converter.LayoutToPropertiesConverter;
+import org.gradle.launcher.cli.converter.PropertiesToLogLevelConfigurationConverter;
+import org.gradle.launcher.cli.converter.PropertiesToParallelismConfigurationConverter;
+import org.gradle.process.internal.DefaultExecActionFactory;
 import org.gradle.util.GradleVersion;
 
+import javax.annotation.Nullable;
+import java.io.File;
 import java.io.PrintStream;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * <p>Responsible for converting a set of command-line arguments into a {@link Runnable} action.</p>
@@ -50,6 +70,8 @@ import java.util.List;
 public class CommandLineActionFactory {
     private static final String HELP = "h";
     private static final String VERSION = "v";
+
+    private final BuildLayoutFactory buildLayoutFactory = new BuildLayoutFactory(new LazyLenientScriptFileResolver());
 
     /**
      * <p>Converts the given command-line arguments to an {@link Action} which performs the action requested by the
@@ -61,18 +83,19 @@ public class CommandLineActionFactory {
     public Action<ExecutionListener> convert(List<String> args) {
         ServiceRegistry loggingServices = createLoggingServices();
 
-        LoggingConfiguration loggingConfiguration = new LoggingConfiguration();
+        LoggingConfiguration loggingConfiguration = new DefaultLoggingConfiguration();
 
-        return new ExceptionReportingAction(
-                new WithLogging(loggingServices, args, loggingConfiguration,
-                        new JavaRuntimeValidationAction(
-                            new ParseAndBuildAction(loggingServices, args))),
-                new BuildExceptionReporter(loggingServices.get(StyledTextOutputFactory.class), loggingConfiguration, clientMetaData()));
+        return new WithLogging(loggingServices,
+            buildLayoutFactory,
+            args,
+            loggingConfiguration,
+            new ExceptionReportingAction(
+                    new ParseAndBuildAction(loggingServices, args),
+                new BuildExceptionReporter(loggingServices.get(StyledTextOutputFactory.class), loggingConfiguration, clientMetaData())));
     }
 
     protected void createActionFactories(ServiceRegistry loggingServices, Collection<CommandLineAction> actions) {
-        actions.add(new GuiActionsFactory());
-        actions.add(new BuildActionsFactory(loggingServices));
+        actions.add(new BuildActionsFactory(loggingServices, new ParametersConverter(buildLayoutFactory), new CachingJvmVersionDetector(new DefaultJvmVersionDetector(new DefaultExecActionFactory(new IdentityFileResolver())))));
     }
 
     private static GradleLauncherMetaData clientMetaData() {
@@ -144,36 +167,36 @@ public class CommandLineActionFactory {
             GradleVersion currentVersion = GradleVersion.current();
 
             final StringBuilder sb = new StringBuilder();
-            sb.append("\n------------------------------------------------------------\nGradle ");
+            sb.append("%n------------------------------------------------------------%nGradle ");
             sb.append(currentVersion.getVersion());
-            sb.append("\n------------------------------------------------------------\n\nBuild time:   ");
+            sb.append("%n------------------------------------------------------------%n%nBuild time:   ");
             sb.append(currentVersion.getBuildTime());
-            sb.append("\nBuild number: ");
-            sb.append(currentVersion.getBuildNumber());
-            sb.append("\nRevision:     ");
+            sb.append("%nRevision:     ");
             sb.append(currentVersion.getRevision());
-            sb.append("\n\nGroovy:       ");
+            sb.append("%n%nGroovy:       ");
             sb.append(GroovySystem.getVersion());
-            sb.append("\nAnt:          ");
+            sb.append("%nAnt:          ");
             sb.append(Main.getAntVersion());
-            sb.append("\nJVM:          ");
+            sb.append("%nJVM:          ");
             sb.append(Jvm.current());
-            sb.append("\nOS:           ");
+            sb.append("%nOS:           ");
             sb.append(OperatingSystem.current());
-            sb.append("\n");
+            sb.append("%n");
 
-            System.out.println(sb.toString());
+            System.out.println(String.format(sb.toString()));
         }
     }
 
     private static class WithLogging implements Action<ExecutionListener> {
         private final ServiceRegistry loggingServices;
+        private final BuildLayoutFactory buildLayoutFactory;
         private final List<String> args;
         private final LoggingConfiguration loggingConfiguration;
         private final Action<ExecutionListener> action;
 
-        WithLogging(ServiceRegistry loggingServices, List<String> args, LoggingConfiguration loggingConfiguration, Action<ExecutionListener> action) {
+        WithLogging(ServiceRegistry loggingServices, BuildLayoutFactory buildLayoutFactory, List<String> args, LoggingConfiguration loggingConfiguration, Action<ExecutionListener> action) {
             this.loggingServices = loggingServices;
+            this.buildLayoutFactory = buildLayoutFactory;
             this.args = args;
             this.loggingConfiguration = loggingConfiguration;
             this.action = action;
@@ -182,28 +205,58 @@ public class CommandLineActionFactory {
         public void execute(ExecutionListener executionListener) {
             CommandLineConverter<LoggingConfiguration> loggingConfigurationConverter = new LoggingCommandLineConverter();
             CommandLineConverter<BuildLayoutParameters> buildLayoutConverter = new LayoutCommandLineConverter();
+            CommandLineConverter<ParallelismConfiguration> parallelConverter = new ParallelismConfigurationCommandLineConverter();
+            CommandLineConverter<Map<String, String>> systemPropertiesCommandLineConverter = new SystemPropertiesCommandLineConverter();
+            LayoutToPropertiesConverter layoutToPropertiesConverter = new LayoutToPropertiesConverter(buildLayoutFactory);
+
             BuildLayoutParameters buildLayout = new BuildLayoutParameters();
+            ParallelismConfiguration parallelismConfiguration = new DefaultParallelismConfiguration();
+
             CommandLineParser parser = new CommandLineParser();
             loggingConfigurationConverter.configure(parser);
             buildLayoutConverter.configure(parser);
+            parallelConverter.configure(parser);
+            systemPropertiesCommandLineConverter.configure(parser);
+
             parser.allowUnknownOptions();
             parser.allowMixedSubcommandsAndOptions();
+
             try {
                 ParsedCommandLine parsedCommandLine = parser.parse(args);
-                loggingConfigurationConverter.convert(parsedCommandLine, loggingConfiguration);
+
                 buildLayoutConverter.convert(parsedCommandLine, buildLayout);
+
+
+                Map<String, String> properties = new HashMap<String, String>();
+                // Read *.properties files
+                layoutToPropertiesConverter.convert(buildLayout, properties);
+                // Read -D command line flags
+                systemPropertiesCommandLineConverter.convert(parsedCommandLine, properties);
+
+                // Convert properties for logging  object
+                PropertiesToLogLevelConfigurationConverter propertiesToLogLevelConfigurationConverter = new PropertiesToLogLevelConfigurationConverter();
+                propertiesToLogLevelConfigurationConverter.convert(properties, loggingConfiguration);
+                loggingConfigurationConverter.convert(parsedCommandLine, loggingConfiguration);
+
+                // Convert properties to ParallelismConfiguration object
+                PropertiesToParallelismConfigurationConverter propertiesToParallelismConfigurationConverter = new PropertiesToParallelismConfigurationConverter();
+                propertiesToParallelismConfigurationConverter.convert(properties, parallelismConfiguration);
+                // Parse parallelism flags
+                parallelConverter.convert(parsedCommandLine, parallelismConfiguration);
             } catch (CommandLineArgumentException e) {
                 // Ignore, deal with this problem later
             }
 
             LoggingManagerInternal loggingManager = loggingServices.getFactory(LoggingManagerInternal.class).create();
-            loggingManager.setLevel(loggingConfiguration.getLogLevel());
+            loggingManager.setLevelInternal(loggingConfiguration.getLogLevel());
             loggingManager.start();
-
-            NativeServices.initialize(buildLayout.getGradleUserHomeDir());
-            loggingManager.attachProcessConsole(loggingConfiguration.getConsoleOutput());
-
-            action.execute(executionListener);
+            try {
+                NativeServices.initialize(buildLayout.getGradleUserHomeDir());
+                loggingManager.attachProcessConsole(loggingConfiguration.getConsoleOutput());
+                action.execute(executionListener);
+            } finally {
+                loggingManager.stop();
+            }
         }
     }
 
@@ -245,6 +298,27 @@ public class CommandLineActionFactory {
                 }
             }
             throw new UnsupportedOperationException("No action factory for specified command-line arguments.");
+        }
+    }
+
+    private static class LazyLenientScriptFileResolver implements ScriptFileResolver {
+        private ScriptFileResolver delegate;
+
+        @Nullable
+        public File resolveScriptFile(File dir, String basename) {
+            return loadedDelegate().resolveScriptFile(dir, basename);
+        }
+
+        private ScriptFileResolver loadedDelegate() {
+            if (delegate == null) {
+                try {
+                    delegate = DefaultScriptFileResolver.forDefaultScriptingLanguages();
+                } catch (ServiceLookupException e) {
+                    // Kotlin ScriptingLanguage provider will fail to load on JVMs < 6
+                    delegate = DefaultScriptFileResolver.empty();
+                }
+            }
+            return delegate;
         }
     }
 }

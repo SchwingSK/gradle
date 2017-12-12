@@ -20,10 +20,13 @@ import org.gradle.api.InvalidUserDataException
 import org.gradle.api.NamedDomainObjectSet
 import org.gradle.api.file.FileCollection
 import org.gradle.api.plugins.quality.internal.findbugs.FindBugsSpecBuilder
-import org.gradle.api.plugins.quality.internal.findbugs.FindBugsXmlReportImpl;
+import org.gradle.api.plugins.quality.internal.findbugs.FindBugsXmlReportImpl
 import org.gradle.api.reporting.SingleFileReport
+import org.gradle.api.reporting.internal.CustomizableHtmlReportImpl
+import org.gradle.api.resources.TextResource
 import org.gradle.test.fixtures.file.TestNameTestDirectoryProvider
 import org.junit.Rule
+import spock.lang.Issue
 import spock.lang.Specification
 
 class FindBugsSpecBuilderTest extends Specification {
@@ -124,7 +127,7 @@ class FindBugsSpecBuilderTest extends Specification {
         where:
         reportType << ["xml", "html", "emacs", "text"]
     }
-    
+
     def "with xml with messages report configured"() {
         setup:
         FindBugsXmlReportImpl singleReport = Mock()
@@ -150,10 +153,40 @@ class FindBugsSpecBuilderTest extends Specification {
         args.contains(arg.toString())
         args.contains("-outputFile")
         args.contains(destination.absolutePath)
-        
+
         where:
         withMessages << [true, false]
         arg << ['-xml:withMessages', '-xml']
+    }
+
+    def "with html with custom stylesheet"() {
+        setup:
+        CustomizableHtmlReportImpl singleReport = Mock()
+        File destination = Mock()
+        NamedDomainObjectSet enabledReportSet = Mock()
+        FindBugsReportsImpl report = Mock()
+        File stylesheet = Mock()
+        TextResource stylesheetResource = Mock()
+
+        report.enabled >> enabledReportSet
+        report.firstEnabled >> singleReport
+        singleReport.stylesheet >> stylesheetResource
+        singleReport.name >> "html"
+        destination.absolutePath >> "/absolute/report/output"
+        stylesheet.absolutePath >> "/absolute/stylesheet.xsl"
+        stylesheetResource.asFile() >> stylesheet
+        singleReport.destination >> destination
+        enabledReportSet.empty >> false
+        enabledReportSet.size() >> 1
+
+        when:
+        builder.configureReports(report)
+        def args = builder.build().arguments
+
+        then:
+        args.contains('-html:/absolute/stylesheet.xsl')
+        args.contains("-outputFile")
+        args.contains(destination.absolutePath)
     }
 
     def "configure effort"() {
@@ -228,5 +261,39 @@ class FindBugsSpecBuilderTest extends Specification {
 
         then:
         args.contains("-exclude $file")
+    }
+
+    def "with extra args"() {
+        when:
+        def args = builder.withExtraArgs([ 'abc', 'def' ]).build().arguments
+
+        then:
+        args.containsAll([ "abc", "def" ])
+    }
+
+    def "with JVM args"() {
+        when:
+        def jvmArgs = builder.withJvmArgs(['-Dabc', '-Ddef']).build().jvmArgs
+
+        then:
+        jvmArgs.containsAll(["-Dabc", "-Ddef"])
+    }
+
+    @Issue("https://github.com/gradle/gradle/issues/1307")
+    def "with showProgress"() {
+        when:
+        def args = builder.withShowProgress(true).build().arguments
+
+        then:
+        args.contains('-progress')
+    }
+
+    @Issue("https://github.com/gradle/gradle/issues/1307")
+    def "does not add progress arg by default"() {
+        when:
+        def args = builder.build().arguments
+
+        then:
+        !args.contains('-progress')
     }
 }

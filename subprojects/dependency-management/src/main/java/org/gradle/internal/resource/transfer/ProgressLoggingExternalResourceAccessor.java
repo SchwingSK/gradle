@@ -16,10 +16,10 @@
 
 package org.gradle.internal.resource.transfer;
 
-import org.gradle.api.Nullable;
+import org.gradle.internal.logging.progress.ProgressLoggerFactory;
 import org.gradle.internal.resource.metadata.ExternalResourceMetaData;
-import org.gradle.logging.ProgressLoggerFactory;
 
+import javax.annotation.Nullable;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.URI;
@@ -32,8 +32,8 @@ public class ProgressLoggingExternalResourceAccessor extends AbstractProgressLog
         this.delegate = delegate;
     }
 
-    public ExternalResourceReadResponse openResource(URI location) {
-        ExternalResourceReadResponse resource = delegate.openResource(location);
+    public ExternalResourceReadResponse openResource(URI location, boolean revalidate) {
+        ExternalResourceReadResponse resource = delegate.openResource(location, revalidate);
         if (resource != null) {
             return new ProgressLoggingExternalResource(location, resource);
         } else {
@@ -42,8 +42,8 @@ public class ProgressLoggingExternalResourceAccessor extends AbstractProgressLog
     }
 
     @Nullable
-    public ExternalResourceMetaData getMetaData(URI location) {
-        return delegate.getMetaData(location);
+    public ExternalResourceMetaData getMetaData(URI location, boolean revalidate) {
+        return delegate.getMetaData(location, revalidate);
     }
 
     private class ProgressLoggingExternalResource implements ExternalResourceReadResponse {
@@ -52,7 +52,7 @@ public class ProgressLoggingExternalResourceAccessor extends AbstractProgressLog
 
         private ProgressLoggingExternalResource(URI location, ExternalResourceReadResponse resource) {
             this.resource = resource;
-            downloadOperation = createResourceOperation(location.toString(), ResourceOperation.Type.download, getClass(), resource.getMetaData().getContentLength());
+            downloadOperation = createResourceOperation(location, ResourceOperation.Type.download, getClass(), resource.getMetaData().getContentLength());
         }
 
         @Override
@@ -60,6 +60,7 @@ public class ProgressLoggingExternalResourceAccessor extends AbstractProgressLog
             return new ProgressLoggingInputStream(resource.openStream(), downloadOperation);
         }
 
+        @Override
         public void close() throws IOException {
             try {
                 resource.close();
@@ -68,13 +69,9 @@ public class ProgressLoggingExternalResourceAccessor extends AbstractProgressLog
             }
         }
 
-        @Nullable
+        @Override
         public ExternalResourceMetaData getMetaData() {
             return resource.getMetaData();
-        }
-
-        public boolean isLocal() {
-            return resource.isLocal();
         }
 
         public String toString(){

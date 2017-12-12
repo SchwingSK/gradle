@@ -11,7 +11,7 @@ class GreetingToFileTask extends DefaultTask {
     def greet() {
         def file = getDestination()
         file.parentFile.mkdirs()
-        file.write "Hello!"
+        file.write 'Hello!'
     }
 }
 // END SNIPPET task
@@ -21,8 +21,10 @@ task greet(type: GreetingToFileTask) {
     destination = { project.greetingFile }
 }
 
-task sayGreeting(dependsOn: greet) << {
-    println file(greetingFile).text
+task sayGreeting(dependsOn: greet) {
+    doLast {
+        println file(greetingFile).text
+    }
 }
 
 ext.greetingFile = "$buildDir/hello.txt"

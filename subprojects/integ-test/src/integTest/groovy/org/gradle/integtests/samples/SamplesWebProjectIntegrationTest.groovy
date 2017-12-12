@@ -19,18 +19,18 @@ package org.gradle.integtests.samples
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
 import org.gradle.integtests.fixtures.Sample
 import org.gradle.test.fixtures.file.TestFile
+import org.gradle.util.ports.ReleasingPortAllocator
 import org.junit.Rule
 
 class SamplesWebProjectIntegrationTest extends AbstractIntegrationSpec {
-    static final String WEB_PROJECT_NAME = 'customized'
-
     @Rule public final Sample sample = new Sample(temporaryFolder, 'webApplication/customized')
+    @Rule ReleasingPortAllocator portAllocator = new ReleasingPortAllocator()
 
     def "can build war"() {
         when:
         sample sample
-        run 'clean', 'assemble'
-        
+        succeeds('clean', 'assemble')
+
         then:
         TestFile tmpDir = file('unjar')
         sample.dir.file("build/libs/customized-1.0.war").unzipTo(tmpDir)
@@ -48,48 +48,5 @@ class SamplesWebProjectIntegrationTest extends AbstractIntegrationSpec {
                 'WEB-INF/webapp.xml',
                 'WEB-INF/web.xml',
                 'webapp.html')
-    }
-
-    def "can execute servlet"() {
-        given:
-        // Inject some int test stuff
-        sample.dir.file('build.gradle') << """
-def portFinder = org.gradle.util.AvailablePortFinder.createPrivate()
-
-httpPort = portFinder.nextAvailable
-stopPort = portFinder.nextAvailable
-println "http port = \$httpPort, stop port = \$stopPort"
-
-[jettyRun, jettyRunWar]*.daemon = true
-
-task runTest(dependsOn: jettyRun) << {
-    callServlet()
-}
-
-task runWarTest(dependsOn: jettyRunWar) << {
-    callServlet()
-}
-
-private void callServlet() {
-    URL url = new URL("http://localhost:\$httpPort/customized/hello")
-    println url.text
-    jettyStop.execute()
-}
-
-"""
-
-        when:
-        sample sample
-        run 'runTest'
-
-        then:
-        output.contains('Hello Gradle')
-
-        when:
-        sample sample
-        run 'runWarTest'
-
-        then:
-        output.contains('Hello Gradle')
     }
 }

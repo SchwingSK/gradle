@@ -19,9 +19,12 @@ import org.gradle.api.Project
 import org.gradle.api.file.FileCollectionMatchers
 import org.gradle.api.plugins.JavaPlugin
 import org.gradle.api.reporting.ReportingExtension
+import org.gradle.api.tasks.SourceSet
 import org.gradle.api.tasks.scala.ScalaCompile
 import org.gradle.api.tasks.scala.ScalaDoc
+import org.gradle.test.fixtures.file.TestNameTestDirectoryProvider
 import org.gradle.util.TestUtil
+import org.junit.Rule
 import org.junit.Test
 
 import static org.gradle.api.tasks.TaskDependencyMatchers.dependsOn
@@ -31,7 +34,10 @@ import static org.junit.Assert.assertThat
 import static org.junit.Assert.assertTrue
 
 class ScalaPluginTest {
-    private final Project project = TestUtil.createRootProject()
+    @Rule
+    public TestNameTestDirectoryProvider temporaryFolder = new TestNameTestDirectoryProvider()
+
+    private final Project project = TestUtil.create(temporaryFolder).rootProject()
     private final ScalaPlugin scalaPlugin = new ScalaPlugin()
 
     @Test void appliesTheJavaPluginToTheProject() {
@@ -55,21 +61,30 @@ class ScalaPluginTest {
         scalaPlugin.apply(project)
 
         def task = project.tasks['compileScala']
+        SourceSet mainSourceSet = project.sourceSets.main
         assertThat(task, instanceOf(ScalaCompile.class))
         assertThat(task.description, equalTo('Compiles the main Scala source.'))
-        assertThat(task.classpath, equalTo(project.sourceSets.main.compileClasspath))
-        assertThat(task.source as List, equalTo(project.sourceSets.main.scala  as List))
+        assertThat(task.classpath.files as List, equalTo([
+            mainSourceSet.java.outputDir
+        ]))
+        assertThat(task.source as List, equalTo(mainSourceSet.scala  as List))
         assertThat(task, dependsOn(JavaPlugin.COMPILE_JAVA_TASK_NAME))
 
         task = project.tasks['compileTestScala']
+        def testSourceSet = project.sourceSets.test
         assertThat(task, instanceOf(ScalaCompile.class))
         assertThat(task.description, equalTo('Compiles the test Scala source.'))
-        assertThat(task.classpath, equalTo(project.sourceSets.test.compileClasspath))
-        assertThat(task.source as List, equalTo(project.sourceSets.test.scala as List))
+        assertThat(task.classpath.files as List, equalTo([
+            mainSourceSet.java.outputDir,
+            mainSourceSet.scala.outputDir,
+            mainSourceSet.output.resourcesDir,
+            testSourceSet.java.outputDir,
+        ]))
+        assertThat(task.source as List, equalTo(testSourceSet.scala as List))
         assertThat(task, dependsOn(JavaPlugin.COMPILE_TEST_JAVA_TASK_NAME, JavaPlugin.CLASSES_TASK_NAME))
     }
 
-    @Test public void dependenciesOfJavaPluginTasksIncludeScalaCompileTasks() {
+    @Test void dependenciesOfJavaPluginTasksIncludeScalaCompileTasks() {
         scalaPlugin.apply(project)
 
         def task = project.tasks[JavaPlugin.CLASSES_TASK_NAME]
@@ -78,7 +93,7 @@ class ScalaPluginTest {
         task = project.tasks[JavaPlugin.TEST_CLASSES_TASK_NAME]
         assertThat(task, dependsOn(hasItem('compileTestScala')))
     }
-    
+
     @Test void addsScalaDocTasksToTheProject() {
         scalaPlugin.apply(project)
 

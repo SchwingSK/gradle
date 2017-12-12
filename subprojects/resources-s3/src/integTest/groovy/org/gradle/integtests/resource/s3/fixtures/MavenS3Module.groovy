@@ -19,9 +19,9 @@ package org.gradle.integtests.resource.s3.fixtures
 
 import org.gradle.test.fixtures.maven.DelegatingMavenModule
 import org.gradle.test.fixtures.maven.MavenFileModule
-import org.gradle.test.fixtures.maven.MavenModule
+import org.gradle.test.fixtures.maven.RemoteMavenModule
 
-class MavenS3Module extends DelegatingMavenModule<MavenS3Module> implements MavenModule {
+class MavenS3Module extends DelegatingMavenModule<MavenS3Module> implements RemoteMavenModule {
     MavenFileModule backingModule
     S3Server server
     String bucket
@@ -43,11 +43,16 @@ class MavenS3Module extends DelegatingMavenModule<MavenS3Module> implements Mave
         return new S3Artifact(server, artifactFile, repositoryPath, bucket)
     }
 
-    S3Artifact getMetaData() {
-        new S3Artifact(server, backingModule.metaDataFile, repositoryPath, bucket)
+    S3Artifact getModuleMetadata() {
+        return new S3Artifact(server, backingModule.moduleMetadata.file, repositoryPath, bucket)
     }
 
-    S3Artifact getMavenRootMetaData() {
+    @Override
+    S3Artifact getRootMetaData() {
         new S3Artifact(server, backingModule.rootMetaDataFile, repositoryPath, bucket)
+    }
+
+    S3Artifact getMetaData() {
+        new S3Artifact(server, backingModule.metaDataFile, repositoryPath, bucket)
     }
 }

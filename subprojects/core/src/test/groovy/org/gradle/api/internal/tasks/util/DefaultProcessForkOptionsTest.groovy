@@ -71,9 +71,9 @@ public class DefaultProcessForkOptionsTest {
 
     @Test
     public void convertsEnvironmentToString() {
-        options.environment = [key1: 12, key2: "${1+2}"]
+        options.environment = [key1: 12, key2: "${1+2}", key3: null]
 
-        assertThat(options.actualEnvironment, equalTo(key1: '12', key2: '3'))
+        assertThat(options.actualEnvironment, equalTo(key1: '12', key2: '3', key3: 'null'))
     }
 
     @Test
@@ -91,7 +91,7 @@ public class DefaultProcessForkOptionsTest {
 
         assertThat(options.environment, equalTo([key: 12, key2: "value"]))
     }
-    
+
     @Test
     public void canCopyToTargetOptions() {
         options.executable('executable')
@@ -99,7 +99,7 @@ public class DefaultProcessForkOptionsTest {
 
         ProcessForkOptions target = context.mock(ProcessForkOptions.class)
         context.checking {
-            one(target).setExecutable('executable')
+            one(target).setExecutable('executable' as Object)
             one(target).setWorkingDir(workingDir)
             one(target).setEnvironment(withParam(not(isEmptyMap())))
         }

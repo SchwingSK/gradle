@@ -36,6 +36,7 @@
 
     <!-- customize the stylesheets to add to the <head> element -->
     <xsl:template name="output.html.stylesheets">
+        <link rel="preconnect" href="//assets.gradle.com" crossorigin="crossorigin"/>
         <link href="base.css" rel="stylesheet" type="text/css"/>
         <link href="docs.css" rel="stylesheet" type="text/css"/>
         <link href="dsl.css" rel="stylesheet" type="text/css"/>
@@ -74,7 +75,8 @@
                 <div class="sidebar">
                     <ul>
                         <xsl:apply-templates select="." mode="sidebar"/>
-                        <xsl:apply-templates select="/book/section/table[@role = 'dslTypes']" mode="sidebar"/>
+                        <!-- only apply navbar to sections that are not marked with 'noNavBar' -->
+                        <xsl:apply-templates select="/book/section[not(@condition) or @condition != 'noNavBar']/table[@role = 'dslTypes']" mode="sidebar"/>
                     </ul>
                 </div>
                 <div class="content">

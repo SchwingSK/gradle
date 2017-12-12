@@ -15,47 +15,62 @@
  */
 package org.gradle.api.internal.artifacts.ivyservice.ivyresolve;
 
-import org.gradle.internal.component.model.ComponentArtifactMetaData;
-import org.gradle.internal.component.model.ComponentResolveMetaData;
-import org.gradle.internal.component.model.ComponentUsage;
+import org.gradle.api.internal.artifacts.ivyservice.resolveengine.artifact.ArtifactSet;
+import org.gradle.api.internal.artifacts.ivyservice.resolveengine.excludes.ModuleExclusion;
+import org.gradle.api.internal.artifacts.type.ArtifactTypeRegistry;
 import org.gradle.api.internal.component.ArtifactType;
 import org.gradle.internal.Transformers;
+import org.gradle.internal.component.model.ComponentArtifactMetadata;
+import org.gradle.internal.component.model.ComponentResolveMetadata;
+import org.gradle.internal.component.model.ConfigurationMetadata;
 import org.gradle.internal.component.model.ModuleSource;
 import org.gradle.internal.resolve.resolver.ArtifactResolver;
+import org.gradle.internal.resolve.resolver.OriginArtifactSelector;
 import org.gradle.internal.resolve.result.BuildableArtifactResolveResult;
 import org.gradle.internal.resolve.result.BuildableArtifactSetResolveResult;
+import org.gradle.internal.resolve.result.DefaultBuildableComponentArtifactsResolveResult;
 
+import javax.annotation.Nullable;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
-class RepositoryChainArtifactResolver implements ArtifactResolver {
+class RepositoryChainArtifactResolver implements ArtifactResolver, OriginArtifactSelector {
     private final Map<String, ModuleComponentRepository> repositories = new LinkedHashMap<String, ModuleComponentRepository>();
 
     void add(ModuleComponentRepository repository) {
         repositories.put(repository.getId(), repository);
     }
 
-    public void resolveModuleArtifacts(ComponentResolveMetaData component, ArtifactType artifactType, BuildableArtifactSetResolveResult result) {
+    @Override
+    public void resolveArtifactsWithType(ComponentResolveMetadata component, ArtifactType artifactType, BuildableArtifactSetResolveResult result) {
         ModuleComponentRepository sourceRepository = findSourceRepository(component.getSource());
-        ComponentResolveMetaData unpackedComponent = unpackSource(component);
+        ComponentResolveMetadata unpackedComponent = unpackSource(component);
         // First try to determine the artifacts locally before going remote
-        sourceRepository.getLocalAccess().resolveModuleArtifacts(unpackedComponent, artifactType, result);
+        sourceRepository.getLocalAccess().resolveArtifactsWithType(unpackedComponent, artifactType, result);
         if (!result.hasResult()) {
-            sourceRepository.getRemoteAccess().resolveModuleArtifacts(unpackedComponent, artifactType, result);
+            sourceRepository.getRemoteAccess().resolveArtifactsWithType(unpackedComponent, artifactType, result);
         }
     }
 
-    public void resolveModuleArtifacts(ComponentResolveMetaData component, ComponentUsage usage, BuildableArtifactSetResolveResult result) {
+    @Nullable
+    @Override
+    public ArtifactSet resolveArtifacts(ComponentResolveMetadata component, ConfigurationMetadata configuration, ArtifactTypeRegistry artifactTypeRegistry, ModuleExclusion exclusions) {
         ModuleComponentRepository sourceRepository = findSourceRepository(component.getSource());
-        ComponentResolveMetaData unpackedComponent = unpackSource(component);
+        ComponentResolveMetadata unpackedComponent = unpackSource(component);
         // First try to determine the artifacts locally before going remote
-        sourceRepository.getLocalAccess().resolveModuleArtifacts(unpackedComponent, usage, result);
+        DefaultBuildableComponentArtifactsResolveResult result = new DefaultBuildableComponentArtifactsResolveResult();
+        sourceRepository.getLocalAccess().resolveArtifacts(unpackedComponent, result);
         if (!result.hasResult()) {
-            sourceRepository.getRemoteAccess().resolveModuleArtifacts(unpackedComponent, usage, result);
+            sourceRepository.getRemoteAccess().resolveArtifacts(unpackedComponent, result);
         }
+        if (result.hasResult()) {
+            return result.getResult().getArtifactsFor(component, configuration, this, sourceRepository.getArtifactCache(), artifactTypeRegistry, exclusions);
+        }
+        return null;
     }
 
-    public void resolveArtifact(ComponentArtifactMetaData artifact, ModuleSource source, BuildableArtifactResolveResult result) {
+    @Override
+    public void resolveArtifact(ComponentArtifactMetadata artifact, ModuleSource source, BuildableArtifactResolveResult result) {
         ModuleComponentRepository sourceRepository = findSourceRepository(source);
         ModuleSource unpackedSource = unpackSource(source);
 
@@ -82,7 +97,7 @@ class RepositoryChainArtifactResolver implements ArtifactResolver {
         return repositorySource(original).getDelegate();
     }
 
-    private ComponentResolveMetaData unpackSource(ComponentResolveMetaData component) {
+    private ComponentResolveMetadata unpackSource(ComponentResolveMetadata component) {
         return component.withSource(repositorySource(component.getSource()).getDelegate());
     }
 }

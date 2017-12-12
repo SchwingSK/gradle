@@ -15,12 +15,16 @@
  */
 package org.gradle.integtests.fixtures
 
+import org.gradle.api.internal.file.TestFiles
 import org.gradle.internal.os.OperatingSystem
 import org.gradle.process.ExecResult
 import org.gradle.process.internal.ExecHandle
 import org.gradle.process.internal.ExecHandleBuilder
 
-class ScriptExecuter extends ExecHandleBuilder {
+class ScriptExecuter {
+    @Delegate
+    ExecHandleBuilder builder = TestFiles.execHandleFactory().newExec()
+
     @Override
     ExecHandle build() {
         if (OperatingSystem.current().isWindows()) {
@@ -30,7 +34,7 @@ class ScriptExecuter extends ExecHandleBuilder {
         } else {
             executable = "${workingDir}/${executable}"
         }
-        return super.build()
+        return builder.build()
     }
 
     ExecResult run() {

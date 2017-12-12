@@ -17,16 +17,17 @@
 dependencies {
     compile project(':core')
     compile project(':platformNative')
-
-    testCompile libraries.groovy
+    compile project(':maven')
 
     integTestRuntime project(":ideNative")
 }
 
 useTestFixtures()
+useTestFixtures(project: ":versionControl")
 useTestFixtures(project: ":platformNative")
 useTestFixtures(project: ":platformBase")
 useTestFixtures(project: ":messaging")
 
 useClassycle()
 strictCompile()
+

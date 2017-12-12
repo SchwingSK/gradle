@@ -16,37 +16,41 @@
 
 package org.gradle.internal.operations
 
-import com.google.common.util.concurrent.ListeningExecutorService
-import com.google.common.util.concurrent.MoreExecutors
 import org.gradle.api.GradleException
+import org.gradle.internal.concurrent.ParallelismConfigurationManagerFixture
+import org.gradle.internal.progress.BuildOperationDescriptor
+import org.gradle.internal.resources.DefaultResourceLockCoordinationService
+import org.gradle.internal.work.DefaultWorkerLeaseService
+import org.gradle.internal.work.WorkerLeaseService
 import spock.lang.Specification
 import spock.lang.Unroll
 
+import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 
 class DefaultBuildOperationQueueTest extends Specification {
 
     public static final String LOG_LOCATION = "<log location>"
-    abstract static class TestBuildOperation implements BuildOperation, Runnable {
-        public String getDescription() { return toString() }
-        public String toString() { return getClass().simpleName }
+    abstract static class TestBuildOperation implements RunnableBuildOperation {
+        BuildOperationDescriptor.Builder description() { BuildOperationDescriptor.displayName(toString()) }
+        String toString() { getClass().simpleName }
     }
 
     static class Success extends TestBuildOperation {
-        void run() {
+        void run(BuildOperationContext buildOperationContext) {
             // do nothing
         }
     }
 
     static class Failure extends TestBuildOperation {
-        void run() {
+        void run(BuildOperationContext buildOperationContext) {
             throw new BuildOperationFailure(this, "always fails")
         }
     }
 
-    static class SimpleWorker implements BuildOperationWorker<TestBuildOperation> {
-        public void execute(TestBuildOperation run) {
-            run.run();
+    static class SimpleWorker implements BuildOperationQueue.QueueWorker<TestBuildOperation> {
+        void execute(TestBuildOperation run) {
+            run.run(null)
         }
 
         String getDisplayName() {
@@ -55,10 +59,15 @@ class DefaultBuildOperationQueueTest extends Specification {
     }
 
     BuildOperationQueue operationQueue
+    WorkerLeaseService workerRegistry
 
     void setupQueue(int threads) {
-        ListeningExecutorService sameThreadExecutor = MoreExecutors.listeningDecorator(Executors.newFixedThreadPool(threads))
-        operationQueue = new DefaultBuildOperationQueue(sameThreadExecutor, new SimpleWorker(), LOG_LOCATION)
+        workerRegistry = new DefaultWorkerLeaseService(new DefaultResourceLockCoordinationService(), new ParallelismConfigurationManagerFixture(true, threads)) {};
+        operationQueue = new DefaultBuildOperationQueue(workerRegistry, Executors.newFixedThreadPool(threads), new SimpleWorker())
+    }
+
+    def "cleanup"() {
+        workerRegistry.stop()
     }
 
     @Unroll
@@ -74,7 +83,7 @@ class DefaultBuildOperationQueueTest extends Specification {
         operationQueue.waitForCompletion()
 
         then:
-        runs * success.run()
+        runs * success.run(_)
 
         where:
         runs | threads
@@ -88,7 +97,7 @@ class DefaultBuildOperationQueueTest extends Specification {
         5    | 4
         5    | 10
     }
-    
+
     def "cannot use operation queue once it has completed"() {
         given:
         setupQueue(1)
@@ -131,25 +140,77 @@ class DefaultBuildOperationQueueTest extends Specification {
                 [1, 4, 10]].combinations()
     }
 
-    def "all failures reported in order for a single threaded executor"() {
+    def "when log location is set value is propagated in exceptions"() {
         given:
         setupQueue(1)
+        operationQueue.setLogLocation(LOG_LOCATION)
         operationQueue.add(Stub(TestBuildOperation) {
-            run() >> { throw new RuntimeException("first") }
-        })
-        operationQueue.add(Stub(TestBuildOperation) {
-            run() >> { throw new RuntimeException("second") }
-        })
-        operationQueue.add(Stub(TestBuildOperation) {
-            run() >> { throw new RuntimeException("third") }
+            run(_) >> { throw new RuntimeException("first") }
         })
 
         when:
         operationQueue.waitForCompletion()
 
         then:
-        // assumes we don't fail early
         MultipleBuildOperationFailures e = thrown()
-        e.getCauses()*.message == [ 'first', 'second', 'third' ]
+        e.message.contains(LOG_LOCATION)
+    }
+
+    @Unroll
+    def "when queue is canceled, unstarted operations do not execute (#runs runs, #threads threads)" () {
+        def expectedInvocations = threads <= runs ? threads : runs
+        CountDownLatch startedLatch = new CountDownLatch(expectedInvocations)
+        CountDownLatch releaseLatch = new CountDownLatch(1)
+        def operationAction = Mock(Runnable)
+
+        given:
+        setupQueue(threads)
+
+        when:
+        runs.times { operationQueue.add(new SynchronizedBuildOperation(operationAction, startedLatch, releaseLatch)) }
+        // wait for operations to begin running
+        startedLatch.await()
+
+        and:
+        operationQueue.cancel()
+
+        and:
+        // release the running operations to complete
+        releaseLatch.countDown()
+        operationQueue.waitForCompletion()
+
+        then:
+        expectedInvocations * operationAction.run()
+
+        where:
+        runs | threads
+        0    | 1
+        0    | 4
+        0    | 10
+        1    | 1
+        1    | 4
+        1    | 10
+        5    | 1
+        5    | 4
+        5    | 10
+    }
+
+    static class SynchronizedBuildOperation extends TestBuildOperation {
+        final Runnable operationAction
+        final CountDownLatch startedLatch
+        final CountDownLatch releaseLatch
+
+        SynchronizedBuildOperation(Runnable operationAction, CountDownLatch startedLatch, CountDownLatch releaseLatch) {
+            this.operationAction = operationAction
+            this.startedLatch = startedLatch
+            this.releaseLatch = releaseLatch
+        }
+
+        @Override
+        void run(BuildOperationContext context) {
+            operationAction.run()
+            startedLatch.countDown()
+            releaseLatch.await()
+        }
     }
 }

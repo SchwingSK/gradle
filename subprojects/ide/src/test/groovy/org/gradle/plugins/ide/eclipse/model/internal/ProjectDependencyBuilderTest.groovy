@@ -15,31 +15,39 @@
  */
 package org.gradle.plugins.ide.eclipse.model.internal
 
-import org.gradle.api.Project
-import org.gradle.util.TestUtil
-import spock.lang.Specification
+import org.gradle.api.artifacts.component.ProjectComponentIdentifier
+import org.gradle.api.internal.artifacts.ivyservice.projectmodule.LocalComponentRegistry
+import org.gradle.internal.component.local.model.LocalComponentArtifactMetadata
+import org.gradle.internal.component.model.DefaultIvyArtifactName
+import org.gradle.test.fixtures.AbstractProjectBuilderSpec
 
-class ProjectDependencyBuilderTest extends Specification {
+import static org.gradle.internal.component.local.model.TestComponentIdentifiers.newProjectId
 
-    def Project project = TestUtil.createRootProject()
-    def ProjectDependencyBuilder builder = new ProjectDependencyBuilder()
+class ProjectDependencyBuilderTest extends AbstractProjectBuilderSpec {
+    def ProjectComponentIdentifier projectId = newProjectId(":nested:project-name")
+    def localComponentRegistry = Mock(LocalComponentRegistry)
+    def ProjectDependencyBuilder builder = new ProjectDependencyBuilder(localComponentRegistry)
 
-    def "should create dependency using project name"() {
+    def "should create dependency using project name for project without eclipse plugin applied"() {
         when:
-        def dependency = builder.build(project, 'compile')
+        def dependency = builder.build(projectId)
 
         then:
-        dependency.path == "/$project.name"
-        dependency.declaredConfigurationName == 'compile'
+        dependency.path == "/project-name"
+
+        and:
+        localComponentRegistry.getAdditionalArtifacts(_) >> []
     }
 
     def "should create dependency using eclipse projectName"() {
         given:
-        project.apply(plugin: 'eclipse')
-        project.eclipse.project.name = 'foo'
+        def projectArtifact = Stub(LocalComponentArtifactMetadata) {
+            getName() >> new DefaultIvyArtifactName("foo", "eclipse.project", "project", null)
+        }
+        localComponentRegistry.findAdditionalArtifact(projectId, "eclipse.project") >> projectArtifact
 
         when:
-        def dependency = builder.build(project, 'runtime')
+        def dependency = builder.build(projectId)
 
         then:
         dependency.path == '/foo'

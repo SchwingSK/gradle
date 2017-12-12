@@ -15,10 +15,11 @@
  */
 package org.gradle.internal.resolve.result;
 
-import org.gradle.api.Nullable;
 import org.gradle.api.artifacts.ModuleVersionIdentifier;
-import org.gradle.internal.component.model.ComponentResolveMetaData;
+import org.gradle.internal.component.model.ComponentResolveMetadata;
 import org.gradle.internal.resolve.ModuleVersionResolveException;
+
+import javax.annotation.Nullable;
 
 /**
  * The result of resolving a module version selector to a particular component.
@@ -38,7 +39,7 @@ public interface ComponentResolveResult extends ResolveResult {
      *
      * @throws ModuleVersionResolveException If resolution was unsuccessful and the descriptor is not available.
      */
-    ComponentResolveMetaData getMetaData() throws ModuleVersionResolveException;
+    ComponentResolveMetadata getMetaData() throws ModuleVersionResolveException;
 
     /**
      * Returns the resolve failure, if any.

@@ -15,13 +15,20 @@
  */
 package org.gradle.api.internal.artifacts.ivyservice.moduleconverter.dependencies;
 
-import org.gradle.api.artifacts.Configuration;
+import org.gradle.api.artifacts.Dependency;
+import org.gradle.api.artifacts.DependencyConstraint;
 import org.gradle.api.artifacts.ExcludeRule;
+import org.gradle.api.artifacts.FileCollectionDependency;
 import org.gradle.api.artifacts.ModuleDependency;
-import org.gradle.api.internal.artifacts.ivyservice.moduleconverter.ExcludeRuleConverter;
-import org.gradle.internal.component.local.model.MutableLocalComponentMetaData;
+import org.gradle.api.artifacts.component.ComponentIdentifier;
+import org.gradle.api.file.FileCollection;
+import org.gradle.api.internal.artifacts.configurations.ConfigurationInternal;
+import org.gradle.api.internal.artifacts.dependencies.SelfResolvingDependencyInternal;
+import org.gradle.api.internal.attributes.AttributeContainerInternal;
+import org.gradle.internal.component.local.model.BuildableLocalComponentMetadata;
+import org.gradle.internal.component.local.model.LocalFileDependencyMetadata;
 
-import java.util.Collection;
+import javax.annotation.Nullable;
 
 public class DefaultDependenciesToModuleDescriptorConverter implements DependenciesToModuleDescriptorConverter {
     private DependencyDescriptorFactory dependencyDescriptorFactory;
@@ -33,27 +40,56 @@ public class DefaultDependenciesToModuleDescriptorConverter implements Dependenc
         this.excludeRuleConverter = excludeRuleConverter;
     }
 
-    public void addDependencyDescriptors(MutableLocalComponentMetaData metaData, Collection<? extends Configuration> configurations) {
-        assert !configurations.isEmpty();
-        addDependencies(metaData, configurations);
-        addExcludeRules(metaData, configurations);
+    @Override
+    public void addDependencyDescriptors(BuildableLocalComponentMetadata metaData, ConfigurationInternal configuration) {
+        addDependencies(metaData, configuration);
+        addExcludeRules(metaData, configuration);
     }
 
-    private void addDependencies(MutableLocalComponentMetaData metaData, Collection<? extends Configuration> configurations) {
-        for (Configuration configuration : configurations) {
-            for (ModuleDependency dependency : configuration.getDependencies().withType(ModuleDependency.class)) {
-                metaData.addDependency(dependencyDescriptorFactory.createDependencyDescriptor(configuration.getName(), metaData.getModuleDescriptor(), dependency));
+    private void addDependencies(BuildableLocalComponentMetadata metaData, ConfigurationInternal configuration) {
+        AttributeContainerInternal attributes = configuration.getAttributes();
+        for (Dependency dependency : configuration.getDependencies()) {
+            if (dependency instanceof ModuleDependency) {
+                ModuleDependency moduleDependency = (ModuleDependency) dependency;
+                metaData.addDependency(dependencyDescriptorFactory.createDependencyDescriptor(metaData.getComponentId(), configuration.getName(), attributes, moduleDependency));
+            } else if (dependency instanceof FileCollectionDependency) {
+                final FileCollectionDependency fileDependency = (FileCollectionDependency) dependency;
+                metaData.addFiles(configuration.getName(), new DefaultLocalFileDependencyMetadata(fileDependency));
+            } else if (dependency instanceof DependencyConstraint) {
+                DependencyConstraint dependencyConstraint = (DependencyConstraint) dependency;
+                metaData.addDependency(dependencyDescriptorFactory.createDependencyConstraintDescriptor(metaData.getComponentId(), configuration.getName(), attributes, dependencyConstraint));
+            } else {
+                throw new IllegalArgumentException("Cannot convert dependency " + dependency + " to local component dependency metadata.");
             }
         }
     }
 
-    private void addExcludeRules(MutableLocalComponentMetaData metaData, Collection<? extends Configuration> configurations) {
-        for (Configuration configuration : configurations) {
-            for (ExcludeRule excludeRule : configuration.getExcludeRules()) {
-                org.apache.ivy.core.module.descriptor.ExcludeRule rule = excludeRuleConverter.createExcludeRule(
-                        configuration.getName(), excludeRule);
-                metaData.addExcludeRule(rule);
-            }
+    private void addExcludeRules(BuildableLocalComponentMetadata metaData, ConfigurationInternal configuration) {
+        for (ExcludeRule excludeRule : configuration.getExcludeRules()) {
+            metaData.addExclude(configuration.getName(), excludeRuleConverter.convertExcludeRule(excludeRule));
+        }
+    }
+
+    private static class DefaultLocalFileDependencyMetadata implements LocalFileDependencyMetadata {
+        private final FileCollectionDependency fileDependency;
+
+        DefaultLocalFileDependencyMetadata(FileCollectionDependency fileDependency) {
+            this.fileDependency = fileDependency;
+        }
+
+        @Override
+        public FileCollectionDependency getSource() {
+            return fileDependency;
+        }
+
+        @Override @Nullable
+        public ComponentIdentifier getComponentId() {
+            return ((SelfResolvingDependencyInternal) fileDependency).getTargetComponentId();
+        }
+
+        @Override
+        public FileCollection getFiles() {
+            return fileDependency.getFiles();
         }
     }
 }

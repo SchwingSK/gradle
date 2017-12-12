@@ -20,24 +20,43 @@ import org.gradle.util.SetSystemProperties
 import org.junit.Rule
 import spock.lang.Specification
 
+import java.lang.reflect.Field
+import java.lang.reflect.Modifier
+
 class OperatingSystemTest extends Specification {
     @Rule SetSystemProperties systemProperties = new SetSystemProperties()
     @Rule TestNameTestDirectoryProvider tmpDir = new TestNameTestDirectoryProvider()
 
+    def setup() {
+        OperatingSystem.resetCurrent()
+    }
+
+    def cleanup() {
+        OperatingSystem.resetCurrent()
+    }
+
+    def cleanupSpec() {
+        resetOperatingSystemClassStaticFields()
+    }
+
     def "uses os.name property to determine OS name"() {
+        given:
         System.properties['os.name'] = 'GradleOS 1.0'
-        
+        boolean resetStateSuccess = resetOperatingSystemClassStaticFields()
+
         expect:
-        OperatingSystem.current().name == 'GradleOS 1.0'
+        OperatingSystem.current().name == 'GradleOS 1.0' || !resetStateSuccess
     }
-    
+
     def "uses os.version property to determine OS version"() {
+        given:
         System.properties['os.version'] = '42'
-        
+        boolean resetStateSuccess = resetOperatingSystemClassStaticFields()
+
         expect:
-        OperatingSystem.current().version == '42'
+        OperatingSystem.current().version == '42' || !resetStateSuccess
     }
-    
+
     def "uses os.name property to determine if windows"() {
         System.properties['os.name'] = 'Windows 7'
 
@@ -70,6 +89,7 @@ class OperatingSystemTest extends Specification {
         def os = new OperatingSystem.Windows()
 
         expect:
+        os.executableSuffix == ".exe"
         os.getExecutableName("a.exe") == "a.exe"
         os.getExecutableName("a.EXE") == "a.EXE"
         os.getExecutableName("a") == "a.exe"
@@ -82,12 +102,16 @@ class OperatingSystemTest extends Specification {
         def os = new OperatingSystem.Windows()
 
         expect:
+        os.sharedLibrarySuffix == ".dll"
+        os.linkLibrarySuffix == ".lib"
         os.getSharedLibraryName("a.dll") == "a.dll"
         os.getSharedLibraryName("a.DLL") == "a.DLL"
         os.getSharedLibraryName("a") == "a.dll"
         os.getSharedLibraryName("a.lib") == "a.dll"
         os.getSharedLibraryName("a.b/c") == "a.b/c.dll"
         os.getSharedLibraryName("a.b\\c") == "a.b\\c.dll"
+        os.getLinkLibraryName("a") == "a.lib"
+        os.getLinkLibraryName("a.lib") == "a.lib"
     }
 
     def "windows transforms static library names"() {
@@ -118,7 +142,7 @@ class OperatingSystemTest extends Specification {
         os.findInPath("unknown") == null
     }
 
-    def "uses os.name property to determine if Mac OS X"() {
+    def "uses os.name property to determine if macOS"() {
         when:
         System.properties['os.name'] = 'Mac OS X'
 
@@ -138,7 +162,7 @@ class OperatingSystemTest extends Specification {
         OperatingSystem.current() instanceof OperatingSystem.MacOs
     }
 
-    def "Mac OS X identifies itself correctly"() {
+    def "macOS identifies itself correctly"() {
         def os = new OperatingSystem.MacOs()
 
         expect:
@@ -203,6 +227,7 @@ class OperatingSystemTest extends Specification {
         def os = new OperatingSystem.Unix()
 
         expect:
+        os.executableSuffix == ""
         os.getExecutableName("a.sh") == "a.sh"
         os.getExecutableName("a") == "a"
     }
@@ -211,12 +236,15 @@ class OperatingSystemTest extends Specification {
         def os = new OperatingSystem.Unix()
 
         expect:
+        os.sharedLibrarySuffix == ".so"
+        os.linkLibrarySuffix == ".so"
         os.getSharedLibraryName("a.so") == "a.so"
         os.getSharedLibraryName("liba.so") == "liba.so"
         os.getSharedLibraryName("a") == "liba.so"
         os.getSharedLibraryName("lib1") == "liblib1.so"
         os.getSharedLibraryName("path/liba.so") == "path/liba.so"
         os.getSharedLibraryName("path/a") == "path/liba.so"
+        os.getLinkLibraryName("a") == "liba.so"
     }
 
     def "UNIX transforms static library names"() {
@@ -247,55 +275,73 @@ class OperatingSystemTest extends Specification {
     }
 
     def "solaris uses prefix of x86 for 32bit intel"() {
+        given:
+        System.properties['os.arch'] = arch
         def solaris = new OperatingSystem.Solaris()
 
-        when:
-        System.properties['os.arch'] = 'i386'
+        expect:
+        solaris.nativePrefix == prefix
 
-        then:
-        solaris.nativePrefix == 'sunos-x86'
-
-        when:
-        System.properties['os.arch'] = 'x86'
-
-        then:
-        solaris.nativePrefix == 'sunos-x86'
+        where:
+        [arch, prefix] << [['i386', 'sunos-x86'], ['x86', 'sunos-x86']]
     }
 
     def "unix uses prefix of i386 for 32bit intel"() {
-        def unix = new OperatingSystem.Unix()
+        given:
         System.properties['os.name'] = 'unknown'
+        System.properties['os.arch'] = arch
+        def unix = new OperatingSystem.Unix()
 
-        when:
-        System.properties['os.arch'] = 'x86'
+        expect:
+        unix.nativePrefix == prefix
 
-        then:
-        unix.nativePrefix == 'unknown-i386'
-
-        when:
-        System.properties['os.arch'] = 'i386'
-
-        then:
-        unix.nativePrefix == 'unknown-i386'
+        where:
+        [arch, prefix] << [['i386', 'unknown-i386'], ['x86', 'unknown-i386']]
     }
 
-    def "os x uses same prefix for all architectures"() {
+    def "macOS uses same prefix for all architectures"() {
         def osx = new OperatingSystem.MacOs()
 
         expect:
         osx.nativePrefix == 'darwin'
     }
 
-    def "os x transforms shared library names"() {
+    def "macOS transforms shared library names"() {
         def os = new OperatingSystem.MacOs()
 
         expect:
+        os.sharedLibrarySuffix == ".dylib"
+        os.linkLibrarySuffix == ".dylib"
         os.getSharedLibraryName("a.dylib") == "a.dylib"
         os.getSharedLibraryName("liba.dylib") == "liba.dylib"
         os.getSharedLibraryName("a") == "liba.dylib"
         os.getSharedLibraryName("lib1") == "liblib1.dylib"
         os.getSharedLibraryName("path/liba.dylib") == "path/liba.dylib"
         os.getSharedLibraryName("path/a") == "path/liba.dylib"
+        os.getLinkLibraryName("a") == "liba.dylib"
     }
 
+    private static boolean resetOperatingSystemClassStaticFields() {
+        try {
+            OperatingSystem.getDeclaredFields()
+                .findAll { Modifier.isStatic(it.modifiers) && Modifier.isFinal(it.modifiers) }
+                .each { Field field ->
+                if (OperatingSystem.isAssignableFrom(field.getType())) {
+                    makeFinalFieldAccessibleForTesting(field)
+                    field.set(null, field.getType().newInstance())
+                }
+            }
+            return true
+        } catch (Exception e) {
+            System.err.println "Unable to make fields accessible on this JVM, error was:\n${e.message}"
+            return false
+        }
+    }
+
+    private static void makeFinalFieldAccessibleForTesting(Field field) {
+        field.setAccessible(true)
+        Field modifiersField = Field.class.getDeclaredField("modifiers")
+        modifiersField.setAccessible(true)
+        modifiersField.setInt(field, field.getModifiers() & ~Modifier.FINAL)
+    }
 }

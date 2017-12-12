@@ -15,8 +15,7 @@
  */
 package org.gradle.api.internal.artifacts.mvnsettings;
 
-import org.gradle.mvn3.org.apache.maven.settings.Settings;
-import org.gradle.mvn3.org.apache.maven.settings.building.SettingsBuildingException;
+import org.apache.maven.settings.building.SettingsBuildingException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -49,10 +48,15 @@ public class DefaultLocalMavenRepositoryLocator implements LocalMavenRepositoryL
         try {
             String repoPath = parseLocalRepoPathFromMavenSettings();
             if (repoPath != null) {
-                return new File(resolvePlaceholders(repoPath.trim()));
+                File file = new File(resolvePlaceholders(repoPath.trim()));
+                if (isDriveRelativeWindowsPath(file)) {
+                    return file.getAbsoluteFile();
+                } else {
+                    return file;
+                }
             } else {
                 File defaultLocation = new File(system.getProperty("user.home"), "/.m2/repository").getAbsoluteFile();
-                LOGGER.debug(String.format("No local repository in Settings file defined. Using default path: %s", defaultLocation));
+                LOGGER.debug("No local repository in Settings file defined. Using default path: {}", defaultLocation);
                 return defaultLocation;
             }
         } catch (SettingsBuildingException e) {
@@ -60,13 +64,16 @@ public class DefaultLocalMavenRepositoryLocator implements LocalMavenRepositoryL
         }
     }
 
+    private boolean isDriveRelativeWindowsPath(File file) {
+        return !file.isAbsolute() && file.getPath().startsWith(File.separator);
+    }
+
     // We only cache the result of parsing the Maven settings files, but allow this value to be updated in-flight
     // via system properties. This allows the local maven repo to be overridden when publishing to maven
     // (see http://forums.gradle.org/gradle/topics/override_location_of_the_local_maven_repo).
     private synchronized String parseLocalRepoPathFromMavenSettings() throws SettingsBuildingException {
         if (localRepoPathFromMavenSettings == null) {
-            Settings settings = settingsProvider.buildSettings();
-            localRepoPathFromMavenSettings = settings.getLocalRepository();
+            localRepoPathFromMavenSettings = settingsProvider.getLocalRepository();
         }
         return localRepoPathFromMavenSettings;
     }

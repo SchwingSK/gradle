@@ -225,11 +225,11 @@ class TaskCommandLineConfigurationIntegrationSpec extends AbstractIntegrationSpe
 
     def "single dash user error yields decent error message"() {
         when:
-        runAndFail 'tasks', '-all'
+        runAndFail 'help', '-tsk'
 
         then:
-        failure.assertHasDescription("Problem configuring task :tasks from command line.")
-        failure.assertHasCause("Unknown command-line option '-l'.")
+        failure.assertHasDescription("Problem configuring task :help from command line.")
+        failure.assertHasCause("Unknown command-line option '-k'.")
     }
 
     @Ignore
@@ -261,7 +261,7 @@ class TaskCommandLineConfigurationIntegrationSpec extends AbstractIntegrationSpe
 
         then:
         failure.assertHasDescription("Problem configuring option 'third' on task ':someTask' from command line.")
-        failure.assertHasCause("Cannot coerce string value 'unsupportedValue' to an enum value of type 'SomeTask\$TestEnum' (valid case insensitive values: [valid1, valid2, valid3])")
+        failure.assertHasCause("Cannot convert string value 'unsupportedValue' to an enum value of type 'SomeTask\$TestEnum' (valid case insensitive values: valid1, valid2, valid3)")
     }
 
     def "can set enum value from commandline"() {

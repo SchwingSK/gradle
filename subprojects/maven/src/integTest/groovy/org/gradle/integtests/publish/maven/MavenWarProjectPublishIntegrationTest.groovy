@@ -18,8 +18,10 @@ package org.gradle.integtests.publish.maven
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
 
 class MavenWarProjectPublishIntegrationTest extends AbstractIntegrationSpec {
+
     public void "publishes WAR only for mixed java and WAR project"() {
         given:
+        using m2
         file("settings.gradle") << "rootProject.name = 'publishTest' "
 
         and:
@@ -30,12 +32,10 @@ apply plugin: 'maven'
 group = 'org.gradle.test'
 version = '1.9'
 
-repositories {
-    mavenCentral()
-}
+${mavenCentralRepository()}
 
 dependencies {
-    compile "commons-collections:commons-collections:3.2.1"
+    compile "commons-collections:commons-collections:3.2.2"
     runtime "commons-io:commons-io:1.4"
 }
 

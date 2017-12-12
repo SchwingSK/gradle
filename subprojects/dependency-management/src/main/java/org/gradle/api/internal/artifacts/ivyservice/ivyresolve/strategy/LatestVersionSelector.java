@@ -17,7 +17,7 @@ package org.gradle.api.internal.artifacts.ivyservice.ivyresolve.strategy;
 
 import org.gradle.api.artifacts.ComponentMetadata;
 
-public class LatestVersionSelector extends AbstractVersionSelector {
+public class LatestVersionSelector extends AbstractStringVersionSelector {
     private final String selectorStatus;
 
     public LatestVersionSelector(String selector) {
@@ -38,12 +38,17 @@ public class LatestVersionSelector extends AbstractVersionSelector {
     }
 
     public boolean accept(String candidate) {
-        throw new UnsupportedOperationException("accept(String, String)");
+        throw new UnsupportedOperationException("accept(String)");
     }
 
     public boolean accept(ComponentMetadata candidate) {
         int selectorStatusIndex = candidate.getStatusScheme().indexOf(selectorStatus);
         int candidateStatusIndex = candidate.getStatusScheme().indexOf(candidate.getStatus());
         return selectorStatusIndex >=0 && selectorStatusIndex <= candidateStatusIndex;
+    }
+
+    @Override
+    public boolean canShortCircuitWhenVersionAlreadyPreselected() {
+        return false;
     }
 }

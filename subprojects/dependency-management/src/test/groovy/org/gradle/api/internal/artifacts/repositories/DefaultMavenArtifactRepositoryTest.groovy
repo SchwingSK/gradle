@@ -14,16 +14,23 @@
  * limitations under the License.
  */
 package org.gradle.api.internal.artifacts.repositories
+
 import org.gradle.api.InvalidUserDataException
+import org.gradle.api.artifacts.repositories.AuthenticationContainer
+import org.gradle.api.internal.ExperimentalFeatures
+import org.gradle.api.internal.artifacts.ImmutableModuleIdentifierFactory
 import org.gradle.api.internal.artifacts.ivyservice.ivyresolve.parser.MetaDataParser
+import org.gradle.api.internal.artifacts.ivyservice.ivyresolve.parser.ModuleMetadataParser
 import org.gradle.api.internal.artifacts.repositories.resolver.MavenResolver
 import org.gradle.api.internal.artifacts.repositories.transport.RepositoryTransport
 import org.gradle.api.internal.artifacts.repositories.transport.RepositoryTransportFactory
 import org.gradle.api.internal.file.FileResolver
 import org.gradle.api.internal.filestore.ivy.ArtifactIdentifierFileStore
-import org.gradle.internal.reflect.DirectInstantiator
+import org.gradle.internal.resource.ExternalResourceRepository
+import org.gradle.internal.resource.cached.ExternalResourceFileStore
+import org.gradle.internal.resource.local.FileResourceRepository
 import org.gradle.internal.resource.local.LocallyAvailableResourceFinder
-import org.gradle.internal.resource.transport.ExternalResourceRepository
+import org.gradle.util.TestUtil
 import spock.lang.Specification
 
 class DefaultMavenArtifactRepositoryTest extends Specification {
@@ -32,17 +39,21 @@ class DefaultMavenArtifactRepositoryTest extends Specification {
     final LocallyAvailableResourceFinder locallyAvailableResourceFinder = Mock()
     final ExternalResourceRepository resourceRepository = Mock()
     final ArtifactIdentifierFileStore artifactIdentifierFileStore = Stub()
+    final ExternalResourceFileStore externalResourceFileStore = Stub()
     final MetaDataParser pomParser = Stub()
+    final ModuleMetadataParser metadataParser = Stub()
+    final AuthenticationContainer authenticationContainer = Stub()
+    final ImmutableModuleIdentifierFactory moduleIdentifierFactory = Stub()
 
     final DefaultMavenArtifactRepository repository = new DefaultMavenArtifactRepository(
-            resolver, transportFactory, locallyAvailableResourceFinder, DirectInstantiator.INSTANCE, artifactIdentifierFileStore, pomParser)
+        resolver, transportFactory, locallyAvailableResourceFinder, TestUtil.instantiatorFactory(), artifactIdentifierFileStore, pomParser, metadataParser, authenticationContainer, moduleIdentifierFactory, externalResourceFileStore, Mock(FileResourceRepository), new ExperimentalFeatures())
 
     def "creates local repository"() {
         given:
         def file = new File('repo')
         def uri = file.toURI()
         _ * resolver.resolveUri('repo-dir') >> uri
-        transportFactory.createTransport('file', 'repo', null) >> transport()
+        transportFactory.createTransport('file', 'repo', _) >> transport()
 
         and:
         repository.name = 'repo'
@@ -60,7 +71,7 @@ class DefaultMavenArtifactRepositoryTest extends Specification {
         given:
         def uri = new URI("http://localhost:9090/repo")
         _ * resolver.resolveUri('repo-dir') >> uri
-        transportFactory.createTransport('http', 'repo', null) >> transport()
+        transportFactory.createTransport('http', 'repo', _) >> transport()
 
         and:
         repository.name = 'repo'
@@ -82,7 +93,7 @@ class DefaultMavenArtifactRepositoryTest extends Specification {
         _ * resolver.resolveUri('repo-dir') >> uri
         _ * resolver.resolveUri('repo1') >> uri1
         _ * resolver.resolveUri('repo2') >> uri2
-        transportFactory.createTransport('http', 'repo', null) >> transport()
+        transportFactory.createTransport('http', 'repo', _) >> transport()
 
         and:
         repository.name = 'repo'
@@ -127,6 +138,24 @@ class DefaultMavenArtifactRepositoryTest extends Specification {
         then:
         InvalidUserDataException e = thrown()
         e.message == 'You must specify a URL for a Maven repository.'
+    }
+
+    def "create repository from strongly typed URI"() {
+        given:
+        def uri = new URI("http://localhost:9090/repo")
+        _ * resolver.resolveUri(_) >> uri
+        transportFactory.createTransport(_, 'repo', _) >> transport()
+
+        and:
+        repository.name = 'repo'
+        repository.url = uri
+
+        when:
+        def repo = repository.createRealResolver()
+
+        then:
+        repo instanceof MavenResolver
+        repo.root == uri
     }
 
     private RepositoryTransport transport() {

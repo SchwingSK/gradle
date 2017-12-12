@@ -21,53 +21,49 @@ import org.gradle.api.InvalidUserDataException
 import org.gradle.api.Project
 import org.gradle.api.Task
 import org.gradle.api.internal.AbstractTask
-import org.gradle.internal.Actions
 import org.gradle.api.internal.AsmBackedClassGenerator
-import org.gradle.api.internal.project.AbstractProject
-import org.gradle.api.internal.project.DefaultProject
+import org.gradle.api.internal.project.ProjectInternal
 import org.gradle.api.internal.project.taskfactory.AnnotationProcessingTaskFactory
+import org.gradle.api.internal.project.taskfactory.DefaultTaskClassInfoStore
+import org.gradle.api.internal.project.taskfactory.DefaultTaskClassValidatorExtractor
 import org.gradle.api.internal.project.taskfactory.ITaskFactory
 import org.gradle.api.internal.project.taskfactory.TaskFactory
 import org.gradle.api.internal.tasks.TaskExecuter
 import org.gradle.api.internal.tasks.TaskExecutionContext
 import org.gradle.api.internal.tasks.TaskStateInternal
 import org.gradle.api.specs.Spec
+import org.gradle.internal.Actions
 import org.gradle.internal.reflect.DirectInstantiator
-import org.gradle.test.fixtures.file.TestNameTestDirectoryProvider
+import org.gradle.test.fixtures.AbstractProjectBuilderSpec
 import org.gradle.util.GUtil
 import org.gradle.util.TestUtil
-import org.junit.Rule
-import spock.lang.Specification
 
 import java.util.concurrent.atomic.AtomicBoolean
 
 import static org.junit.Assert.assertFalse
 
-public abstract class AbstractSpockTaskTest extends Specification {
+abstract class AbstractSpockTaskTest extends AbstractProjectBuilderSpec {
     public static final String TEST_TASK_NAME = "taskname"
-    @Rule
-    public TestNameTestDirectoryProvider tmpDir = new TestNameTestDirectoryProvider()
 
-    private AbstractProject project = TestUtil.createRootProject()
+    def taskClassInfoStore = new DefaultTaskClassInfoStore(new DefaultTaskClassValidatorExtractor())
+    private final ITaskFactory taskFactory = new AnnotationProcessingTaskFactory(taskClassInfoStore, new TaskFactory(new AsmBackedClassGenerator()))
 
-    private static final ITaskFactory TASK_FACTORY = new AnnotationProcessingTaskFactory(new TaskFactory(new AsmBackedClassGenerator()))
+    abstract AbstractTask getTask()
 
-    public abstract AbstractTask getTask();
-
-    public <T extends AbstractTask> T createTask(Class<T> type) {
-        return createTask(type, project, TEST_TASK_NAME);
+    def <T extends AbstractTask> T createTask(Class<T> type) {
+        return createTask(type, project, TEST_TASK_NAME)
     }
 
-    public Task createTask(Project project, String name) {
-        return createTask(getTask().getClass(), project, name);
+    Task createTask(Project project, String name) {
+        return createTask(getTask().getClass(), project, name)
     }
 
-    public <T extends AbstractTask> T createTask(Class<T> type, Project project, String name) {
-        Task task = TASK_FACTORY.createChild(project, DirectInstantiator.INSTANCE).createTask(
+    def <T extends AbstractTask> T createTask(Class<T> type, Project project, String name) {
+        Task task = taskFactory.createChild(project, DirectInstantiator.INSTANCE).createTask(
                 GUtil.map(Task.TASK_TYPE, type,
                         Task.TASK_NAME, name))
         assert type.isAssignableFrom(task.getClass())
-        return type.cast(task);
+        return type.cast(task)
     }
 
     def testTask() {
@@ -84,45 +80,44 @@ public abstract class AbstractSpockTaskTest extends Specification {
     }
 
     def testPath() {
-        DefaultProject rootProject = TestUtil.createRootProject();
-        DefaultProject childProject = TestUtil.createChildProject(rootProject, "child");
-        childProject.getProjectDir().mkdirs();
-        DefaultProject childchildProject = TestUtil.createChildProject(childProject, "childchild");
-        childchildProject.getProjectDir().mkdirs();
+        ProjectInternal childProject = TestUtil.createChildProject(project, "child")
+        childProject.getProjectDir().mkdirs()
+        ProjectInternal childchildProject = TestUtil.createChildProject(childProject, "childchild")
+        childchildProject.getProjectDir().mkdirs()
 
         when:
-        Task task = createTask(rootProject, TEST_TASK_NAME);
+        Task task = createTask(project, TEST_TASK_NAME)
 
         then:
         Project.PATH_SEPARATOR + TEST_TASK_NAME ==  task.getPath()
 
         when:
-        task = createTask(childProject, TEST_TASK_NAME);
+        task = createTask(childProject, TEST_TASK_NAME)
 
         then:
         Project.PATH_SEPARATOR + "child" + Project.PATH_SEPARATOR + TEST_TASK_NAME ==  task.getPath()
 
         when:
-        task = createTask(childchildProject, TEST_TASK_NAME);
+        task = createTask(childchildProject, TEST_TASK_NAME)
 
         then:
         Project.PATH_SEPARATOR + "child" + Project.PATH_SEPARATOR + "childchild" + Project.PATH_SEPARATOR + TEST_TASK_NAME ==  task.getPath()
     }
 
     def testDependsOn() {
-        Task dependsOnTask = createTask(project, "somename");
-        Task task = createTask(project, TEST_TASK_NAME);
-        project.getTasks().create("path1");
-        project.getTasks().create("path2");
+        Task dependsOnTask = createTask(project, "somename")
+        Task task = createTask(project, TEST_TASK_NAME)
+        project.getTasks().create("path1")
+        project.getTasks().create("path2")
 
         when:
-        task.dependsOn(Project.PATH_SEPARATOR + "path1");
+        task.dependsOn(Project.PATH_SEPARATOR + "path1")
 
         then:
         TaskDependencyMatchers.dependsOn("path1").matches(task)
 
         when:
-        task.dependsOn("path2", dependsOnTask);
+        task.dependsOn("path2", dependsOnTask)
 
         then:
         TaskDependencyMatchers.dependsOn("path1", "path2", "somename").matches(task)
@@ -134,10 +129,10 @@ public abstract class AbstractSpockTaskTest extends Specification {
 
     def testDeleteAllActions() {
         when:
-        Action action1 = Actions.doNothing();
-        Action action2 = Actions.doNothing();
-        getTask().doLast(action1);
-        getTask().doLast(action2);
+        Action action1 = Actions.doNothing()
+        Action action2 = Actions.doNothing()
+        getTask().doLast(action1)
+        getTask().doLast(action2)
 
         then:
         getTask().is( getTask().deleteAllActions())
@@ -146,14 +141,14 @@ public abstract class AbstractSpockTaskTest extends Specification {
 
     def testSetActions() {
         when:
-        Action action1 = Actions.doNothing();
+        Action action1 = Actions.doNothing()
         getTask().actions = [action1]
 
-        Action action2 = Actions.doNothing();
+        Action action2 = Actions.doNothing()
         getTask().actions = [action2]
 
         then:
-        [new AbstractTask.TaskActionWrapper(action2)] ==  getTask().actions
+        [new AbstractTask.TaskActionWrapper(action2, "doLast(Action)")] ==  getTask().actions
     }
 
     def testAddActionWithNull() {
@@ -167,7 +162,7 @@ public abstract class AbstractSpockTaskTest extends Specification {
     def testExecuteDelegatesToTaskExecuter() {
         final AbstractTask task = getTask()
         TaskExecuter executer = Mock()
-        task.setExecuter(executer);
+        task.setExecuter(executer)
 
         when:
         task.execute()
@@ -177,56 +172,48 @@ public abstract class AbstractSpockTaskTest extends Specification {
 
     }
 
-    public AbstractProject getProject() {
-        return project;
-    }
-
-    public void setProject(AbstractProject project) {
-        this.project = project;
-    }
-
     def setGetDescription() {
         when:
-        String testDescription = "testDescription";
-        getTask().setDescription(testDescription);
+        String testDescription = "testDescription"
+        getTask().setDescription(testDescription)
 
         then:
         testDescription ==  getTask().getDescription()
     }
 
     def canSpecifyOnlyIfPredicateUsingClosure() {
-        AbstractTask task = getTask();
+        AbstractTask task = getTask()
 
         expect:
         task.getOnlyIf().isSatisfiedBy(task)
 
         when:
-        task.onlyIf(TestUtil.toClosure("{ task -> false }"));
+        task.onlyIf(TestUtil.toClosure("{ task -> false }"))
 
         then:
-        assertFalse(task.getOnlyIf().isSatisfiedBy(task));
+        assertFalse(task.getOnlyIf().isSatisfiedBy(task))
     }
 
     def canSpecifyOnlyIfPredicateUsingSpec() {
         final Spec<Task> spec = Mock()
-        final AbstractTask task = getTask();
+        final AbstractTask task = getTask()
 
         expect:
         task.getOnlyIf().isSatisfiedBy(task)
 
         when:
-        task.onlyIf(spec);
+        task.onlyIf(spec)
 
         then:
         spec.isSatisfiedBy(task) >> false
-        assertFalse(task.getOnlyIf().isSatisfiedBy(task));
+        assertFalse(task.getOnlyIf().isSatisfiedBy(task))
     }
 
     def onlyIfPredicateIsTrueWhenTaskIsEnabledAndAllPredicatesAreTrue() {
-        final AtomicBoolean condition1 = new AtomicBoolean(true);
-        final AtomicBoolean condition2 = new AtomicBoolean(true);
+        final AtomicBoolean condition1 = new AtomicBoolean(true)
+        final AtomicBoolean condition2 = new AtomicBoolean(true)
 
-        AbstractTask task = getTask();
+        AbstractTask task = getTask()
         task.onlyIf {
             condition1.get()
         }
@@ -238,58 +225,58 @@ public abstract class AbstractSpockTaskTest extends Specification {
         task.getOnlyIf().isSatisfiedBy(task)
 
         when:
-        task.setEnabled(false);
+        task.setEnabled(false)
 
         then:
-        assertFalse(task.getOnlyIf().isSatisfiedBy(task));
+        assertFalse(task.getOnlyIf().isSatisfiedBy(task))
 
         when:
-        task.setEnabled(true);
-        condition1.set(false);
+        task.setEnabled(true)
+        condition1.set(false)
 
         then:
-        assertFalse(task.getOnlyIf().isSatisfiedBy(task));
+        assertFalse(task.getOnlyIf().isSatisfiedBy(task))
 
         when:
-        condition1.set(true);
-        condition2.set(false);
+        condition1.set(true)
+        condition2.set(false)
 
         then:
-        assertFalse(task.getOnlyIf().isSatisfiedBy(task));
+        assertFalse(task.getOnlyIf().isSatisfiedBy(task))
 
         when:
-        condition2.set(true);
+        condition2.set(true)
 
         then:
         task.getOnlyIf().isSatisfiedBy(task)
     }
 
     def canReplaceOnlyIfSpec() {
-        final AtomicBoolean condition1 = new AtomicBoolean(true);
-        AbstractTask task = getTask();
+        final AtomicBoolean condition1 = new AtomicBoolean(true)
+        AbstractTask task = getTask()
         task.onlyIf(Mock(Spec))
         task.setOnlyIf {
-            return condition1.get();
+            return condition1.get()
         }
 
         expect:
         task.getOnlyIf().isSatisfiedBy(task)
 
         when:
-        task.setEnabled(false);
+        task.setEnabled(false)
 
         then:
-        assertFalse(task.getOnlyIf().isSatisfiedBy(task));
+        assertFalse(task.getOnlyIf().isSatisfiedBy(task))
 
         when:
-        task.setEnabled(true);
-        condition1.set(false);
+        task.setEnabled(true)
+        condition1.set(false)
 
         then:
-        assertFalse(task.getOnlyIf().isSatisfiedBy(task));
+        assertFalse(task.getOnlyIf().isSatisfiedBy(task))
 
         when:
-        condition1.set(true);
+        condition1.set(true)
 
         then:
         task.getOnlyIf().isSatisfiedBy(task)
@@ -300,7 +287,7 @@ public abstract class AbstractSpockTaskTest extends Specification {
         Task task2 = Mock()
         TaskDependency dependencyMock = Mock()
         getTask().dependsOn(dependencyMock)
-        dependencyMock.getDependencies(getTask()) >> [task1, task2] 
+        dependencyMock.getDependencies(getTask()) >> [task1, task2]
         task1.getDidWork() >> false
         task2.getDidWork() >>> [false, true]
 

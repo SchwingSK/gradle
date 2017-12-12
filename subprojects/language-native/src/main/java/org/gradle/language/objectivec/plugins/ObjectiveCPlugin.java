@@ -26,14 +26,16 @@ import org.gradle.nativeplatform.plugins.NativeComponentPlugin;
  *
  * <p>Automatically includes the {@link ObjectiveCLangPlugin} for core Objective-C support and the {@link org.gradle.nativeplatform.plugins.NativeComponentPlugin} for native component support.</p>
  *
+ * <ul>
  * <li>Creates a {@link org.gradle.language.objectivec.tasks.ObjectiveCCompile} task for each {@link org.gradle.language.objectivec.ObjectiveCSourceSet} to compile the Objective-C sources.</li>
+ * </ul>
  */
 @Incubating
 public class ObjectiveCPlugin implements Plugin<Project> {
+    @Override
     public void apply(Project project) {
         project.getPluginManager().apply(NativeComponentPlugin.class);
         project.getPluginManager().apply(ObjectiveCLangPlugin.class);
-        project.getPluginManager().apply(ObjectiveCLangPCHPlugin.class);
     }
 
 }

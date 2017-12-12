@@ -15,42 +15,43 @@
  */
 package org.gradle.api.internal.artifacts.ivyservice.moduleconverter.dependencies;
 
-import org.apache.ivy.core.module.descriptor.DefaultDependencyDescriptor;
-import org.apache.ivy.core.module.descriptor.ModuleDescriptor;
-import org.apache.ivy.core.module.id.ModuleRevisionId;
 import org.gradle.api.artifacts.ExternalModuleDependency;
 import org.gradle.api.artifacts.ModuleDependency;
-import org.gradle.api.internal.artifacts.ivyservice.IvyUtil;
-import org.gradle.api.internal.artifacts.ivyservice.moduleconverter.ExcludeRuleConverter;
-import org.gradle.internal.component.local.model.DslOriginDependencyMetaDataWrapper;
-import org.gradle.internal.component.local.model.DslOriginDependencyMetaData;
-import org.gradle.internal.component.model.DefaultDependencyMetaData;
-import org.gradle.internal.component.model.DependencyMetaData;
+import org.gradle.api.artifacts.component.ComponentIdentifier;
+import org.gradle.api.artifacts.component.ModuleComponentSelector;
+import org.gradle.api.attributes.AttributeContainer;
+import org.gradle.api.internal.artifacts.VersionConstraintInternal;
+import org.gradle.internal.component.external.model.DefaultModuleComponentSelector;
+import org.gradle.internal.component.local.model.DslOriginDependencyMetadataWrapper;
+import org.gradle.internal.component.model.ExcludeMetadata;
+import org.gradle.internal.component.model.LocalComponentDependencyMetadata;
+import org.gradle.internal.component.model.LocalOriginDependencyMetadata;
+
+import java.util.List;
 
 public class ExternalModuleIvyDependencyDescriptorFactory extends AbstractIvyDependencyDescriptorFactory {
     public ExternalModuleIvyDependencyDescriptorFactory(ExcludeRuleConverter excludeRuleConverter) {
         super(excludeRuleConverter);
     }
 
-    private ModuleRevisionId createModuleRevisionId(ModuleDependency dependency) {
-        return IvyUtil.createModuleRevisionId(dependency);
+    public LocalOriginDependencyMetadata createDependencyDescriptor(ComponentIdentifier componentId, String clientConfiguration, AttributeContainer clientAttributes, ModuleDependency dependency) {
+        ExternalModuleDependency externalModuleDependency = (ExternalModuleDependency) dependency;
+        boolean force = externalModuleDependency.isForce();
+        boolean changing = externalModuleDependency.isChanging();
+        boolean transitive = externalModuleDependency.isTransitive();
+
+        ModuleComponentSelector selector = DefaultModuleComponentSelector.newSelector(nullToEmpty(dependency.getGroup()), nullToEmpty(dependency.getName()), ((VersionConstraintInternal)externalModuleDependency.getVersionConstraint()).asImmutable());
+
+        List<ExcludeMetadata> excludes = convertExcludeRules(clientConfiguration, dependency.getExcludeRules());
+        LocalComponentDependencyMetadata dependencyMetaData = new LocalComponentDependencyMetadata(
+                componentId, selector, clientConfiguration, clientAttributes, dependency.getTargetConfiguration(),
+                convertArtifacts(dependency.getArtifacts()),
+                excludes, force, changing, transitive, false);
+        return new DslOriginDependencyMetadataWrapper(dependencyMetaData, dependency);
     }
 
-    public DslOriginDependencyMetaData createDependencyDescriptor(String configuration, ModuleDependency dependency, ModuleDescriptor parent) {
-        ModuleRevisionId moduleRevisionId = createModuleRevisionId(dependency);
-        DefaultDependencyDescriptor dependencyDescriptor = new DefaultDependencyDescriptor(
-                parent,
-                moduleRevisionId,
-                getExternalModuleDependency(dependency).isForce(),
-                getExternalModuleDependency(dependency).isChanging(),
-                getExternalModuleDependency(dependency).isTransitive());
-        addExcludesArtifactsAndDependencies(configuration, getExternalModuleDependency(dependency), dependencyDescriptor);
-        DependencyMetaData dependencyMetaData = new DefaultDependencyMetaData(dependencyDescriptor);
-        return new DslOriginDependencyMetaDataWrapper(dependencyMetaData, dependency);
-    }
-
-    private ExternalModuleDependency getExternalModuleDependency(ModuleDependency dependency) {
-        return (ExternalModuleDependency) dependency;
+    private String nullToEmpty(String input) {
+        return input == null ? "" : input;
     }
 
     public boolean canConvert(ModuleDependency dependency) {

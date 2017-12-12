@@ -14,18 +14,31 @@
  * limitations under the License.
  */
 package org.gradle.api.internal.artifacts.repositories
+
 import org.gradle.api.InvalidUserDataException
-import org.gradle.api.internal.artifacts.ivyservice.ivyresolve.strategy.ResolverStrategy
+import org.gradle.api.artifacts.ComponentMetadataSupplier
+import org.gradle.api.artifacts.ComponentMetadataSupplierDetails
+import org.gradle.api.artifacts.repositories.AuthenticationContainer
+import org.gradle.api.internal.ExperimentalFeatures
+import org.gradle.api.internal.artifacts.ImmutableModuleIdentifierFactory
+import org.gradle.api.internal.artifacts.ivyservice.IvyContextManager
+import org.gradle.api.internal.artifacts.ivyservice.ivyresolve.parser.ModuleMetadataParser
 import org.gradle.api.internal.artifacts.repositories.resolver.IvyResolver
 import org.gradle.api.internal.artifacts.repositories.transport.RepositoryTransport
 import org.gradle.api.internal.artifacts.repositories.transport.RepositoryTransportFactory
+import org.gradle.api.internal.attributes.ImmutableAttributesFactory
 import org.gradle.api.internal.file.FileResolver
 import org.gradle.api.internal.filestore.ivy.ArtifactIdentifierFileStore
-import org.gradle.internal.reflect.DirectInstantiator
+import org.gradle.api.internal.model.NamedObjectInstantiator
+import org.gradle.internal.logging.progress.ProgressLoggerFactory
+import org.gradle.internal.resource.ExternalResourceRepository
+import org.gradle.internal.resource.cached.ExternalResourceFileStore
+import org.gradle.internal.resource.local.FileResourceRepository
 import org.gradle.internal.resource.local.LocallyAvailableResourceFinder
-import org.gradle.internal.resource.transport.ExternalResourceRepository
-import org.gradle.logging.ProgressLoggerFactory
-import spock.lang.Specification
+import org.gradle.testing.internal.util.Specification
+import org.gradle.util.TestUtil
+
+import javax.inject.Inject
 
 class DefaultIvyArtifactRepositoryTest extends Specification {
     final FileResolver fileResolver = Mock()
@@ -33,13 +46,14 @@ class DefaultIvyArtifactRepositoryTest extends Specification {
     final LocallyAvailableResourceFinder locallyAvailableResourceFinder = Mock()
     final ExternalResourceRepository resourceRepository = Mock()
     final ProgressLoggerFactory progressLoggerFactory = Mock()
-    final ResolverStrategy resolverStrategy = Stub()
     final ArtifactIdentifierFileStore artifactIdentifierFileStore = Stub()
+    final ExternalResourceFileStore externalResourceFileStore = Stub()
+    final AuthenticationContainer authenticationContainer = Stub()
+    final ivyContextManager = Mock(IvyContextManager)
+    final ImmutableModuleIdentifierFactory moduleIdentifierFactory = Mock()
+    final ModuleMetadataParser moduleMetadataParser = new ModuleMetadataParser(Mock(ImmutableAttributesFactory), moduleIdentifierFactory, Mock(NamedObjectInstantiator))
 
-    final DefaultIvyArtifactRepository repository = new DefaultIvyArtifactRepository(
-            fileResolver, transportFactory, locallyAvailableResourceFinder,
-            DirectInstantiator.INSTANCE, resolverStrategy, artifactIdentifierFileStore
-    )
+    final DefaultIvyArtifactRepository repository = new DefaultIvyArtifactRepository(fileResolver, transportFactory, locallyAvailableResourceFinder, artifactIdentifierFileStore, externalResourceFileStore, authenticationContainer, ivyContextManager, moduleIdentifierFactory, TestUtil.instantiatorFactory(), Mock(FileResourceRepository), moduleMetadataParser, new ExperimentalFeatures())
 
     def "default values"() {
         expect:
@@ -56,7 +70,7 @@ class DefaultIvyArtifactRepositoryTest extends Specification {
         given:
         fileResolver.resolveUri('http://host/') >> new URI('http://host/')
         fileResolver.resolveUri('http://other/') >> new URI('http://other/')
-        transportFactory.createTransport({ it == ['http'] as Set}, 'name', null) >> transport()
+        transportFactory.createTransport({ it == ['http'] as Set }, 'name', _) >> transport()
 
 
         when:
@@ -82,14 +96,13 @@ class DefaultIvyArtifactRepositoryTest extends Specification {
 
         given:
         fileResolver.resolveUri('repo/') >> fileUri
-        transportFactory.createTransport({ it == ['file'] as Set}, 'name', null) >> transport()
+        transportFactory.createTransport({ it == ['file'] as Set }, 'name', _) >> transport()
 
         when:
         def resolver = repository.createResolver()
 
         then:
-        with(resolver) {
-            it instanceof IvyResolver
+        with(resolver, IvyResolver) {
             repository instanceof ExternalResourceRepository
             name == 'name'
             artifactPatterns == ["${fileUri}/[organisation]/[artifact]-[revision].[ext]", "${fileUri}/[organisation]/[module]/[artifact]-[revision].[ext]"]
@@ -104,7 +117,7 @@ class DefaultIvyArtifactRepositoryTest extends Specification {
 
         given:
         fileResolver.resolveUri('http://host') >> new URI('http://host/')
-        transportFactory.createTransport({ it == ['http'] as Set}, 'name', null) >> transport()
+        transportFactory.createTransport({ it == ['http'] as Set }, 'name', _) >> transport()
 
         when:
         def resolver = repository.createResolver()
@@ -125,7 +138,7 @@ class DefaultIvyArtifactRepositoryTest extends Specification {
 
         given:
         fileResolver.resolveUri('http://host') >> new URI('http://host/')
-        transportFactory.createTransport({ it == ['http'] as Set}, 'name', null) >> transport()
+        transportFactory.createTransport({ it == ['http'] as Set }, 'name', _) >> transport()
 
         when:
         def resolver = repository.createResolver()
@@ -147,7 +160,7 @@ class DefaultIvyArtifactRepositoryTest extends Specification {
 
         given:
         fileResolver.resolveUri('http://host') >> new URI('http://host/')
-        transportFactory.createTransport({ it == ['http'] as Set}, 'name', null) >> transport()
+        transportFactory.createTransport({ it == ['http'] as Set }, 'name', _) >> transport()
 
         when:
         def resolver = repository.createResolver()
@@ -173,7 +186,7 @@ class DefaultIvyArtifactRepositoryTest extends Specification {
 
         given:
         fileResolver.resolveUri('http://host') >> new URI('http://host/')
-        transportFactory.createTransport({ it == ['http'] as Set}, 'name', null) >> transport()
+        transportFactory.createTransport({ it == ['http'] as Set }, 'name', _) >> transport()
 
         when:
         def resolver = repository.createResolver()
@@ -200,7 +213,7 @@ class DefaultIvyArtifactRepositoryTest extends Specification {
 
         given:
         fileResolver.resolveUri('http://host') >> new URI('http://host/')
-        transportFactory.createTransport({ it == ['http'] as Set}, 'name', null) >> transport()
+        transportFactory.createTransport({ it == ['http'] as Set }, 'name', _) >> transport()
 
         when:
         def resolver = repository.createResolver()
@@ -224,7 +237,7 @@ class DefaultIvyArtifactRepositoryTest extends Specification {
 
         given:
         fileResolver.resolveUri('http://host/') >> new URI('http://host/')
-        transportFactory.createTransport({ it == ['http'] as Set}, 'name', null) >> transport()
+        transportFactory.createTransport({ it == ['http'] as Set }, 'name', _) >> transport()
 
         when:
         def resolver = repository.createResolver()
@@ -246,7 +259,7 @@ class DefaultIvyArtifactRepositoryTest extends Specification {
             artifact '[layoutPattern]'
         }
         repository.artifactPattern 'http://other/[additionalPattern]'
-        transportFactory.createTransport({ it == ['http'] as Set}, 'name', null) >> transport()
+        transportFactory.createTransport({ it == ['http'] as Set }, 'name', _) >> transport()
 
         given:
         fileResolver.resolveUri('http://host') >> new URI('http://host')
@@ -270,6 +283,63 @@ class DefaultIvyArtifactRepositoryTest extends Specification {
         then:
         InvalidUserDataException e = thrown()
         e.message == 'You must specify a base url or at least one artifact pattern for an Ivy repository.'
+    }
+
+    def "can set a custom metadata rule"() {
+        repository.name = 'name'
+        repository.url = 'http://host'
+        fileResolver.resolveUri('http://host') >> new URI('http://host/')
+        transportFactory.createTransport({ it == ['http'] as Set }, 'name', _) >> transport()
+
+        given:
+        repository.setMetadataSupplier(CustomMetadataSupplier)
+
+        when:
+        def resolver = repository.createResolver()
+
+        then:
+        resolver.createMetadataSupplier() instanceof CustomMetadataSupplier
+    }
+
+    def "can inject configuration into a custom metadata rule"() {
+        repository.name = 'name'
+        repository.url = 'http://host'
+        fileResolver.resolveUri('http://host') >> new URI('http://host/')
+        transportFactory.createTransport({ it == ['http'] as Set }, 'name', _) >> transport()
+
+        given:
+        repository.setMetadataSupplier(CustomMetadataSupplierWithParams) { it.params("a", 12, [1, 2, 3]) }
+
+        when:
+        def resolver = repository.createResolver()
+        def supplier = resolver.createMetadataSupplier()
+
+        then:
+        supplier instanceof CustomMetadataSupplierWithParams
+        supplier.s == "a"
+    }
+
+    static class CustomMetadataSupplier implements ComponentMetadataSupplier {
+        @Override
+        void execute(ComponentMetadataSupplierDetails details) {
+        }
+    }
+
+    static class CustomMetadataSupplierWithParams implements ComponentMetadataSupplier {
+        String s
+        Number n
+        List<Integer> v
+
+        @Inject
+        CustomMetadataSupplierWithParams(String s, Number n, List<Integer> v) {
+            this.s = s
+            this.n = n
+            this.v = v
+        }
+
+        @Override
+        void execute(ComponentMetadataSupplierDetails details) {
+        }
     }
 
     private RepositoryTransport transport() {

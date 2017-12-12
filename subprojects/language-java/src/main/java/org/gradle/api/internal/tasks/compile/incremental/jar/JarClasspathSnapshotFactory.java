@@ -16,10 +16,12 @@
 
 package org.gradle.api.internal.tasks.compile.incremental.jar;
 
+import com.google.common.collect.Maps;
+import com.google.common.collect.Sets;
+import org.gradle.internal.hash.HashCode;
+
 import java.io.File;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.Map;
+import java.util.LinkedHashMap;
 import java.util.Set;
 
 public class JarClasspathSnapshotFactory {
@@ -31,18 +33,20 @@ public class JarClasspathSnapshotFactory {
     }
 
     JarClasspathSnapshot createSnapshot(Iterable<JarArchive> jarArchives) {
-        Map<File, JarSnapshot> jarSnapshots = new HashMap<File, JarSnapshot>();
-        Map<File, byte[]> jarHashes = new HashMap<File, byte[]>();
-        Set<String> allClasses = new HashSet<String>();
-        Set<String> duplicateClasses = new HashSet<String>();
+        LinkedHashMap<File, JarSnapshot> jarSnapshots = Maps.newLinkedHashMap();
+        LinkedHashMap<File, HashCode> jarHashes = Maps.newLinkedHashMap();
+        Set<String> allClasses = Sets.newHashSet();
+        Set<String> duplicateClasses = Sets.newHashSet();
 
         for (JarArchive jar : jarArchives) {
-            JarSnapshot snapshot = jarSnapshotter.createSnapshot(jar);
-            jarSnapshots.put(jar.file, snapshot);
-            jarHashes.put(jar.file, snapshot.getHash());
-            for (String c : snapshot.getClasses()) {
-                if (!allClasses.add(c)) {
-                    duplicateClasses.add(c);
+            if (jar.file.exists()) {
+                JarSnapshot snapshot = jarSnapshotter.createSnapshot(jar);
+                jarSnapshots.put(jar.file, snapshot);
+                jarHashes.put(jar.file, snapshot.getHash());
+                for (String c : snapshot.getClasses()) {
+                    if (!allClasses.add(c)) {
+                        duplicateClasses.add(c);
+                    }
                 }
             }
         }

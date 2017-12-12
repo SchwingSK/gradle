@@ -17,13 +17,12 @@
 package org.gradle.internal;
 
 import org.gradle.api.Action;
-import org.gradle.api.Named;
-import org.gradle.api.Namer;
 import org.gradle.api.Transformer;
 
 import java.net.MalformedURLException;
 import java.net.URI;
 import java.net.URL;
+import java.util.regex.Pattern;
 
 /**
  * Utility transformers.
@@ -74,36 +73,33 @@ public abstract class Transformers {
     }
 
     /**
-     * Returns a transformer that names {@link Named} objects.
-     *
-     * Nulls are returned as null.
-     *
-     * @return The naming transformer.
+     * Transforms strings which may have spaces and which may have already been escaped with
+     * quotes into safe command-line arguments.
      */
-    public static Transformer<String, Named> name() {
-        return name(Named.Namer.INSTANCE);
+    public static Transformer<String, String> asSafeCommandLineArgument() {
+        return new CommandLineArgumentTransformer();
     }
 
-    /**
-     * Returns a transformer that names objects with the given {@link Namer}
-     *
-     * @param namer The namer to name the objects with
-     * @param <T> The type of objects to be named
-     * @return The naming transformer.
-     */
-    public static <T> Transformer<String, T> name(Namer<? super T> namer) {
-        return new ToNameTransformer<T>(namer);
-    }
+    private static class CommandLineArgumentTransformer implements Transformer<String, String> {
+        private static final Pattern SINGLE_QUOTED = Pattern.compile("^'.*'$");
+        private static final Pattern DOUBLE_QUOTED = Pattern.compile("^\".*\"$");
+        private static final Pattern A_SINGLE_QUOTE =  Pattern.compile("'");
 
-    private static class ToNameTransformer<T> implements Transformer<String, T> {
-        private final Namer<? super T> namer;
-
-        public ToNameTransformer(Namer<? super T> namer) {
-            this.namer = namer;
+        @Override
+        public String transform(String input) {
+            if (SINGLE_QUOTED.matcher(input).matches() || DOUBLE_QUOTED.matcher(input).matches() || !input.contains(" ")) {
+                return input;
+            } else {
+                return wrapWithSingleQuotes(input);
+            }
         }
 
-        public String transform(T thing) {
-            return thing == null ? null : namer.determineName(thing);
+        private String wrapWithSingleQuotes(String input) {
+            return String.format("'%1$s'", escapeSingleQuotes(input));
+        }
+
+        private String escapeSingleQuotes(String input) {
+            return A_SINGLE_QUOTE.matcher(input).replaceAll("\\\\'");
         }
     }
 

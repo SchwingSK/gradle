@@ -16,7 +16,6 @@
 package org.gradle.test.fixtures.file;
 
 import org.junit.runners.model.FrameworkMethod;
-import org.junit.runners.model.Statement;
 
 import java.io.File;
 
@@ -24,13 +23,9 @@ import java.io.File;
  * A JUnit rule which provides a unique temporary folder for the test.
  */
 public class TestNameTestDirectoryProvider extends AbstractTestDirectoryProvider {
-    static {
+    public TestNameTestDirectoryProvider() {
         // NOTE: the space in the directory name is intentional
         root = new TestFile(new File("build/tmp/test files"));
-    }
-
-    public Statement apply(final Statement base, final FrameworkMethod method, final Object target) {
-        return doApply(base, method, target);
     }
 
     public static TestNameTestDirectoryProvider newInstance() {

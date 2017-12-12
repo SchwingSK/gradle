@@ -14,8 +14,8 @@
  * limitations under the License.
  */
 package org.gradle.api.internal.artifacts.dependencies
+
 import org.gradle.api.InvalidUserDataException
-import org.gradle.api.artifacts.Dependency
 import org.gradle.api.artifacts.DependencyArtifact
 import org.gradle.api.artifacts.ExternalModuleDependency
 import org.gradle.api.artifacts.ModuleDependency
@@ -25,13 +25,13 @@ import spock.lang.Specification
 
 abstract class AbstractModuleDependencySpec extends Specification {
 
-    private dependency = createDependency("org.gradle", "gradle-core", "4.4-beta2")
+    private ExternalModuleDependency dependency
 
-    def init() {
+    def setup() {
         dependency = createDependency("org.gradle", "gradle-core", "4.4-beta2")
     }
 
-    protected createDependency(String group, String name, String version) {
+    protected ExternalModuleDependency createDependency(String group, String name, String version) {
         createDependency(group, name, version, null)
     }
 
@@ -42,10 +42,12 @@ abstract class AbstractModuleDependencySpec extends Specification {
         dependency.group == "org.gradle"
         dependency.name == "gradle-core"
         dependency.version == "4.4-beta2"
+        dependency.versionConstraint.preferredVersion == "4.4-beta2"
+        dependency.versionConstraint.rejectedVersions == []
         dependency.transitive
         dependency.artifacts.isEmpty()
         dependency.excludeRules.isEmpty()
-        dependency.configuration == Dependency.DEFAULT_CONFIGURATION
+        dependency.targetConfiguration == null
     }
 
     def "cannot create with null name"() {
@@ -102,13 +104,20 @@ abstract class AbstractModuleDependencySpec extends Specification {
 
         then:
         assertDeepCopy(dependency, copy)
+
+        when:
+        dependency.transitive = false
+        copy = dependency.copy()
+
+        then:
+        assertDeepCopy(dependency, copy)
     }
 
     public static void assertDeepCopy(ModuleDependency dependency, ModuleDependency copiedDependency) {
         assert copiedDependency.group == dependency.group
         assert copiedDependency.name == dependency.name
         assert copiedDependency.version == dependency.version
-        assert copiedDependency.configuration == dependency.configuration
+        assert copiedDependency.targetConfiguration == dependency.targetConfiguration
         assert copiedDependency.transitive == dependency.transitive
         assert copiedDependency.artifacts == dependency.artifacts
         assert copiedDependency.excludeRules == dependency.excludeRules

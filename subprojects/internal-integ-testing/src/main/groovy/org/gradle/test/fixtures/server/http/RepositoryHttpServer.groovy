@@ -18,7 +18,6 @@ package org.gradle.test.fixtures.server.http
 
 import org.gradle.test.fixtures.file.TestDirectoryProvider
 import org.gradle.test.fixtures.ivy.IvyFileRepository
-import org.gradle.test.fixtures.ivy.RemoteIvyRepository
 import org.gradle.test.fixtures.server.RepositoryServer
 import org.gradle.util.GradleVersion
 
@@ -27,26 +26,32 @@ import static org.gradle.test.matchers.UserAgentMatcher.matchesNameAndVersion
 class RepositoryHttpServer extends HttpServer implements RepositoryServer {
 
     private TestDirectoryProvider testDirectoryProvider
+    private String gradleVersion
 
     RepositoryHttpServer(TestDirectoryProvider testDirectoryProvider) {
+        this(testDirectoryProvider, GradleVersion.current().getVersion())
+    }
+
+    RepositoryHttpServer(TestDirectoryProvider testDirectoryProvider, String gradleVersion) {
         this.testDirectoryProvider = testDirectoryProvider
+        this.gradleVersion = gradleVersion
     }
 
     @Override
     protected void before() throws Throwable {
         start()
-        expectUserAgent(matchesNameAndVersion("Gradle", GradleVersion.current().getVersion()))
+        expectUserAgent(matchesNameAndVersion("Gradle", gradleVersion))
     }
 
     private IvyFileRepository getBackingRepository(boolean m2Compatible = false, String dirPattern = null, String ivyFilePattern = null, String artifactFilePattern = null) {
         new IvyFileRepository(testDirectoryProvider.testDirectory.file('ivy-repo'), m2Compatible, dirPattern, ivyFilePattern, artifactFilePattern)
     }
 
-    RemoteIvyRepository getRemoteIvyRepo(boolean m2Compatible = false, String dirPattern = null, String ivyFilePattern = null, String artifactFilePattern = null) {
+    IvyHttpRepository getRemoteIvyRepo(boolean m2Compatible = false, String dirPattern = null, String ivyFilePattern = null, String artifactFilePattern = null) {
         return new IvyHttpRepository(this, '/repo', getBackingRepository(m2Compatible, dirPattern, ivyFilePattern, artifactFilePattern), m2Compatible)
     }
 
-    RemoteIvyRepository getRemoteIvyRepo(String contextPath) {
+    IvyHttpRepository getRemoteIvyRepo(String contextPath) {
         new IvyHttpRepository(this, contextPath, backingRepository)
     }
 
